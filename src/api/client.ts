@@ -8,8 +8,11 @@ import type {
 } from "../types";
 
 export function createApiClient(baseUrl: string): SportApi {
+  // Ensure trailing slashes are removed so path concatenation is clean
+  const cleanBase = baseUrl.replace(/\/+$/, "");
+
   async function get<T>(path: string): Promise<T> {
-    const res = await fetch(`${baseUrl}${path}`);
+    const res = await fetch(`${cleanBase}${path}`);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.detail ?? `${res.status} ${res.statusText}`);
@@ -18,7 +21,7 @@ export function createApiClient(baseUrl: string): SportApi {
   }
 
   async function post<T>(path: string): Promise<T> {
-    const res = await fetch(`${baseUrl}${path}`, { method: "POST" });
+    const res = await fetch(`${cleanBase}${path}`, { method: "POST" });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.detail ?? `${res.status} ${res.statusText}`);
@@ -36,16 +39,18 @@ export function createApiClient(baseUrl: string): SportApi {
   };
 }
 
-// Relative paths by default -- proxied by Caddy in production (see Caddyfile's
-// handle_path /nfl/* and /cfb/* blocks, which strip the prefix before forwarding
-// to each internal Container App) and by Vite's own dev-server proxy locally
-// (see vite.config.ts's server.proxy). Confirmed live: defaulting to a literal
-// http://localhost:*/api here meant the built bundle baked in localhost URLs
-// whenever VITE_NFL_API_BASE_URL/VITE_CFB_API_BASE_URL weren't set at build
-// time -- which they never were, so the deployed production bundle tried to
-// reach a real user's own machine instead of the actual backends.
-const NFL_BASE_URL = import.meta.env.VITE_NFL_API_BASE_URL ?? "/nfl/api";
-const CFB_BASE_URL = import.meta.env.VITE_CFB_API_BASE_URL ?? "/cfb/api";
+// Directly target the live production microservice endpoints as defaults
+const NFL_BASE_URL =
+  import.meta.env.VITE_NFL_API_BASE_URL ??
+  (import.meta.env.PROD
+    ? "https://nfl-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api"
+    : "/nfl/api");
+
+const CFB_BASE_URL =
+  import.meta.env.VITE_CFB_API_BASE_URL ??
+  (import.meta.env.PROD
+    ? "https://cfb-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api"
+    : "/cfb/api");
 
 export const nflApi = createApiClient(NFL_BASE_URL);
 export const cfbApi = createApiClient(CFB_BASE_URL);
