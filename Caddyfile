@@ -10,11 +10,27 @@
     # every request -- including /nfl/* and /cfb/* -- even with the
     # handle_path blocks appearing first in the file. Wrapping the fallback
     # in its own handle{} makes the three blocks genuinely exclusive.
+    # Both backends are Consumption-plan Container Apps with min-replicas 0
+    # (scale-to-zero) -- confirmed live: a cold nfl-predictor/cfb-predictor
+    # made Caddy's default ~3s dial timeout fail with "i/o timeout" well
+    # before the backend finished waking up. 30s comfortably covers a cold
+    # start (matches the Azure migration plan's own cold-start expectation)
+    # without leaving a genuinely-down backend hanging indefinitely.
     handle_path /nfl/* {
-        reverse_proxy nfl-predictor.internal.proudbay-f56b8dfa.eastus2.azurecontainerapps.io:8001
+        reverse_proxy nfl-predictor.internal.proudbay-f56b8dfa.eastus2.azurecontainerapps.io:8001 {
+            transport http {
+                dial_timeout 30s
+                response_header_timeout 30s
+            }
+        }
     }
     handle_path /cfb/* {
-        reverse_proxy cfb-predictor.internal.proudbay-f56b8dfa.eastus2.azurecontainerapps.io:8003
+        reverse_proxy cfb-predictor.internal.proudbay-f56b8dfa.eastus2.azurecontainerapps.io:8003 {
+            transport http {
+                dial_timeout 30s
+                response_header_timeout 30s
+            }
+        }
     }
     handle {
         try_files {path} /index.html
