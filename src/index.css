@@ -1,0 +1,13 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-sp-950: #150f05; --color-sp-900: #241a08; --color-sp-850: #30220c; --color-sp-800: #3b2a0f; --color-sp-700: #523a15; --color-sp-600: #6e4d1c; --color-sp-500: #96692a; --color-sp-border: #4a3714; --color-sp-gold: #f2a900; --color-sp-gold-soft: #ffc233; --color-sp-cyan: #05d1c8; --color-sp-text: #f7f2e7; --color-sp-text-dim: #cbbfa3; --color-sp-text-faint: #93856a; --color-nfl-blue: #2e6bd8; --color-cfb-orange: #d8571f; --color-win: #22c55e; --color-loss: #ef4444;
+}
+html { color-scheme: dark; }
+body { margin: 0; background: radial-gradient(circle at 15% -10%, var(--color-sp-700) 0%, transparent 45%), radial-gradient(circle at 100% 0%, var(--color-sp-600) 0%, transparent 35%), var(--color-sp-950); min-height: 100vh; color: var(--color-sp-text); font-family: var(--font-sans); }
+::selection { background: var(--color-sp-gold); color: #150f05; }
+.clip-corner { clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%); }
+.clip-corner-lg { clip-path: polygon(0 0, calc(100% - 28px) 0, 100% 28px, 100% 100%, 0 100%); }
+@keyframes modal-in { from { opacity: 0; transform: scale(0.96) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+.animate-modal-in { animation: modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
