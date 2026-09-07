@@ -1,33 +1,5 @@
-# Sports Predictor - Caddy reverse proxy
 :80 {
     root * /usr/share/caddy
-
-    # Handle path blocks for backend APIs
-    handle_path /nfl/* {
-        reverse_proxy https://nfl-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io {
-            header_up Host nfl-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io
-            transport http {
-                tls_server_name nfl-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io
-                dial_timeout 300s
-                response_header_timeout 300s
-            }
-        }
-    }
-
-    handle_path /cfb/* {
-        reverse_proxy https://cfb-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io {
-            header_up Host cfb-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io
-            transport http {
-                tls_server_name cfb-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io
-                dial_timeout 300s
-                response_header_timeout 300s
-            }
-        }
-    }
-
-    # SPA Fallback block
-    handle {
-        try_files {path} /index.html
-        file_server
-    }
+    file_server
+    try_files {path} /index.html
 }
