@@ -8,7 +8,6 @@ import type {
 } from "../types";
 
 export function createApiClient(baseUrl: string): SportApi {
-  // Ensure trailing slashes are removed so path concatenation is clean
   const cleanBase = baseUrl.replace(/\/+$/, "");
 
   async function get<T>(path: string): Promise<T> {
@@ -39,18 +38,9 @@ export function createApiClient(baseUrl: string): SportApi {
   };
 }
 
-// Directly target the live production microservice endpoints as defaults
-const NFL_BASE_URL =
-  import.meta.env.VITE_NFL_API_BASE_URL ??
-  (import.meta.env.PROD
-    ? "https://nfl-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api"
-    : "/nfl/api");
-
-const CFB_BASE_URL =
-  import.meta.env.VITE_CFB_API_BASE_URL ??
-  (import.meta.env.PROD
-    ? "https://cfb-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api"
-    : "/cfb/api");
+// Hardcode direct production backend URLs to completely bypass Caddy reverse proxying
+const NFL_BASE_URL = "https://nfl-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api";
+const CFB_BASE_URL = "https://cfb-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api";
 
 export const nflApi = createApiClient(NFL_BASE_URL);
 export const cfbApi = createApiClient(CFB_BASE_URL);
