@@ -38,9 +38,17 @@ export function createApiClient(baseUrl: string): SportApi {
   };
 }
 
-// Updated absolute URLs - build timestamp: 2026-09-07
-const NFL_BASE_URL = "https://nfl-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api";
-const CFB_BASE_URL = "https://cfb-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api";
+// DYNAMIC RESOLUTION: If running on the Azure production frontend domain, 
+// automatically point directly to the respective backend FQDNs. Otherwise, use local dev ports.
+const isProd = window.location.hostname.includes("azurecontainerapps.io");
+
+const NFL_BASE_URL = isProd
+  ? "https://nfl-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api"
+  : "http://localhost:8001/api";
+
+const CFB_BASE_URL = isProd
+  ? "https://cfb-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api"
+  : "http://localhost:8003/api";
 
 export const nflApi = createApiClient(NFL_BASE_URL);
 export const cfbApi = createApiClient(CFB_BASE_URL);
