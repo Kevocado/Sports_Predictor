@@ -38,7 +38,7 @@ export function createApiClient(baseUrl: string): SportApi {
   };
 }
 
-// Hardcode direct production backend URLs to completely bypass Caddy reverse proxying
+// Updated absolute URLs - build timestamp: 2026-09-07
 const NFL_BASE_URL = "https://nfl-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api";
 const CFB_BASE_URL = "https://cfb-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api";
 
