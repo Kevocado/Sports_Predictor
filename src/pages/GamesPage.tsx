@@ -37,15 +37,20 @@ export function GamesPage() {
   }, [api, sport]);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true); setError(null); setGames([]); setPredictions({}); setSelectedGame(null);
     api.games(season, week).then(async (fetchedGames) => {
+      if (cancelled) return;
       setGames(fetchedGames);
       const entries = await Promise.all(fetchedGames.map(async (g) => {
         try { const p = await api.gamePrediction(season, week, g.game_id); return [g.game_id, p] as const; }
         catch { return null; }
       }));
+      if (cancelled) return;
       setPredictions(Object.fromEntries(entries.filter((e): e is [string, GamePrediction] => e !== null)));
-    }).catch((err) => setError(err instanceof Error ? err.message : String(err))).finally(() => setLoading(false));
+    }).catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [api, season, week]);
 
   const orderedGames = sortMode === "confidence" ? sortByConfidence(games, predictions) : [...games].sort((a, b) => new Date(a.gameday).getTime() - new Date(b.gameday).getTime());
