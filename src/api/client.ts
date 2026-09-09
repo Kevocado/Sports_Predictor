@@ -1,4 +1,5 @@
 import type {
+  CurrentWeek,
   GamePrediction,
   GameSummary,
   GameVerdict,
@@ -49,6 +50,7 @@ export function createApiClient(baseUrl: string): SportApi {
     retrain: () => post<RetrainResponse>("/retrain"),
     gameVerdict: (gameId) => getOrNull<GameVerdict>(`/games/${gameId}/verdict`),
     predictionsForWeek: (season, week) => get<WeekPrediction[]>(`/predictions/${season}/${week}`),
+    currentWeek: () => get<CurrentWeek>("/current-week"),
   };
 }
 

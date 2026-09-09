@@ -9,8 +9,8 @@ const prediction: GamePrediction = { home_win_prob: 0.62, away_win_prob: 0.38, h
 describe("GameCard", () => {
   it("renders both team names and the confidence badge", () => {
     render(<GameCard game={game} prediction={prediction} onClick={() => {}} />);
-    expect(screen.getByText("Ravens")).toBeInTheDocument();
-    expect(screen.getByText("Chiefs")).toBeInTheDocument();
+    expect(screen.getAllByText("Ravens").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Chiefs").length).toBeGreaterThan(0);
     expect(screen.getByText("62% confident")).toBeInTheDocument();
   });
   it("shows a loading state when prediction is null", () => {

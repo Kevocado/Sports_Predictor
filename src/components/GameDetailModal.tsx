@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { GamePrediction, GameSummary, PlayerPropPrediction, SportApi } from "../types";
+import type { GamePrediction, GameSummary, GameVerdict, PlayerPropPrediction, SportApi } from "../types";
 import { TeamName } from "./TeamName";
 import { MarketBar } from "./MarketBar";
 
@@ -10,6 +10,17 @@ export function filterPlayerPropsForGame(
   return props.filter((prop) => prop.recent_team === game.home_team || prop.recent_team === game.away_team);
 }
 
+function VerdictBadge({ label, hit }: { label: string; hit: boolean }) {
+  return (
+    <span className="flex items-center gap-1.5 rounded-lg bg-sp-850/60 px-2.5 py-1 text-xs">
+      <span className="text-sp-text-dim">{label}</span>
+      <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${hit ? "bg-win/20 text-win" : "bg-loss/20 text-loss"}`}>
+        {hit ? "HIT" : "MISS"}
+      </span>
+    </span>
+  );
+}
+
 interface Props { game: GameSummary; api: SportApi; onClose: () => void; }
 
 export function GameDetailModal({ game, api, onClose }: Props) {
@@ -17,24 +28,34 @@ export function GameDetailModal({ game, api, onClose }: Props) {
   const [predictionError, setPredictionError] = useState<string | null>(null);
   const [allProps, setAllProps] = useState<PlayerPropPrediction[] | null>(null);
   const [propsLoading, setPropsLoading] = useState(true);
+  const [verdict, setVerdict] = useState<GameVerdict | null>(null);
+  const isFinal = game.home_score != null && game.away_score != null;
 
   useEffect(() => {
     let cancelled = false;
-    setPrediction(null); setPredictionError(null); setAllProps(null); setPropsLoading(true);
-    
+    setPrediction(null); setPredictionError(null); setAllProps(null); setPropsLoading(true); setVerdict(null);
+
     // Fetch main game prediction
     api.gamePrediction(game.season, game.week, game.game_id)
       .then((r) => { if (!cancelled) setPrediction(r); })
       .catch((e) => { if (!cancelled) setPredictionError(e instanceof Error ? e.message : String(e)); });
-    
+
     // Fetch player props safely (fails silently to an empty array so it doesn't break UI)
     api.playerProps(game.season, game.week)
       .then((r) => { if (!cancelled) setAllProps(r); })
       .catch(() => { if (!cancelled) setAllProps([]); })
       .finally(() => { if (!cancelled) setPropsLoading(false); });
 
+    // Post-match verdict: only meaningful once the game has a final score,
+    // and a missing verdict (not yet reconciled) is not an error.
+    if (isFinal) {
+      api.gameVerdict(game.game_id)
+        .then((r) => { if (!cancelled) setVerdict(r); })
+        .catch(() => { if (!cancelled) setVerdict(null); });
+    }
+
     return () => { cancelled = true; };
-  }, [api, game.season, game.week, game.game_id]);
+  }, [api, game.season, game.week, game.game_id, isFinal]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -56,10 +77,37 @@ export function GameDetailModal({ game, api, onClose }: Props) {
           
           {/* Header Matchup */}
           <div className="flex items-center justify-center gap-10">
-            <TeamName team={game.away_team} size="lg" />
+            <div className="flex flex-col items-center gap-1">
+              <TeamName team={game.away_team} size="lg" />
+              {isFinal && <span className="font-mono text-xl font-bold text-sp-text">{game.away_score}</span>}
+            </div>
             <span className="text-2xl font-black text-sp-text-faint">at</span>
-            <TeamName team={game.home_team} size="lg" />
+            <div className="flex flex-col items-center gap-1">
+              <TeamName team={game.home_team} size="lg" />
+              {isFinal && <span className="font-mono text-xl font-bold text-sp-text">{game.home_score}</span>}
+            </div>
           </div>
+
+          {/* Post-match verdict — did the model call it right? */}
+          {isFinal && (
+            <section>
+              <div className="mb-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-sp-text-faint">Result &amp; verdict</h3>
+                <p className="text-[11px] text-sp-text-dim">Whether the model's pregame call matched what actually happened.</p>
+              </div>
+              {verdict ? (
+                <div className="flex flex-wrap gap-2">
+                  <VerdictBadge label="Moneyline" hit={verdict.moneyline.hit} />
+                  {verdict.ats && <VerdictBadge label="Spread" hit={verdict.ats.hit} />}
+                  {verdict.totals && <VerdictBadge label="Total" hit={verdict.totals.hit} />}
+                </div>
+              ) : (
+                <p className="text-xs text-sp-text-faint rounded-lg bg-sp-850/40 p-3 border border-sp-border/40">
+                  This game's final result hasn't been reconciled against the model's prediction yet.
+                </p>
+              )}
+            </section>
+          )}
 
           {/* Match Markets Section */}
           <section>
