@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { GamePrediction, GameSummary, GameVerdict, PlayerPropPrediction, SportApi } from "../types";
 import { TeamName } from "./TeamName";
 import { MarketBar } from "./MarketBar";
+import { POSITION_ORDER, keyStatLabel, keyYardage, tdConfidenceTone } from "../lib/playerRank";
+
+type PositionFilter = "ALL" | (typeof POSITION_ORDER)[number];
 
 export function filterPlayerPropsForGame(
   props: PlayerPropPrediction[],
@@ -29,6 +32,7 @@ export function GameDetailModal({ game, api, onClose }: Props) {
   const [allProps, setAllProps] = useState<PlayerPropPrediction[] | null>(null);
   const [propsLoading, setPropsLoading] = useState(true);
   const [verdict, setVerdict] = useState<GameVerdict | null>(null);
+  const [positionFilter, setPositionFilter] = useState<PositionFilter>("ALL");
   const isFinal = game.home_score != null && game.away_score != null;
 
   useEffect(() => {
@@ -64,6 +68,15 @@ export function GameDetailModal({ game, api, onClose }: Props) {
   }, [onClose]);
 
   const gameProps = allProps ? filterPlayerPropsForGame(allProps, game) : null;
+  const availablePositions = useMemo(
+    () => POSITION_ORDER.filter((position) => (gameProps ?? []).some((p) => p.position === position)),
+    [gameProps],
+  );
+  const visibleProps = useMemo(() => {
+    if (!gameProps) return null;
+    const filtered = positionFilter === "ALL" ? gameProps : gameProps.filter((p) => p.position === positionFilter);
+    return [...filtered].sort((a, b) => keyYardage(b) - keyYardage(a) || b.anytime_td_prob - a.anytime_td_prob);
+  }, [gameProps, positionFilter]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -129,25 +142,42 @@ export function GameDetailModal({ game, api, onClose }: Props) {
 
           {/* Player Props Section */}
           <section>
-            <div className="mb-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-sp-text-faint">Model Player Projections</h3>
-              <p className="text-[11px] text-sp-text-dim">Predicted touchdown probabilities and expected yardage milestones from your machine learning models.</p>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-sp-text-faint">Model Player Projections</h3>
+                <p className="text-[11px] text-sp-text-dim">Predicted touchdown probabilities and expected yardage milestones from your machine learning models.</p>
+              </div>
+              {availablePositions.length > 1 && (
+                <div className="flex gap-1 rounded-lg border border-sp-border bg-sp-850/60 p-1">
+                  {(["ALL", ...availablePositions] as PositionFilter[]).map((position) => (
+                    <button
+                      key={position}
+                      onClick={() => setPositionFilter(position)}
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${positionFilter === position ? "bg-sp-gold text-sp-950" : "text-sp-text-dim hover:text-sp-text"}`}
+                    >
+                      {position}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             {propsLoading && <p className="text-xs text-sp-text-faint">Loading player projections…</p>}
-            {!propsLoading && gameProps && gameProps.length === 0 && (
+            {!propsLoading && visibleProps && visibleProps.length === 0 && (
               <p className="text-xs text-sp-text-faint rounded-lg bg-sp-850/40 p-3 border border-sp-border/40">
-                No player projection props available for this specific game yet. (Ensure your backend player-props route catches external API timeouts gracefully).
+                {gameProps && gameProps.length > 0
+                  ? "No players at this position for this game."
+                  : "No player projection props available for this specific game yet. (Ensure your backend player-props route catches external API timeouts gracefully)."}
               </p>
             )}
-            {gameProps && gameProps.length > 0 && <div className="flex flex-col gap-1.5">
-              {gameProps.map((prop) => (
+            {visibleProps && visibleProps.length > 0 && <div className="flex flex-col gap-1.5">
+              {visibleProps.map((prop) => (
                 <div key={prop.player_id} className="flex items-center justify-between rounded-lg bg-sp-850/60 px-3 py-2 text-sm">
                   <span className="text-sp-text font-medium">{prop.player_name} <span className="text-xs text-sp-text-faint font-normal">({prop.position} · {prop.recent_team})</span></span>
-                  <div className="flex items-center gap-3 font-mono text-xs text-sp-text-dim">
-                    <span>TD {Math.round(prop.anytime_td_prob * 100)}%</span>
-                    {prop.passing_yards != null && <span>Pass {Math.round(prop.passing_yards)}yd</span>}
-                    {prop.rushing_yards != null && <span>Rush {Math.round(prop.rushing_yards)}yd</span>}
-                    {prop.receiving_yards != null && <span>Rec {Math.round(prop.receiving_yards)}yd</span>}
+                  <div className="flex items-center gap-2 font-mono text-xs text-sp-text-dim">
+                    <span>{keyStatLabel(prop.position)} {Math.round(keyYardage(prop))}</span>
+                    <span className={`rounded px-1.5 py-0.5 font-semibold ${tdConfidenceTone(prop.anytime_td_prob)}`}>
+                      TD {Math.round(prop.anytime_td_prob * 100)}%
+                    </span>
                   </div>
                 </div>
               ))}
