@@ -2,9 +2,10 @@ import { useState } from "react";
 import { SportProvider, useSport } from "./context/SportContext";
 import { SportToggle } from "./components/SportToggle";
 import { GamesPage } from "./pages/GamesPage";
+import { PlayersPage } from "./pages/PlayersPage";
 import { TrackRecordPage } from "./pages/TrackRecordPage";
 
-type Tab = "games" | "track-record";
+type Tab = "games" | "players" | "track-record";
 
 function AppShell() {
   const [tab, setTab] = useState<Tab>("games");
@@ -23,13 +24,13 @@ function AppShell() {
         <div className="flex items-center gap-3">
           <SportToggle />
           <nav className="flex gap-1 rounded-lg border border-sp-border bg-sp-850/60 p-1">
-            {([["games","Games"],["track-record","Track Record"]] as const).map(([key, label]) => (
+            {([["games","Games"],["players","Players"],["track-record","Track Record"]] as const).map(([key, label]) => (
               <button key={key} onClick={() => setTab(key)} className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition ${tab === key ? "bg-sp-gold text-sp-950" : "text-sp-text-dim hover:text-sp-text"}`}>{label}</button>
             ))}
           </nav>
         </div>
       </header>
-      <main>{tab === "games" ? <GamesPage /> : <TrackRecordPage />}</main>
+      <main>{tab === "games" ? <GamesPage /> : tab === "players" ? <PlayersPage /> : <TrackRecordPage />}</main>
     </div>
   );
 }

@@ -1,10 +1,12 @@
 import type {
   GamePrediction,
   GameSummary,
+  GameVerdict,
   PlayerPropPrediction,
   RetrainResponse,
   SportApi,
   TrackRecord,
+  WeekPrediction,
 } from "../types";
 
 export function createApiClient(baseUrl: string): SportApi {
@@ -12,6 +14,16 @@ export function createApiClient(baseUrl: string): SportApi {
 
   async function get<T>(path: string): Promise<T> {
     const res = await fetch(`${cleanBase}${path}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail ?? `${res.status} ${res.statusText}`);
+    }
+    return res.json();
+  }
+
+  async function getOrNull<T>(path: string): Promise<T | null> {
+    const res = await fetch(`${cleanBase}${path}`);
+    if (res.status === 404) return null;
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.detail ?? `${res.status} ${res.statusText}`);
@@ -35,6 +47,8 @@ export function createApiClient(baseUrl: string): SportApi {
     playerProps: (season, week) => get<PlayerPropPrediction[]>(`/players/${season}/${week}/props`),
     trackRecord: () => get<TrackRecord>("/track-record"),
     retrain: () => post<RetrainResponse>("/retrain"),
+    gameVerdict: (gameId) => getOrNull<GameVerdict>(`/games/${gameId}/verdict`),
+    predictionsForWeek: (season, week) => get<WeekPrediction[]>(`/predictions/${season}/${week}`),
   };
 }
 
