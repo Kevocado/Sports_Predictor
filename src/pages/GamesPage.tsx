@@ -6,7 +6,25 @@ import { GameCard } from "../components/GameCard";
 import { GameDetailModal } from "../components/GameDetailModal";
 
 const FALLBACK_SEASON = 2026;
+const PREDICTION_CONCURRENCY = 4;
 type SortMode = "chronological" | "confidence";
+
+// A full week's worth of games fired as one Promise.all was hammering the
+// backend with 15+ simultaneous prediction requests and occasionally
+// tripping intermittent 500s under that burst. A small worker pool keeps
+// the same total requests but only a handful in flight at once.
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 
 export function GamesPage() {
   const { api, sport } = useSport();
@@ -42,10 +60,10 @@ export function GamesPage() {
     api.games(season, week).then(async (fetchedGames) => {
       if (cancelled) return;
       setGames(fetchedGames);
-      const entries = await Promise.all(fetchedGames.map(async (g) => {
+      const entries = await mapWithConcurrency(fetchedGames, PREDICTION_CONCURRENCY, async (g) => {
         try { const p = await api.gamePrediction(season, week, g.game_id); return [g.game_id, p] as const; }
         catch { return null; }
-      }));
+      });
       if (cancelled) return;
       setPredictions(Object.fromEntries(entries.filter((e): e is [string, GamePrediction] => e !== null)));
     }).catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); })
