@@ -61,8 +61,15 @@ export function GamesPage() {
       if (cancelled) return;
       setGames(fetchedGames);
       const entries = await mapWithConcurrency(fetchedGames, PREDICTION_CONCURRENCY, async (g) => {
-        try { const p = await api.gamePrediction(season, week, g.game_id); return [g.game_id, p] as const; }
-        catch { return null; }
+        // One retry: a single backend under a burst of concurrent requests
+        // can drop a request transiently even with the concurrency cap
+        // above, and a permanent "Loading…" badge for the rest of the
+        // page's life is worse than one extra round trip.
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try { const p = await api.gamePrediction(season, week, g.game_id); return [g.game_id, p] as const; }
+          catch { /* fall through to retry, or give up after the last attempt */ }
+        }
+        return null;
       });
       if (cancelled) return;
       setPredictions(Object.fromEntries(entries.filter((e): e is [string, GamePrediction] => e !== null)));
