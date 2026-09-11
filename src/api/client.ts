@@ -6,6 +6,7 @@ import type {
   PlayerPropPrediction,
   RetrainResponse,
   SportApi,
+  StandingsEntry,
   TrackRecord,
   WeekPrediction,
 } from "../types";
@@ -51,6 +52,7 @@ export function createApiClient(baseUrl: string): SportApi {
     gameVerdict: (gameId) => getOrNull<GameVerdict>(`/games/${gameId}/verdict`),
     predictionsForWeek: (season, week) => get<WeekPrediction[]>(`/predictions/${season}/${week}`),
     currentWeek: () => get<CurrentWeek>("/current-week"),
+    standings: (season) => get<StandingsEntry[]>(`/standings?season=${season}`),
   };
 }
 

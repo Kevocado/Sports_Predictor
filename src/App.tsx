@@ -4,8 +4,9 @@ import { SportToggle } from "./components/SportToggle";
 import { GamesPage } from "./pages/GamesPage";
 import { PlayersPage } from "./pages/PlayersPage";
 import { TrackRecordPage } from "./pages/TrackRecordPage";
+import { StandingsPage } from "./pages/StandingsPage";
 
-type Tab = "games" | "players" | "track-record";
+type Tab = "games" | "players" | "standings" | "track-record";
 
 function AppShell() {
   const [tab, setTab] = useState<Tab>("games");
@@ -24,13 +25,15 @@ function AppShell() {
         <div className="flex items-center gap-3">
           <SportToggle />
           <nav className="flex gap-1 rounded-lg border border-sp-border bg-sp-850/60 p-1">
-            {([["games","Games"],["players","Players"],["track-record","Track Record"]] as const).map(([key, label]) => (
+            {([["games","Games"],["players","Players"],["standings","Standings"],["track-record","Track Record"]] as const).map(([key, label]) => (
               <button key={key} onClick={() => setTab(key)} className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition ${tab === key ? "bg-sp-gold text-sp-950" : "text-sp-text-dim hover:text-sp-text"}`}>{label}</button>
             ))}
           </nav>
         </div>
       </header>
-      <main>{tab === "games" ? <GamesPage /> : tab === "players" ? <PlayersPage /> : <TrackRecordPage />}</main>
+      <main>
+        {tab === "games" ? <GamesPage /> : tab === "players" ? <PlayersPage /> : tab === "standings" ? <StandingsPage /> : <TrackRecordPage />}
+      </main>
     </div>
   );
 }

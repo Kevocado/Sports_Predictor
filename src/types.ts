@@ -25,4 +25,27 @@ export interface GameVerdict { game_id: string; resolved: boolean; moneyline: Ma
 export type WeekPredictionStatus = "untracked" | "pending" | "resolved";
 export interface WeekPrediction { game_id: string; status: WeekPredictionStatus; home_win_prob?: number; away_win_prob?: number; verdict: GameVerdict | null; }
 export interface CurrentWeek { season: number; week: number; }
-export interface SportApi { games: (season: number, week: number) => Promise<GameSummary[]>; gamePrediction: (season: number, week: number, gameId: string) => Promise<GamePrediction>; playerProps: (season: number, week: number) => Promise<PlayerPropPrediction[]>; trackRecord: () => Promise<TrackRecord>; retrain: () => Promise<RetrainResponse>; gameVerdict: (gameId: string) => Promise<GameVerdict | null>; predictionsForWeek: (season: number, week: number) => Promise<WeekPrediction[]>; currentWeek: () => Promise<CurrentWeek>; }
+// NFL groups by division (current_division_rank/...), CFB has no fixed
+// divisions and groups by conference alone (current_conference_rank/...) --
+// a row only ever has one set of rank fields populated, matching whichever
+// sport it came from.
+export interface StandingsEntry {
+  team: string;
+  conference: string | null;
+  division?: string | null;
+  played: number;
+  wins: number;
+  losses: number;
+  ties: number;
+  point_diff: number;
+  projected_wins: number;
+  projected_losses: number;
+  projected_point_diff: number;
+  current_division_rank?: number;
+  projected_division_rank?: number;
+  division_rank_delta?: number;
+  current_conference_rank?: number;
+  projected_conference_rank?: number;
+  conference_rank_delta?: number;
+}
+export interface SportApi { games: (season: number, week: number) => Promise<GameSummary[]>; gamePrediction: (season: number, week: number, gameId: string) => Promise<GamePrediction>; playerProps: (season: number, week: number) => Promise<PlayerPropPrediction[]>; trackRecord: () => Promise<TrackRecord>; retrain: () => Promise<RetrainResponse>; gameVerdict: (gameId: string) => Promise<GameVerdict | null>; predictionsForWeek: (season: number, week: number) => Promise<WeekPrediction[]>; currentWeek: () => Promise<CurrentWeek>; standings: (season: number) => Promise<StandingsEntry[]>; }
