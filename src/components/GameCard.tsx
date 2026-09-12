@@ -36,6 +36,16 @@ export function GameCard({ game, prediction, onClick }: { game: GameSummary; pre
       </div>
       {prediction ? <ProbabilityBar home={prediction.home_win_prob} away={prediction.away_win_prob} homeLabel={game.home_team} awayLabel={game.away_team} /> : <div className="h-2.5 w-full animate-pulse rounded-full bg-sp-850" />}
       {game.spread_line != null && <p className="text-[11px] text-sp-text-faint">Spread {game.spread_line} · Total {game.total_line ?? "—"}</p>}
+      {prediction && (game.home_total_yards || game.away_total_yards) && (
+        <div className="flex flex-wrap gap-2 text-[11px] text-sp-text-dim">
+          {game.home_total_yards && (
+            <span>{game.home_team} Yds: {game.home_total_yards}</span>
+          )}
+          {game.away_total_yards && (
+            <span>{game.away_team} Yds: {game.away_total_yards}</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
