@@ -1,5 +1,24 @@
 export type Sport = "nfl" | "cfb";
-export interface GameSummary { game_id: string; season: number; week: number; gameday: string; home_team: string; away_team: string; home_score: number | null; away_score: number | null; spread_line?: number | null; total_line?: number | null; }
+export interface GameSummary {
+  game_id: string;
+  season: number;
+  week: number;
+  gameday: string;
+  home_team: string;
+  away_team: string;
+  home_score: number | null;
+  away_score: number | null;
+  spread_line?: number | null;
+  total_line?: number | null;
+  home_total_yards?: number;
+  home_passing_yards?: number;
+  home_rushing_yards?: number;
+  away_total_yards?: number;
+  away_passing_yards?: number;
+  away_rushing_yards?: number;
+  home_conference?: string | null;
+  away_conference?: string | null;
+}
 export interface GamePrediction { home_win_prob: number; away_win_prob: number; home_cover_prob: number | null; away_cover_prob: number | null; over_prob: number | null; under_prob: number | null; }
 export interface PlayerPropPrediction { player_id: string; player_name: string; recent_team: string; position: string; anytime_td_prob: number; passing_yards?: number; rushing_yards?: number; receiving_yards?: number; }
 export interface WeeklyTrendEntry { week: number; pct_moneyline_correct: number; n_games: number; }
