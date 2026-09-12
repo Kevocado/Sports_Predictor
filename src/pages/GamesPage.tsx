@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import type { GamePrediction, GameSummary } from "../types";
 import { useSport } from "../context/SportContext";
 import { sortByConfidence } from "../lib/confidenceSort";
-import { groupGamesByDateAndConference } from "../lib/groupGamesByDateAndConference";
 import { GameCard } from "../components/GameCard";
 import { GameDetailModal } from "../components/GameDetailModal";
 
@@ -37,8 +36,8 @@ export function GamesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("chronological");
+  const [conferenceFilter, setConferenceFilter] = useState<string | null>(null);
   const [selectedGame, setSelectedGame] = useState<GameSummary | null>(null);
-  const [selectedConferenceFilter, setSelectedConferenceFilter] = useState<string | null>(null);
 
   // On sport switch, jump straight to that sport's current week rather than
   // always restarting at week 1 (which for CFB/NFL is usually long over by
@@ -80,26 +79,20 @@ export function GamesPage() {
     return () => { cancelled = true; };
   }, [api, season, week]);
 
-  const groupedGames = groupGamesByDateAndConference(games);
-  
-  // Get all unique conferences across all dates for filter chips
+  // Get all unique conferences for filter chips
   const allConferences = new Set<string>();
-  for (const dateKey of Object.keys(groupedGames)) {
-    for (const confKey of Object.keys(groupedGames[dateKey])) {
-      // Extract individual conferences from "Home vs Away" format
-      const [homeConf, awayConf] = confKey.split(' vs ');
-      if (homeConf) allConferences.add(homeConf);
-      if (awayConf) allConferences.add(awayConf);
-    }
+  for (const game of games) {
+    if (game.home_conference) allConferences.add(game.home_conference);
+    if (game.away_conference) allConferences.add(game.away_conference);
   }
   const conferenceFilters = Array.from(allConferences).sort();
-  
+
   // Apply conference filter if selected
-  const filteredGames = selectedConferenceFilter
+  const filteredGames = conferenceFilter
     ? games.filter(g => {
         const homeConf = g.home_conference || 'Independent';
         const awayConf = g.away_conference || 'Independent';
-        return homeConf === selectedConferenceFilter || awayConf === selectedConferenceFilter;
+        return homeConf === conferenceFilter || awayConf === conferenceFilter;
       })
     : games;
 
@@ -153,16 +146,16 @@ export function GamesPage() {
       {conferenceFilters.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-2">
           <button
-            onClick={() => setSelectedConferenceFilter(null)}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition ${selectedConferenceFilter === null ? "bg-sp-gold text-sp-950" : "border border-sp-border bg-sp-850/60 text-sp-text-dim hover:text-sp-text"}`}
+            onClick={() => setConferenceFilter(null)}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition ${conferenceFilter === null ? "bg-sp-gold text-sp-950" : "border border-sp-border bg-sp-850/60 text-sp-text-dim hover:text-sp-text"}`}
           >
             All
           </button>
           {conferenceFilters.map((conf) => (
             <button
               key={conf}
-              onClick={() => setSelectedConferenceFilter(conf === selectedConferenceFilter ? null : conf)}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition ${selectedConferenceFilter === conf ? "bg-sp-gold text-sp-950" : "border border-sp-border bg-sp-850/60 text-sp-text-dim hover:text-sp-text"}`}
+              onClick={() => setConferenceFilter(conf === conferenceFilter ? null : conf)}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition ${conferenceFilter === conf ? "bg-sp-gold text-sp-950" : "border border-sp-border bg-sp-850/60 text-sp-text-dim hover:text-sp-text"}`}
             >
               {conf}
             </button>
@@ -176,54 +169,31 @@ export function GamesPage() {
         <p className="text-sm text-sp-text-faint">No games scheduled for this week.</p>
       )}
 
-      {/* Grouped by date sections */}
-      {Object.keys(groupedGames).sort().map((dateKey) => {
-        const dateGames = groupedGames[dateKey];
-        
-        // Filter by selected conference if active
-        const filteredDateGames = selectedConferenceFilter
-          ? Object.fromEntries(
-              Object.entries(dateGames).filter(([confKey]) => {
-                const [homeConf, awayConf] = confKey.split(' vs ');
-                return homeConf === selectedConferenceFilter || awayConf === selectedConferenceFilter;
-              })
-            )
-          : dateGames;
-
-        // Skip date sections with no games after filtering
-        const confKeys = Object.keys(filteredDateGames);
-        if (confKeys.length === 0) return null;
-
-        return (
-          <div key={dateKey} className="mb-6">
-            <h3 className="text-md font-semibold text-sp-text mb-3">{dateKey}</h3>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {confKeys.map((confKey) => {
-                // Sort games within this conference group chronologically
-                const conferenceGames = [...filteredDateGames[confKey]].sort(
-                  (a, b) => new Date(a.gameday).getTime() - new Date(b.gameday).getTime()
-                );
-                
-                return (
-                  <div key={confKey} className="mb-3">
-                    <div className="mb-2 text-xs font-medium text-sp-text-dim">
-                      {confKey}
-                    </div>
-                    {conferenceGames.map((game) => (
-                      <GameCard 
-                        key={game.game_id} 
-                        game={game} 
-                        prediction={predictions[game.game_id] ?? null} 
-                        onClick={() => setSelectedGame(game)} 
-                      />
-                    ))}
-                  </div>
-                );
-              })}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {orderedGames.map((game) => {
+          const homeConf = game.home_conference || 'Independent';
+          const awayConf = game.away_conference || 'Independent';
+          return (
+            <div key={game.game_id} className="relative">
+              {homeConf && awayConf && (
+                <div className="absolute -top-3 right-2 z-10 flex gap-1">
+                  <span className="rounded bg-sp-900 px-1.5 py-0.5 text-[10px] font-semibold text-sp-text-dim border border-sp-border/50">
+                    {homeConf}
+                  </span>
+                  <span className="rounded bg-sp-900 px-1.5 py-0.5 text-[10px] font-semibold text-sp-text-dim border border-sp-border/50">
+                    {awayConf}
+                  </span>
+                </div>
+              )}
+              <GameCard 
+                game={game} 
+                prediction={predictions[game.game_id] ?? null} 
+                onClick={() => setSelectedGame(game)} 
+              />
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
       
       {selectedGame && <GameDetailModal game={selectedGame} api={api} onClose={() => setSelectedGame(null)} />}
     </div>

@@ -140,34 +140,6 @@ export function GameDetailModal({ game, api, onClose }: Props) {
             </div>}
           </section>
 
-          {/* Team Stats Section */}
-          {game.home_total_yards !== undefined && (
-            <section>
-              <div className="mb-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-sp-text-faint">Team Stats</h3>
-                <p className="text-[11px] text-sp-text-dim">Predicted team performance stats.</p>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="rounded-lg bg-sp-850/60 p-3">
-                  <div className="font-semibold">{game.home_team}</div>
-                  <div className="text-sm text-sp-text-dim">
-                    {game.home_total_yards !== undefined && `Total: ${game.home_total_yards}`}
-                    {game.home_passing_yards !== undefined && <span className="ml-2">Pass: {game.home_passing_yards}</span>}
-                    {game.home_rushing_yards !== undefined && <span className="ml-2">Rush: {game.home_rushing_yards}</span>}
-                  </div>
-                </div>
-                <div className="rounded-lg bg-sp-850/60 p-3">
-                  <div className="font-semibold">{game.away_team}</div>
-                  <div className="text-sm text-sp-text-dim">
-                    {game.away_total_yards !== undefined && `Total: ${game.away_total_yards}`}
-                    {game.away_passing_yards !== undefined && <span className="ml-2">Pass: {game.away_passing_yards}</span>}
-                    {game.away_rushing_yards !== undefined && <span className="ml-2">Rush: {game.away_rushing_yards}</span>}
-                  </div>
-                </div>
-              </div>
-            </section>
-          )}
-
           {/* Player Props Section */}
           <section>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
