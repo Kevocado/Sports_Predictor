@@ -19,7 +19,7 @@ export interface GameSummary {
   home_conference?: string | null;
   away_conference?: string | null;
 }
-export interface GamePrediction { home_win_prob: number; away_win_prob: number; home_cover_prob: number | null; away_cover_prob: number | null; over_prob: number | null; under_prob: number | null; }
+export interface GamePrediction { home_win_prob: number; away_win_prob: number; home_cover_prob: number; away_cover_prob: number; over_prob: number | null; under_prob: number | null; }
 export interface PlayerPropPrediction { player_id: string; player_name: string; recent_team: string; position: string; anytime_td_prob: number; passing_yards?: number; rushing_yards?: number; receiving_yards?: number; }
 export interface WeeklyTrendEntry { week: number; pct_moneyline_correct: number; n_games: number; }
 export interface GamesTrackRecord {

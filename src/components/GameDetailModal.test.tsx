@@ -16,7 +16,7 @@ describe("filterPlayerPropsForGame", () => {
 });
 describe("GameDetailModal", () => {
   it("shows only this game's player props after fetch", async () => {
-    const prediction: GamePrediction = { home_win_prob: 0.6, away_win_prob: 0.4, home_cover_prob: null, away_cover_prob: null, over_prob: null, under_prob: null };
+    const prediction: GamePrediction = { home_win_prob: 0.6, away_win_prob: 0.4, home_cover_prob: 0.5, away_cover_prob: 0.5, over_prob: null, under_prob: null };
     const api: SportApi = { games: vi.fn(), gamePrediction: vi.fn().mockResolvedValue(prediction), playerProps: vi.fn().mockResolvedValue([prop("home-player","Ravens"), prop("other","Bengals")]), trackRecord: vi.fn(), retrain: vi.fn(), gameVerdict: vi.fn(), predictionsForWeek: vi.fn(), currentWeek: vi.fn(), standings: vi.fn() };
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
     await waitFor(() => expect(screen.getByText("home-player")).toBeInTheDocument());

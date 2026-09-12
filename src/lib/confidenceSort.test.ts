@@ -6,7 +6,7 @@ function game(id: string): GameSummary {
   return { game_id: id, season: 2026, week: 1, gameday: "2026-09-06", home_team: "AAA", away_team: "BBB", home_score: null, away_score: null };
 }
 function prediction(homeWin: number, awayWin: number): GamePrediction {
-  return { home_win_prob: homeWin, away_win_prob: awayWin, home_cover_prob: null, away_cover_prob: null, over_prob: null, under_prob: null };
+  return { home_win_prob: homeWin, away_win_prob: awayWin, home_cover_prob: 0.5, away_cover_prob: 0.5, over_prob: null, under_prob: null };
 }
 
 describe("sortByConfidence", () => {

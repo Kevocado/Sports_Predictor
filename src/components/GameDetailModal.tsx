@@ -133,26 +133,10 @@ export function GameDetailModal({ game, api, onClose }: Props) {
             {prediction && <div className="flex flex-col gap-1.5">
               <MarketBar label={`${game.home_team} win`} prob={prediction.home_win_prob} />
               <MarketBar label={`${game.away_team} win`} prob={prediction.away_win_prob} />
-              {prediction.home_cover_prob != null ? (
-                <MarketBar label={`${game.home_team} covers spread`} prob={prediction.home_cover_prob} />
-              ) : (
-                <p className="text-[11px] text-sp-text-faint pl-2">Spread data unavailable</p>
-              )}
-              {prediction.away_cover_prob != null ? (
-                <MarketBar label={`${game.away_team} covers spread`} prob={prediction.away_cover_prob} />
-              ) : (
-                <p className="text-[11px] text-sp-text-faint pl-2">Spread data unavailable</p>
-              )}
-              {prediction.over_prob != null ? (
-                <MarketBar label="Over total points" prob={prediction.over_prob} />
-              ) : (
-                <p className="text-[11px] text-sp-text-faint pl-2">Total line unavailable</p>
-              )}
-              {prediction.under_prob != null ? (
-                <MarketBar label="Under total points" prob={prediction.under_prob} />
-              ) : (
-                <p className="text-[11px] text-sp-text-faint pl-2">Total line unavailable</p>
-              )}
+              <MarketBar label={`${game.home_team} covers spread`} prob={prediction.home_cover_prob} />
+              <MarketBar label={`${game.away_team} covers spread`} prob={prediction.away_cover_prob} />
+              {prediction.over_prob != null && <MarketBar label="Over total points" prob={prediction.over_prob} />}
+              {prediction.under_prob != null && <MarketBar label="Under total points" prob={prediction.under_prob} />}
             </div>}
 
             {/* Team Yardage Predictions */}
