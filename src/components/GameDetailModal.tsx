@@ -133,11 +133,54 @@ export function GameDetailModal({ game, api, onClose }: Props) {
             {prediction && <div className="flex flex-col gap-1.5">
               <MarketBar label={`${game.home_team} win`} prob={prediction.home_win_prob} />
               <MarketBar label={`${game.away_team} win`} prob={prediction.away_win_prob} />
-              {prediction.home_cover_prob != null && <MarketBar label={`${game.home_team} covers spread`} prob={prediction.home_cover_prob} />}
-              {prediction.away_cover_prob != null && <MarketBar label={`${game.away_team} covers spread`} prob={prediction.away_cover_prob} />}
-              {prediction.over_prob != null && <MarketBar label="Over total points" prob={prediction.over_prob} />}
-              {prediction.under_prob != null && <MarketBar label="Under total points" prob={prediction.under_prob} />}
+              {prediction.home_cover_prob != null ? (
+                <MarketBar label={`${game.home_team} covers spread`} prob={prediction.home_cover_prob} />
+              ) : (
+                <p className="text-[11px] text-sp-text-faint pl-2">Spread data unavailable</p>
+              )}
+              {prediction.away_cover_prob != null ? (
+                <MarketBar label={`${game.away_team} covers spread`} prob={prediction.away_cover_prob} />
+              ) : (
+                <p className="text-[11px] text-sp-text-faint pl-2">Spread data unavailable</p>
+              )}
+              {prediction.over_prob != null ? (
+                <MarketBar label="Over total points" prob={prediction.over_prob} />
+              ) : (
+                <p className="text-[11px] text-sp-text-faint pl-2">Total line unavailable</p>
+              )}
+              {prediction.under_prob != null ? (
+                <MarketBar label="Under total points" prob={prediction.under_prob} />
+              ) : (
+                <p className="text-[11px] text-sp-text-faint pl-2">Total line unavailable</p>
+              )}
             </div>}
+
+            {/* Team Yardage Predictions */}
+            {gameProps && gameProps.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <div className="text-xs text-sp-text-faint font-semibold uppercase tracking-wide">Team Yardage Predictions</div>
+                {(() => {
+                  const homeYards = gameProps
+                    .filter(p => p.recent_team === game.home_team)
+                    .reduce((sum, p) => sum + (keyYardage(p) || 0), 0);
+                  const awayYards = gameProps
+                    .filter(p => p.recent_team === game.away_team)
+                    .reduce((sum, p) => sum + (keyYardage(p) || 0), 0);
+                  return (
+                    <div className="grid grid-cols-2 gap-4 mt-2">
+                      <div className="rounded-lg bg-sp-850/60 p-3">
+                        <div className="font-semibold text-sm">{game.home_team}</div>
+                        <div className="text-sm text-sp-text-dim">Total: {Math.round(homeYards)}</div>
+                      </div>
+                      <div className="rounded-lg bg-sp-850/60 p-3">
+                        <div className="font-semibold text-sm">{game.away_team}</div>
+                        <div className="text-sm text-sp-text-dim">Total: {Math.round(awayYards)}</div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </section>
 
           {/* Player Props Section */}

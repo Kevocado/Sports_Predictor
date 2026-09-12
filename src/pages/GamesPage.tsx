@@ -171,11 +171,13 @@ export function GamesPage() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {orderedGames.map((game) => {
+          // Only show conference badges for CFB
+          const showConf = sport === "cfb";
           const homeConf = game.home_conference || 'Independent';
           const awayConf = game.away_conference || 'Independent';
           return (
             <div key={game.game_id} className="relative">
-              {homeConf && awayConf && (
+              {showConf && homeConf && awayConf && (
                 <div className="absolute -top-3 right-2 z-10 flex gap-1">
                   <span className="rounded bg-sp-900 px-1.5 py-0.5 text-[10px] font-semibold text-sp-text-dim border border-sp-border/50">
                     {homeConf}
