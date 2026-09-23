@@ -7,7 +7,11 @@
   --color-sp-950: #12161d; --color-sp-900: #151b25; --color-sp-850: #1b212b; --color-sp-800: #232b3a; --color-sp-700: #2a323f; --color-sp-600: #3a4453; --color-sp-500: #4d586a; --color-sp-border: #2a323f; --color-sp-gold: #f2a900; --color-sp-gold-soft: #ffc233; --color-sp-cyan: #05d1c8; --color-sp-text: #f4f6fa; --color-sp-text-dim: #a9b3c1; --color-sp-text-faint: #6d7684; --color-nfl-blue: #2e6bd8; --color-cfb-orange: #d8571f; --color-win: #22c55e; --color-loss: #ef4444;
 }
 html { color-scheme: dark; }
-body { margin: 0; background: radial-gradient(circle at 15% -10%, var(--color-sp-700) 0%, transparent 45%), radial-gradient(circle at 100% 0%, var(--color-sp-600) 0%, transparent 35%), var(--color-sp-950); min-height: 100vh; color: var(--color-sp-text); font-family: var(--font-sans); }
+/* Flat charcoal base with a single quiet top-edge vignette -- deliberately
+   not the two-stop radial-gradient glow (that was a direct carryover from
+   PL_Predictor's own palette formula, just recolored). Letting card content
+   and team colors carry the visual weight instead of the page chrome. */
+body { margin: 0; background: radial-gradient(ellipse 1400px 500px at 50% -10%, var(--color-sp-700) 0%, transparent 60%), var(--color-sp-950); min-height: 100vh; color: var(--color-sp-text); font-family: var(--font-sans); }
 ::selection { background: var(--color-sp-gold); color: #12161d; }
 .clip-corner { clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%); }
 .clip-corner-lg { clip-path: polygon(0 0, calc(100% - 28px) 0, 100% 28px, 100% 100%, 0 100%); }

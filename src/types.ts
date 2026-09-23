@@ -39,13 +39,22 @@ export interface GamesTrackRecord {
   pct_totals_correct: number | null;
   weekly_trend: WeeklyTrendEntry[];
 }
-export interface AnytimeTdTrackRecord { n_resolved: number; n_called?: number; hit_rate_when_called: number | null; brier_score: number | null; }
-export interface YardageTrackRecord { n_resolved: number; mean_absolute_error: number | null; }
+export interface ConfidenceBucket { label: string; n: number; hit_rate: number | null; }
+export interface AnytimeTdTrackRecord {
+  n_resolved: number; n_called?: number; hit_rate_when_called: number | null; brier_score: number | null;
+  confidence_buckets?: ConfidenceBucket[];
+}
+export interface YardageTrackRecord {
+  n_resolved: number; mean_absolute_error: number | null;
+  mean_signed_error?: number | null; mae_by_position?: Record<string, number>;
+}
 export interface PlayerPropsTrackRecord {
   anytime_td: AnytimeTdTrackRecord;
   passing_yards: YardageTrackRecord;
   rushing_yards: YardageTrackRecord;
   receiving_yards: YardageTrackRecord;
+  receptions?: YardageTrackRecord;
+  carries?: YardageTrackRecord;
 }
 export interface TrackRecord { games: GamesTrackRecord; player_props: PlayerPropsTrackRecord; }
 export interface RetrainResponse { trained_at: string; chosen_candidate: string; }

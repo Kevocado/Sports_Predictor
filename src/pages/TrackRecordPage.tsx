@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { TrackRecord } from "../types";
+import type { TrackRecord, YardageTrackRecord } from "../types";
 import { useSport } from "../context/SportContext";
 
 function pct(value: number | null | undefined): string {
@@ -13,6 +13,29 @@ function StatCard({ label, value, sublabel }: { label: string; value: string; su
       <span className="text-2xl font-bold text-sp-text">{value}</span>
       {sublabel && <span className="text-[11px] text-sp-text-dim">{sublabel}</span>}
     </div>
+  );
+}
+
+const YARDAGE_MARKET_LABEL: Record<string, string> = {
+  passing_yards: "Passing yards", rushing_yards: "Rushing yards", receiving_yards: "Receiving yards",
+  receptions: "Receptions", carries: "Carries",
+};
+
+function biasLabel(market: YardageTrackRecord): string | undefined {
+  if (market.mean_signed_error == null || market.n_resolved === 0) return undefined;
+  const rounded = Math.round(Math.abs(market.mean_signed_error) * 10) / 10;
+  if (rounded === 0) return "no systematic bias";
+  return market.mean_signed_error > 0 ? `overpredicts by ~${rounded}` : `underpredicts by ~${rounded}`;
+}
+
+function YardageCard({ market, marketKey }: { market: YardageTrackRecord; marketKey: string }) {
+  const unit = marketKey === "receptions" || marketKey === "carries" ? "" : " yd";
+  return (
+    <StatCard
+      label={YARDAGE_MARKET_LABEL[marketKey] ?? marketKey}
+      value={market.mean_absolute_error != null ? `±${Math.round(market.mean_absolute_error * 10) / 10}${unit}` : "—"}
+      sublabel={biasLabel(market) ?? "avg. error"}
+    />
   );
 }
 
@@ -73,28 +96,42 @@ export function TrackRecordPage() {
          player_props.rushing_yards.n_resolved === 0 && player_props.receiving_yards.n_resolved === 0 ? (
           <p className="text-sm text-sp-text-faint">No resolved player props yet — check back once this week's games are final.</p>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard
-              label="Anytime-TD hit rate"
-              value={pct(player_props.anytime_td.hit_rate_when_called)}
-              sublabel={player_props.anytime_td.n_called != null ? `${player_props.anytime_td.n_called} calls (≥50%)` : undefined}
-            />
-            <StatCard
-              label="Passing yards"
-              value={player_props.passing_yards.mean_absolute_error != null ? `±${Math.round(player_props.passing_yards.mean_absolute_error)} yd` : "—"}
-              sublabel="avg. error"
-            />
-            <StatCard
-              label="Rushing yards"
-              value={player_props.rushing_yards.mean_absolute_error != null ? `±${Math.round(player_props.rushing_yards.mean_absolute_error)} yd` : "—"}
-              sublabel="avg. error"
-            />
-            <StatCard
-              label="Receiving yards"
-              value={player_props.receiving_yards.mean_absolute_error != null ? `±${Math.round(player_props.receiving_yards.mean_absolute_error)} yd` : "—"}
-              sublabel="avg. error"
-            />
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <StatCard
+                label="Anytime-TD hit rate"
+                value={pct(player_props.anytime_td.hit_rate_when_called)}
+                sublabel={player_props.anytime_td.n_called != null ? `${player_props.anytime_td.n_called} calls (≥50%)` : undefined}
+              />
+              <YardageCard marketKey="passing_yards" market={player_props.passing_yards} />
+              <YardageCard marketKey="rushing_yards" market={player_props.rushing_yards} />
+              <YardageCard marketKey="receiving_yards" market={player_props.receiving_yards} />
+              {player_props.receptions && player_props.receptions.n_resolved > 0 && (
+                <YardageCard marketKey="receptions" market={player_props.receptions} />
+              )}
+              {player_props.carries && player_props.carries.n_resolved > 0 && (
+                <YardageCard marketKey="carries" market={player_props.carries} />
+              )}
+            </div>
+            {player_props.anytime_td.confidence_buckets && player_props.anytime_td.confidence_buckets.some((b) => b.n > 0) && (
+              <div className="mt-4 flex flex-col gap-1.5 rounded-xl border border-sp-border bg-sp-850/40 p-4">
+                <span className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-sp-text-faint">Anytime-TD hit rate by confidence</span>
+                {player_props.anytime_td.confidence_buckets.map((bucket) => (
+                  <div key={bucket.label} className="flex items-center gap-3 text-xs">
+                    <span className="w-16 shrink-0 text-sp-text-dim">{bucket.label}</span>
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-sp-850">
+                      {bucket.hit_rate != null && (
+                        <div className="h-full rounded-full bg-sp-gold" style={{ width: `${Math.max(4, bucket.hit_rate * 100)}%` }} />
+                      )}
+                    </div>
+                    <span className="w-24 shrink-0 text-right font-mono text-sp-text-dim">
+                      {bucket.n > 0 ? `${pct(bucket.hit_rate)} (${bucket.n})` : "no calls"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
