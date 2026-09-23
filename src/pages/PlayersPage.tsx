@@ -3,8 +3,7 @@ import type { PlayerPropPrediction } from "../types";
 import { useSport } from "../context/SportContext";
 import { POSITION_ORDER, groupByPosition, keyStatLabel, keyYardage, tdConfidenceTone } from "../lib/playerRank";
 
-const SEASON = 2026;
-const WEEK = 1;
+const FALLBACK_SEASON = 2026;
 
 const POSITION_LABEL: Record<string, string> = {
   QB: "Quarterbacks",
@@ -15,18 +14,32 @@ const POSITION_LABEL: Record<string, string> = {
 
 export function PlayersPage() {
   const { api, sport } = useSport();
+  const [season, setSeason] = useState(FALLBACK_SEASON);
+  const [week, setWeek] = useState(1);
   const [props, setProps] = useState<PlayerPropPrediction[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
+  // Follow the sport's actual current week rather than a hardcoded
+  // season/week, matching GamesPage's own current-week lookup.
   useEffect(() => {
-    setLoading(true); setError(null); setProps([]);
-    api.playerProps(SEASON, WEEK)
-      .then(setProps)
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    api.currentWeek()
+      .then((cw) => { if (!cancelled) { setSeason(cw.season); setWeek(cw.week); } })
+      .catch(() => {});
+    return () => { cancelled = true; };
   }, [api, sport]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setError(null); setProps([]);
+    api.playerProps(season, week)
+      .then((fetched) => { if (!cancelled) setProps(fetched); })
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [api, season, week]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -41,7 +54,7 @@ export function PlayersPage() {
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-sp-text">Week {WEEK} Player Predictions</h2>
+          <h2 className="text-lg font-bold text-sp-text">Week {week} Player Predictions</h2>
           <p className="text-xs text-sp-text-faint">Best bets by position, ranked by projected yardage.</p>
         </div>
         <input
