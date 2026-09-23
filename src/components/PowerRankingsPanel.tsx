@@ -22,6 +22,11 @@ export function PowerRankingsPanel({ api, season }: { api: SportApi; season: num
   if (!rankings) return <p className="text-sm text-sp-text-faint">Loading power rankings…</p>;
   if (rankings.length === 0) return <p className="text-sm text-sp-text-faint">No power rankings available for this season yet.</p>;
 
+  // NFL rows carry division; CFB has no division concept (conference
+  // realignment only) and its rows never populate it -- label the column by
+  // whichever field this sport's rows actually have.
+  const groupLabel = rankings.some((r) => r.division != null) ? "Division" : "Conference";
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
@@ -31,7 +36,7 @@ export function PowerRankingsPanel({ api, season }: { api: SportApi; season: num
             <th className="pb-2 pr-2 font-medium">Team</th>
             <th className="pb-2 pr-2 font-medium">Rating</th>
             <th className="pb-2 pr-2 text-right font-medium">Record</th>
-            <th className="pb-2 text-right font-medium">Division</th>
+            <th className="pb-2 text-right font-medium">{groupLabel}</th>
           </tr>
         </thead>
         <tbody>
