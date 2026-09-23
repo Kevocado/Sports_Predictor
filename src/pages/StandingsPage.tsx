@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { StandingsEntry } from "../types";
 import { useSport } from "../context/SportContext";
+import { TeamLogo } from "../components/TeamName";
 
 const FALLBACK_SEASON = 2026;
 
@@ -97,7 +98,12 @@ export function StandingsPage() {
                             </span>
                           )}
                         </td>
-                        <td className="py-1.5 pr-2 font-medium text-sp-text">{row.team}</td>
+                        <td className="py-1.5 pr-2">
+                          <span className="flex items-center gap-2 font-medium text-sp-text">
+                            <TeamLogo sport={sport} team={row.team} size="sm" />
+                            {row.team}
+                          </span>
+                        </td>
                         <td className="py-1.5 pr-2 text-right font-mono text-sp-text-dim">
                           {row.wins}-{row.losses}{row.ties ? `-${row.ties}` : ""}
                         </td>

@@ -3,6 +3,10 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { GameCard } from "./GameCard";
 import type { GamePrediction, GameSummary } from "../types";
 
+vi.mock("../context/SportContext", () => ({
+  useSport: () => ({ sport: "nfl", setSport: () => {}, api: {} }),
+}));
+
 const game: GameSummary = { game_id: "2026_01_KC_BAL", season: 2026, week: 1, gameday: "2026-09-07T20:00:00Z", home_team: "Ravens", away_team: "Chiefs", home_score: null, away_score: null, spread_line: -2.5, total_line: 46.5 };
 const prediction: GamePrediction = { home_win_prob: 0.62, away_win_prob: 0.38, home_cover_prob: 0.55, away_cover_prob: 0.45, over_prob: 0.5, under_prob: 0.5 };
 

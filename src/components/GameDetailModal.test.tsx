@@ -3,6 +3,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { filterPlayerPropsForGame, GameDetailModal } from "./GameDetailModal";
 import type { GamePrediction, GameSummary, GameVerdict, PlayerPropPrediction, SportApi } from "../types";
 
+vi.mock("../context/SportContext", () => ({
+  useSport: () => ({ sport: "nfl", setSport: () => {}, api: {} }),
+}));
+
 const game: GameSummary = { game_id: "2026_01_KC_BAL", season: 2026, week: 1, gameday: "2026-09-07T20:00:00Z", home_team: "Ravens", away_team: "Chiefs", home_score: null, away_score: null };
 function prop(id: string, team: string): PlayerPropPrediction { return { player_id: id, player_name: id, recent_team: team, position: "WR", anytime_td_prob: 0.3 }; }
 

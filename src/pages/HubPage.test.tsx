@@ -45,6 +45,14 @@ describe("HubPage", () => {
     expect(powerRankings).toHaveBeenCalledWith(2026);
   });
 
+  it("loads the Team Hub sub-tab with merged rankings and standings", async () => {
+    render(<HubPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Team Hub" }));
+    expect(await screen.findByText("Ravens")).toBeInTheDocument();
+    expect(powerRankings).toHaveBeenCalledWith(2026);
+    expect(standings).toHaveBeenCalledWith(2026);
+  });
+
   it("switches to the Standings and Track Record sub-tabs", async () => {
     render(<HubPage />);
     fireEvent.click(screen.getByRole("button", { name: "Standings" }));

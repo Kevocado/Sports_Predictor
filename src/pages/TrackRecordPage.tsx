@@ -16,6 +16,21 @@ function StatCard({ label, value, sublabel }: { label: string; value: string; su
   );
 }
 
+function AccuracyCard({ label, accuracy, sublabel }: { label: string; accuracy: number | null | undefined; sublabel?: string }) {
+  const width = accuracy == null ? 0 : Math.round(accuracy * 100);
+  return (
+    <div className="flex flex-col gap-1 rounded-xl border border-sp-border bg-sp-850/70 p-4" data-testid="accuracy-50-marker">
+      <span className="text-xs text-sp-text-faint">{label}</span>
+      <span className="text-2xl font-bold text-sp-text">{pct(accuracy)}</span>
+      <div className="relative mt-1 h-1.5 overflow-hidden rounded-full bg-sp-800" data-testid="accuracy-bar" aria-hidden="true">
+        <span className="block h-full rounded-full bg-sp-gold" style={{ width: `${width}%` }} />
+        <div className="absolute inset-y-0 left-1/2 w-px bg-sp-text-faint/60" />
+      </div>
+      {sublabel && <span className="text-[11px] text-sp-text-dim">{sublabel}</span>}
+    </div>
+  );
+}
+
 const YARDAGE_MARKET_LABEL: Record<string, string> = {
   passing_yards: "Passing yards", rushing_yards: "Rushing yards", receiving_yards: "Receiving yards",
   receptions: "Receptions", carries: "Carries",
@@ -67,9 +82,9 @@ export function TrackRecordPage() {
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <StatCard label="Moneyline accuracy" value={pct(games.pct_moneyline_correct)} sublabel={`${games.n_resolved} games`} />
-              <StatCard label="Spread (ATS) accuracy" value={pct(games.pct_ats_correct)} />
-              <StatCard label="Total (O/U) accuracy" value={pct(games.pct_totals_correct)} />
+              <AccuracyCard label="Moneyline accuracy" accuracy={games.pct_moneyline_correct} sublabel={`${games.n_resolved} games`} />
+              <AccuracyCard label="Spread (ATS) accuracy" accuracy={games.pct_ats_correct} />
+              <AccuracyCard label="Total (O/U) accuracy" accuracy={games.pct_totals_correct} />
               <StatCard label="Games resolved" value={String(games.n_resolved)} />
             </div>
             {games.weekly_trend.length > 0 && (
@@ -98,9 +113,9 @@ export function TrackRecordPage() {
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <StatCard
+              <AccuracyCard
                 label="Anytime-TD hit rate"
-                value={pct(player_props.anytime_td.hit_rate_when_called)}
+                accuracy={player_props.anytime_td.hit_rate_when_called}
                 sublabel={player_props.anytime_td.n_called != null ? `${player_props.anytime_td.n_called} calls (≥50%)` : undefined}
               />
               <YardageCard marketKey="passing_yards" market={player_props.passing_yards} />

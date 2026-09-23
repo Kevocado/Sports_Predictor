@@ -2,20 +2,21 @@ import { useEffect, useState } from "react";
 import { useSport } from "../context/SportContext";
 import { PlayersPage } from "./PlayersPage";
 import { StandingsPage } from "./StandingsPage";
+import { TeamHubPage } from "./TeamHubPage";
 import { TrackRecordPage } from "./TrackRecordPage";
 import { PowerRankingsPanel } from "../components/PowerRankingsPanel";
 
-type HubSubTab = "players" | "rankings" | "standings" | "track-record";
-const SUBTABS = [["players", "Player Hub"], ["rankings", "Power Rankings"], ["standings", "Standings"], ["track-record", "Track Record"]] as const;
+type HubSubTab = "players" | "teams" | "rankings" | "standings" | "track-record";
+const SUBTABS = [["players", "Player Hub"], ["teams", "Team Hub"], ["rankings", "Power Rankings"], ["standings", "Standings"], ["track-record", "Track Record"]] as const;
 
 /**
  * The Hub consolidates everything that is not the game list: player props,
- * power rankings, standings, and the track record. The panel components
- * fetch their own data; the hub only resolves the season for the rankings
- * panel (behind the client's TTL cache).
+ * team hub, power rankings, standings, and the track record. The panel
+ * components fetch their own data; the hub only resolves the season for the
+ * rankings/team panels (behind the client's TTL cache).
  */
 export function HubPage() {
-  const { api } = useSport();
+  const { api, sport } = useSport();
   const [subtab, setSubtab] = useState<HubSubTab>("players");
   const [season, setSeason] = useState<number | null>(null);
 
@@ -41,8 +42,11 @@ export function HubPage() {
         ))}
       </nav>
       {subtab === "players" ? <PlayersPage />
+        : subtab === "teams" ? (season != null
+          ? <TeamHubPage api={api} season={season} sport={sport} />
+          : <p className="text-sm text-sp-text-faint">Loading…</p>)
         : subtab === "rankings" ? (season != null
-          ? <PowerRankingsPanel api={api} season={season} />
+          ? <PowerRankingsPanel api={api} season={season} sport={sport} />
           : <p className="text-sm text-sp-text-faint">Loading…</p>)
         : subtab === "standings" ? <StandingsPage />
         : <TrackRecordPage />}

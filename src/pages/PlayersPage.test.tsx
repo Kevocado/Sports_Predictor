@@ -1,13 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { PlayersPage } from "./PlayersPage";
 import type { PlayerPropPrediction, SportApi } from "../types";
 
-function prop(id: string, position: string): PlayerPropPrediction {
-  return { player_id: id, player_name: id, recent_team: "KC", position, anytime_td_prob: 0.3 };
+function qb(id: string, name: string, yards: number, team = "KC"): PlayerPropPrediction {
+  return { player_id: id, player_name: name, recent_team: team, position: "QB", anytime_td_prob: 0.3, passing_yards: yards };
 }
 
-const playerProps = vi.fn().mockResolvedValue([prop("a", "QB")]);
+const props: PlayerPropPrediction[] = [
+  qb("qb1", "Patrick Mahomes", 320),
+  qb("qb2", "Josh Allen", 280, "BUF"),
+  qb("qb3", "Lamar Jackson", 250, "BAL"),
+  qb("qb4", "Joe Burrow", 200, "CIN"),
+  // Placeholder rows the CFB feed sometimes emits must never surface as "top players".
+  qb("qb0", "Team", 400, "KC"),
+  { player_id: "rb1", player_name: "Saquon Barkley", recent_team: "PHI", position: "RB", anytime_td_prob: 0.55, rushing_yards: 110 },
+];
+
+const playerProps = vi.fn().mockResolvedValue(props);
 const currentWeek = vi.fn().mockResolvedValue({ season: 2026, week: 7 });
 const api: SportApi = {
   games: vi.fn(), gamePrediction: vi.fn(), playerProps, trackRecord: vi.fn(),
@@ -25,6 +35,46 @@ describe("PlayersPage", () => {
     render(<PlayersPage />);
 
     await waitFor(() => expect(playerProps).toHaveBeenCalledWith(2026, 7));
-    expect(await screen.findByText("Week 7 Player Predictions")).toBeInTheDocument();
+    expect(await screen.findByText(/week 7 top players/i)).toBeInTheDocument();
+  });
+
+  it("spotlights the top 3 players per position, best first", async () => {
+    render(<PlayersPage />);
+    await waitFor(() => expect(screen.getByTestId("spotlight-QB")).toBeInTheDocument());
+
+    const card = screen.getByTestId("spotlight-QB");
+    const names = within(card).getAllByTestId(/spotlight-QB-player-/).map((el) => el.textContent);
+    expect(names[0]).toMatch(/Patrick Mahomes/);
+    expect(names[1]).toMatch(/Josh Allen/);
+    expect(names[2]).toMatch(/Lamar Jackson/);
+    expect(within(card).queryByText(/Joe Burrow/)).not.toBeInTheDocument();
+    // #1 shows the projected stat and the team logo
+    expect(within(card).getByText("320")).toBeInTheDocument();
+    expect(within(card).getByAltText("KC logo")).toBeInTheDocument();
+  });
+
+  it("never surfaces placeholder 'Team' rows as top players", async () => {
+    render(<PlayersPage />);
+    await waitFor(() => expect(screen.getByTestId("spotlight-QB")).toBeInTheDocument());
+
+    // The 400-yard "Team" placeholder would outrank everyone if not filtered.
+    expect(screen.queryByTestId("spotlight-QB-player-qb0")).not.toBeInTheDocument();
+    expect(screen.queryAllByText("Team")).toHaveLength(0);
+  });
+
+  it("keeps the full ranked list below the spotlight and filters it by search", async () => {
+    render(<PlayersPage />);
+    await waitFor(() => expect(screen.getByText("Joe Burrow")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByPlaceholderText(/search player/i), { target: { value: "burrow" } });
+    // Burrow appears in both the spotlight card and the full list.
+    expect(screen.getAllByText("Joe Burrow").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Patrick Mahomes")).not.toBeInTheDocument();
+  });
+
+  it("does not use betting language in the heading", async () => {
+    render(<PlayersPage />);
+    await waitFor(() => expect(screen.getByText(/week 7 top players/i)).toBeInTheDocument());
+    expect(screen.queryByText(/best bets/i)).not.toBeInTheDocument();
   });
 });

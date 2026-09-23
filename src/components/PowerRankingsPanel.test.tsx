@@ -23,7 +23,7 @@ const rows: TeamRanking[] = [
 describe("PowerRankingsPanel", () => {
   it("requests the season's rankings and renders rank, team, rating and record", async () => {
     const api = mockApi(rows);
-    render(<PowerRankingsPanel api={api} season={2026} />);
+    render(<PowerRankingsPanel api={api} season={2026} sport="nfl" />);
 
     expect(api.powerRankings).toHaveBeenCalledWith(2026);
     await waitFor(() => expect(screen.getByText("KC")).toBeInTheDocument());
@@ -37,7 +37,7 @@ describe("PowerRankingsPanel", () => {
     const api = mockApi([
       { team: "Georgia", rating: 1700.2, rank: 1, wins: 9, losses: 0, ties: 0, conference: "SEC" },
     ]);
-    render(<PowerRankingsPanel api={api} season={2026} />);
+    render(<PowerRankingsPanel api={api} season={2026} sport="nfl" />);
 
     await waitFor(() => expect(screen.getByText("Georgia")).toBeInTheDocument());
     expect(screen.getByText("SEC")).toBeInTheDocument();
@@ -47,15 +47,27 @@ describe("PowerRankingsPanel", () => {
     const api = mockApi([
       { team: "TIE", rating: 1500, rank: 3, wins: 4, losses: 4, ties: 1, conference: "X" },
     ]);
-    render(<PowerRankingsPanel api={api} season={2026} />);
+    render(<PowerRankingsPanel api={api} season={2026} sport="nfl" />);
 
     await waitFor(() => expect(screen.getByText("4-4-1")).toBeInTheDocument());
   });
 
   it("shows an error when the fetch fails", async () => {
     const api = mockApi([], () => Promise.reject(new Error("boom")));
-    render(<PowerRankingsPanel api={api} season={2026} />);
+    render(<PowerRankingsPanel api={api} season={2026} sport="nfl" />);
 
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("boom"));
+  });
+
+  it("renders each team's logo and a rating bar", async () => {
+    const api = mockApi(rows);
+    const { container } = render(<PowerRankingsPanel api={api} season={2026} sport="nfl" />);
+
+    await waitFor(() => expect(screen.getByAltText("KC logo")).toBeInTheDocument());
+    expect(screen.getByAltText("BUF logo")).toBeInTheDocument();
+    // rating bars scale with the max rating
+    const bars = container.querySelectorAll("[data-testid='rating-bar']");
+    expect(bars.length).toBe(2);
+    expect(bars[0]).toHaveStyle({ width: "100%" });
   });
 });
