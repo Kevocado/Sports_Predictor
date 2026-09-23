@@ -35,10 +35,10 @@ export function TrackRecordPage() {
   return (
     <div className="flex flex-col gap-10">
       <div>
-        <h2 className="mb-1 text-lg font-bold text-sp-text">Track Record</h2>
+        <h2 className="mb-1 font-display text-2xl font-semibold uppercase tracking-wide text-sp-text">Track Record</h2>
         <p className="mb-4 text-xs text-sp-text-faint">How good the model actually is, in aggregate — not a game-by-game log.</p>
 
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-sp-text-faint">Game predictions</h3>
+        <h3 className="mb-2 font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Game predictions</h3>
         {games.n_resolved === 0 ? (
           <p className="text-sm text-sp-text-faint">No resolved games yet — check back once this week's games are final.</p>
         ) : (
@@ -68,7 +68,7 @@ export function TrackRecordPage() {
       </div>
 
       <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-sp-text-faint">Player prop predictions</h3>
+        <h3 className="mb-2 font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Player prop predictions</h3>
         {player_props.anytime_td.n_resolved === 0 && player_props.passing_yards.n_resolved === 0 &&
          player_props.rushing_yards.n_resolved === 0 && player_props.receiving_yards.n_resolved === 0 ? (
           <p className="text-sm text-sp-text-faint">No resolved player props yet — check back once this week's games are final.</p>

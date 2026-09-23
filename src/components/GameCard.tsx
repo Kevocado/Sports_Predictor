@@ -26,16 +26,30 @@ export function GameCard({ game, prediction, onClick }: { game: GameSummary; pre
       <div className="flex items-center justify-between gap-2">
         <div className="flex flex-1 items-center justify-between gap-2">
           <TeamName team={game.away_team} />
-          {isFinal && <span className="font-mono text-sm font-semibold text-sp-text">{game.away_score}</span>}
+          {isFinal && <span className="font-display text-lg font-semibold text-sp-text">{game.away_score}</span>}
         </div>
         <span className="px-1 text-xs font-medium uppercase text-sp-text-faint">at</span>
         <div className="flex flex-1 items-center justify-between gap-2">
           <TeamName team={game.home_team} />
-          {isFinal && <span className="font-mono text-sm font-semibold text-sp-text">{game.home_score}</span>}
+          {isFinal && <span className="font-display text-lg font-semibold text-sp-text">{game.home_score}</span>}
         </div>
       </div>
       {prediction ? <ProbabilityBar home={prediction.home_win_prob} away={prediction.away_win_prob} homeLabel={game.home_team} awayLabel={game.away_team} /> : <div className="h-2.5 w-full animate-pulse rounded-full bg-sp-850" />}
       {game.spread_line != null && <p className="text-[11px] text-sp-text-faint">Spread {game.spread_line} · Total {game.total_line ?? "—"}</p>}
+      {/* NFL-only kickoff context the /games endpoint already returns; CFB
+          responses omit these fields so the line simply never renders there. */}
+      {(game.temp != null || game.wind != null || game.home_rest != null || game.away_rest != null) && (
+        <p className="text-[11px] text-sp-text-faint">
+          {[
+            game.temp != null ? `${Math.round(game.temp)}°F` : null,
+            game.wind != null ? `${Math.round(game.wind)} mph wind` : null,
+            game.roof ?? null,
+            game.home_rest != null || game.away_rest != null
+              ? `rest ${game.away_rest ?? "–"}d/${game.home_rest ?? "–"}d (a/h)` : null,
+            game.div_game ? "divisional" : null,
+          ].filter((part): part is string => part != null).join(" · ")}
+        </p>
+      )}
       {prediction && (game.home_total_yards || game.away_total_yards) && (
         <div className="flex flex-wrap gap-2 text-[11px] text-sp-text-dim">
           {game.home_total_yards && (

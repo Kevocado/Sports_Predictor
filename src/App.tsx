@@ -1,16 +1,31 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SportProvider, useSport } from "./context/SportContext";
 import { SportToggle } from "./components/SportToggle";
 import { GamesPage } from "./pages/GamesPage";
-import { PlayersPage } from "./pages/PlayersPage";
-import { TrackRecordPage } from "./pages/TrackRecordPage";
-import { StandingsPage } from "./pages/StandingsPage";
+import { HubPage } from "./pages/HubPage";
+import { preloadAll } from "./api/client";
 
-type Tab = "games" | "players" | "standings" | "track-record";
+type Tab = "games" | "hub";
+const TABS = [["games","Games"],["hub","Hub"]] as const;
 
 function AppShell() {
   const [tab, setTab] = useState<Tab>("games");
+  // Visited tabs stay mounted so their state survives tab switches; only
+  // the active tab is visible. Unvisited tabs are not mounted at all.
+  const [mountedTabs, setMountedTabs] = useState<Set<Tab>>(() => new Set<Tab>(["games"]));
   const { sport } = useSport();
+
+  const showTab = (key: Tab) => {
+    setMountedTabs((prev) => new Set(prev).add(key));
+    setTab(key);
+  };
+
+  // Start the cross-sport preload shortly after first paint. Fire-and-forget:
+  // every call is behind the client's TTL cache, and preloadAll is best-effort.
+  useEffect(() => {
+    const timer = setTimeout(() => { void preloadAll(); }, 750);
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <div className="mx-auto min-h-screen max-w-6xl px-6 py-8" data-sport={sport}>
@@ -25,14 +40,18 @@ function AppShell() {
         <div className="flex items-center gap-3">
           <SportToggle />
           <nav className="flex gap-1 rounded-lg border border-sp-border bg-sp-850/60 p-1">
-            {([["games","Games"],["players","Players"],["standings","Standings"],["track-record","Track Record"]] as const).map(([key, label]) => (
-              <button key={key} onClick={() => setTab(key)} className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition ${tab === key ? "bg-sp-gold text-sp-950" : "text-sp-text-dim hover:text-sp-text"}`}>{label}</button>
+            {TABS.map(([key, label]) => (
+              <button key={key} onClick={() => showTab(key)} className={`rounded-md px-3.5 py-1.5 font-display text-sm font-semibold uppercase tracking-wider transition ${tab === key ? "bg-sp-gold text-sp-950" : "text-sp-text-dim hover:text-sp-text"}`}>{label}</button>
             ))}
           </nav>
         </div>
       </header>
       <main>
-        {tab === "games" ? <GamesPage /> : tab === "players" ? <PlayersPage /> : tab === "standings" ? <StandingsPage /> : <TrackRecordPage />}
+        {TABS.map(([key]) => mountedTabs.has(key) && (
+          <div key={key} data-tab={key} style={{ display: tab === key ? undefined : "none" }}>
+            {key === "games" ? <GamesPage /> : <HubPage />}
+          </div>
+        ))}
       </main>
     </div>
   );

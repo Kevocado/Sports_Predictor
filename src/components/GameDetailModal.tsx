@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import type { GamePrediction, GameSummary, GameVerdict, PlayerPropPrediction, SportApi } from "../types";
+import type { GamePrediction, GameSummary, GameVerdict, HeadToHead as HeadToHeadData, PlayerPropPrediction, SportApi, TeamForm } from "../types";
 import { TeamName } from "./TeamName";
 import { MarketBar } from "./MarketBar";
+import { FormStrip } from "./FormStrip";
+import { HeadToHead } from "./HeadToHead";
 import { POSITION_ORDER, keyStatLabel, keyYardage, tdConfidenceTone } from "../lib/playerRank";
 
 type PositionFilter = "ALL" | (typeof POSITION_ORDER)[number];
@@ -33,11 +35,15 @@ export function GameDetailModal({ game, api, onClose }: Props) {
   const [propsLoading, setPropsLoading] = useState(true);
   const [verdict, setVerdict] = useState<GameVerdict | null>(null);
   const [positionFilter, setPositionFilter] = useState<PositionFilter>("ALL");
+  const [homeForm, setHomeForm] = useState<TeamForm | null>(null);
+  const [awayForm, setAwayForm] = useState<TeamForm | null>(null);
+  const [h2h, setH2h] = useState<HeadToHeadData | null>(null);
   const isFinal = game.home_score != null && game.away_score != null;
 
   useEffect(() => {
     let cancelled = false;
     setPrediction(null); setPredictionError(null); setAllProps(null); setPropsLoading(true); setVerdict(null);
+    setHomeForm(null); setAwayForm(null); setH2h(null);
 
     // Fetch main game prediction
     api.gamePrediction(game.season, game.week, game.game_id)
@@ -58,8 +64,20 @@ export function GameDetailModal({ game, api, onClose }: Props) {
         .catch(() => { if (!cancelled) setVerdict(null); });
     }
 
+    // Recent form for both teams + head-to-head history. Missing data is
+    // not an error -- the section simply renders whatever resolved.
+    api.teamForm(game.home_team, game.season)
+      .then((r) => { if (!cancelled) setHomeForm(r); })
+      .catch(() => { if (!cancelled) setHomeForm(null); });
+    api.teamForm(game.away_team, game.season)
+      .then((r) => { if (!cancelled) setAwayForm(r); })
+      .catch(() => { if (!cancelled) setAwayForm(null); });
+    api.headToHead(game.game_id, game.season, game.week)
+      .then((r) => { if (!cancelled) setH2h(r); })
+      .catch(() => { if (!cancelled) setH2h(null); });
+
     return () => { cancelled = true; };
-  }, [api, game.season, game.week, game.game_id, isFinal]);
+  }, [api, game.season, game.week, game.game_id, game.home_team, game.away_team, isFinal]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -105,14 +123,21 @@ export function GameDetailModal({ game, api, onClose }: Props) {
           {isFinal && (
             <section>
               <div className="mb-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-sp-text-faint">Result &amp; verdict</h3>
+                <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Result &amp; verdict</h3>
                 <p className="text-[11px] text-sp-text-dim">Whether the model's pregame call matched what actually happened.</p>
               </div>
               {verdict ? (
-                <div className="flex flex-wrap gap-2">
-                  <VerdictBadge label="Moneyline" hit={verdict.moneyline.hit} />
-                  {verdict.ats && <VerdictBadge label="Spread" hit={verdict.ats.hit} />}
-                  {verdict.totals && <VerdictBadge label="Total" hit={verdict.totals.hit} />}
+                <div className="flex flex-col gap-2">
+                  <p className="font-display text-lg font-semibold tracking-wide text-sp-text">
+                    {`Final: ${verdict.actual_home_score ?? game.home_score}–${verdict.actual_away_score ?? game.away_score}`}
+                    {verdict.home_spread_line != null && <span className="ml-2">{`Line ${verdict.home_spread_line}`}</span>}
+                    {verdict.total_line != null && <span className="ml-2">{`Total ${verdict.total_line}`}</span>}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <VerdictBadge label="Moneyline" hit={verdict.moneyline.hit} />
+                    {verdict.ats && <VerdictBadge label="Spread" hit={verdict.ats.hit} />}
+                    {verdict.totals && <VerdictBadge label="Total" hit={verdict.totals.hit} />}
+                  </div>
                 </div>
               ) : (
                 <p className="text-xs text-sp-text-faint rounded-lg bg-sp-850/40 p-3 border border-sp-border/40">
@@ -122,14 +147,50 @@ export function GameDetailModal({ game, api, onClose }: Props) {
             </section>
           )}
 
+          {/* Recent form & head-to-head — renders whatever resolved; missing
+              data is not an error. */}
+          {((homeForm && homeForm.recent_form.length > 0) || (awayForm && awayForm.recent_form.length > 0) || (h2h && h2h.meetings.length > 0)) && (
+            <section>
+              <div className="mb-2">
+                <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Recent form &amp; head-to-head</h3>
+                <p className="text-[11px] text-sp-text-dim">Last five results for each team, plus recent meetings between them.</p>
+              </div>
+              <div className="flex flex-col gap-3">
+                {homeForm && homeForm.recent_form.length > 0 && (
+                  <div className="flex items-center gap-3">
+                    <span className="w-28 shrink-0 truncate text-xs font-medium text-sp-text">{game.home_team}</span>
+                    <FormStrip entries={homeForm.recent_form} />
+                  </div>
+                )}
+                {awayForm && awayForm.recent_form.length > 0 && (
+                  <div className="flex items-center gap-3">
+                    <span className="w-28 shrink-0 truncate text-xs font-medium text-sp-text">{game.away_team}</span>
+                    <FormStrip entries={awayForm.recent_form} />
+                  </div>
+                )}
+                {h2h && h2h.meetings.length > 0 && <HeadToHead meetings={h2h.meetings} />}
+              </div>
+            </section>
+          )}
+
           {/* Match Markets Section */}
           <section>
             <div className="mb-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-sp-text-faint">Match Markets</h3>
+              <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Match Markets</h3>
               <p className="text-[11px] text-sp-text-dim">Win probability (straight-up), point spread cover chance, and total points line.</p>
             </div>
             {predictionError && <p className="text-xs text-loss">{predictionError}</p>}
             {!prediction && !predictionError && <p className="text-xs text-sp-text-faint">Loading match markets…</p>}
+            {/* The card only shows these on the list view; restate them here
+                so the modal is self-contained. */}
+            {game.spread_line != null && (
+              <p className="text-[11px] text-sp-text-faint">{`Spread ${game.spread_line} · Total ${game.total_line ?? "—"}`}</p>
+            )}
+            {prediction && prediction.predicted_margin != null && prediction.sigma != null && (
+              <p className="text-xs text-sp-text-dim">
+                {`Projected margin: ${prediction.predicted_margin >= 0 ? game.home_team : game.away_team} by ${Math.abs(prediction.predicted_margin).toFixed(1)} ± ${prediction.sigma.toFixed(1)} pts`}
+              </p>
+            )}
             {prediction && <div className="flex flex-col gap-1.5">
               <MarketBar label={`${game.home_team} win`} prob={prediction.home_win_prob} />
               <MarketBar label={`${game.away_team} win`} prob={prediction.away_win_prob} />
@@ -171,7 +232,7 @@ export function GameDetailModal({ game, api, onClose }: Props) {
           <section>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-sp-text-faint">Model Player Projections</h3>
+                <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Model Player Projections</h3>
                 <p className="text-[11px] text-sp-text-dim">Predicted touchdown probabilities and expected yardage milestones from your machine learning models.</p>
               </div>
               {availablePositions.length > 1 && (

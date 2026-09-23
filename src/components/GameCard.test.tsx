@@ -28,4 +28,14 @@ describe("GameCard", () => {
     render(<GameCard game={cfbGame} prediction={prediction} onClick={() => {}} />);
     expect(screen.queryByText(/Spread/)).not.toBeInTheDocument();
   });
+  it("shows an NFL-only weather/rest line when the fields are present", () => {
+    const nflGame: GameSummary = { ...game, temp: 72, wind: 8, home_rest: 7, away_rest: 6, roof: "outdoors", div_game: true };
+    render(<GameCard game={nflGame} prediction={prediction} onClick={() => {}} />);
+    expect(screen.getByText("72°F · 8 mph wind · outdoors · rest 6d/7d (a/h) · divisional")).toBeInTheDocument();
+  });
+  it("omits the weather/rest line when the fields are absent (CFB shape)", () => {
+    render(<GameCard game={game} prediction={prediction} onClick={() => {}} />);
+    expect(screen.queryByText(/°F/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/mph wind/)).not.toBeInTheDocument();
+  });
 });

@@ -14,7 +14,7 @@ export function SportToggle() {
         <button
           key={key}
           onClick={() => setSport(key)}
-          className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition ${
+          className={`rounded-md px-3.5 py-1.5 font-display text-sm font-semibold uppercase tracking-wider transition ${
             sport === key ? (key === "nfl" ? "bg-nfl-blue text-white" : "bg-cfb-orange text-white") : "text-sp-text-dim hover:text-sp-text"
           }`}
         >

@@ -54,7 +54,7 @@ export function PlayersPage() {
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-sp-text">Week {week} Player Predictions</h2>
+          <h2 className="font-display text-2xl font-semibold uppercase tracking-wide text-sp-text">Week {week} Player Predictions</h2>
           <p className="text-xs text-sp-text-faint">Best bets by position, ranked by projected yardage.</p>
         </div>
         <input
@@ -76,7 +76,7 @@ export function PlayersPage() {
           if (players.length === 0) return null;
           return (
             <section key={position}>
-              <h3 className="mb-3 flex items-baseline gap-2 text-sm font-bold uppercase tracking-wide text-sp-text-faint">
+              <h3 className="mb-3 flex items-baseline gap-2 font-display text-base font-semibold uppercase tracking-wider text-sp-text-faint">
                 {POSITION_LABEL[position]}
                 <span className="text-xs font-normal text-sp-text-dim">({players.length})</span>
               </h3>

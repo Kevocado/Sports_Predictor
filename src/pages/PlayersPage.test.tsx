@@ -12,7 +12,8 @@ const currentWeek = vi.fn().mockResolvedValue({ season: 2026, week: 7 });
 const api: SportApi = {
   games: vi.fn(), gamePrediction: vi.fn(), playerProps, trackRecord: vi.fn(),
   retrain: vi.fn(), gameVerdict: vi.fn(), predictionsForWeek: vi.fn(),
-  currentWeek, standings: vi.fn(),
+  currentWeek, standings: vi.fn(), powerRankings: vi.fn(),
+  predictionsBatch: vi.fn(), teamForm: vi.fn(), headToHead: vi.fn(),
 };
 
 vi.mock("../context/SportContext", () => ({

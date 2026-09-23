@@ -33,7 +33,7 @@ export function TeamName({ team, size = "md" }: { team: string; size?: "sm" | "m
       >
         {teamInitial(team)}
       </div>
-      <span className="text-xs font-semibold leading-tight text-sp-text">{team}</span>
+      <span className="font-display text-base font-semibold uppercase leading-tight tracking-wider text-sp-text">{team}</span>
     </div>
   );
 }

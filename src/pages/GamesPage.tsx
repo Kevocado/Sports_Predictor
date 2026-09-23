@@ -61,7 +61,17 @@ export function GamesPage() {
     api.games(season, week).then(async (fetchedGames) => {
       if (cancelled) return;
       setGames(fetchedGames);
-      const entries = await mapWithConcurrency(fetchedGames, PREDICTION_CONCURRENCY, async (g) => {
+      // One batch round trip covers the week; only game_ids missing from
+      // the batch fall back to per-game fetches.
+      const merged: Record<string, GamePrediction> = {};
+      const batch = await api.predictionsBatch(season, week).catch(() => null);
+      const missing: GameSummary[] = [];
+      for (const g of fetchedGames) {
+        const p = batch?.[g.game_id];
+        if (p) merged[g.game_id] = p;
+        else missing.push(g);
+      }
+      const entries = await mapWithConcurrency(missing, PREDICTION_CONCURRENCY, async (g) => {
         // One retry: a single backend under a burst of concurrent requests
         // can drop a request transiently even with the concurrency cap
         // above, and a permanent "Loading…" badge for the rest of the
@@ -73,7 +83,10 @@ export function GamesPage() {
         return null;
       });
       if (cancelled) return;
-      setPredictions(Object.fromEntries(entries.filter((e): e is [string, GamePrediction] => e !== null)));
+      for (const entry of entries) {
+        if (entry) merged[entry[0]] = entry[1];
+      }
+      setPredictions(merged);
     }).catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -114,7 +127,7 @@ export function GamesPage() {
           >
             &larr;
           </button>
-          <h2 className="text-lg font-bold text-sp-text">
+          <h2 className="font-display text-2xl font-semibold uppercase tracking-wide text-sp-text">
             {season} &middot; Week {week}
           </h2>
           <button

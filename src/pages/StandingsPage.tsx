@@ -60,7 +60,7 @@ export function StandingsPage() {
   return (
     <div>
       <div className="mb-4">
-        <h2 className="text-lg font-bold text-sp-text">{season} Season Standings</h2>
+        <h2 className="font-display text-2xl font-semibold uppercase tracking-wide text-sp-text">{season} Season Standings</h2>
         <p className="text-xs text-sp-text-faint">Projected final record from here on, based on the model's prediction for every remaining game.</p>
       </div>
       {loading && <p className="text-sm text-sp-text-faint">Loading… (a season-long projection takes a moment)</p>}
@@ -71,7 +71,7 @@ export function StandingsPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {groups.map(([label, groupRows]) => (
           <section key={label} className="rounded-xl border border-sp-border bg-sp-850/40 p-4">
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-sp-text-faint">{label}</h3>
+            <h3 className="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">{label}</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
