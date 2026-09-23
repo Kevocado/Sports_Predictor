@@ -38,13 +38,6 @@ describe("HubPage", () => {
     expect(await screen.findByText("No player predictions available for this week yet.")).toBeInTheDocument();
   });
 
-  it("loads power rankings when the Power Rankings sub-tab is selected", async () => {
-    render(<HubPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Power Rankings" }));
-    expect(await screen.findByText("Ravens")).toBeInTheDocument();
-    expect(powerRankings).toHaveBeenCalledWith(2026);
-  });
-
   it("loads the Team Hub sub-tab with merged rankings and standings", async () => {
     render(<HubPage />);
     fireEvent.click(screen.getByRole("button", { name: "Team Hub" }));

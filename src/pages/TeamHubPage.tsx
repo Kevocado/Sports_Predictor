@@ -14,6 +14,8 @@ export interface TeamHubRow {
   projectedWins?: number;
   projectedLosses?: number;
   rankDelta?: number;
+  /** Recent-form string from the rankings payload (e.g. "WWLWW"). */
+  form?: string | null;
 }
 
 function groupOf(r: TeamRanking): string | null {
@@ -44,6 +46,7 @@ export function mergeTeamRows(rankings: TeamRanking[], standings: StandingsEntry
         projectedWins: s?.projected_wins,
         projectedLosses: s?.projected_losses,
         rankDelta: s?.division_rank_delta ?? s?.conference_rank_delta,
+        form: r.recent_form ?? null,
       };
     });
 }
@@ -78,6 +81,23 @@ function Trend({ delta }: { delta?: number }) {
   return (
     <span className={up ? "text-win" : "text-loss"} title={up ? "Projected to climb" : "Projected to fall"}>
       {up ? "▲" : "▼"}{Math.abs(delta)}
+    </span>
+  );
+}
+
+function FormChips({ form, team }: { form?: string | null; team: string }) {
+  const results = (form ?? "").toUpperCase().split("").filter((c) => c === "W" || c === "L" || c === "T");
+  if (results.length === 0) return <span className="text-sp-text-faint">—</span>;
+  return (
+    <span data-testid={`team-form-chips-${team}`} className="inline-flex items-center justify-end gap-0.5">
+      {results.map((r, i) => (
+        <span
+          key={i}
+          className={`flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold ${r === "W" ? "bg-win/20 text-win" : r === "L" ? "bg-loss/20 text-loss" : "bg-sp-text-faint/20 text-sp-text-dim"}`}
+        >
+          {r}
+        </span>
+      ))}
     </span>
   );
 }
@@ -173,7 +193,7 @@ export function TeamHubPage({ api, season, sport }: { api: SportApi; season: num
         <div>
           <h2 className="font-display text-2xl font-semibold uppercase tracking-wide text-sp-text">Team Hub</h2>
           <p className="text-xs text-sp-text-faint">
-            Every ranked team: model rating, record, projection, and recent form. Click a row for last-5 games.
+            Power ratings, records, projections, and recent form for every ranked team. Click a row for last-5 games with scores.
           </p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -207,18 +227,25 @@ export function TeamHubPage({ api, season, sport }: { api: SportApi; season: num
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-sp-border/60 text-left text-xs text-sp-text-faint">
-                {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
-                  <th key={key} className={`px-3 py-2.5 font-medium ${key === "rank" ? "" : "text-right"}`}>
-                    <button
-                      onClick={() => toggleSort(key)}
-                      className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-sp-text ${sortKey === key ? "text-sp-gold" : ""}`}
-                    >
-                      {SORT_LABELS[key]}
-                      {sortKey === key && <span aria-hidden>{sortAsc ? "▲" : "▼"}</span>}
-                    </button>
-                  </th>
-                ))}
-                <th className="px-3 py-2.5 text-right font-medium uppercase tracking-wider">Trend</th>
+                {(["rank", "team", "rating", "wins", "pointDiff", "projectedWins", "form", "trend"] as const).map((key) => {
+                  if (key === "team") {
+                    return <th key={key} className="px-3 py-2.5 font-medium uppercase tracking-wider">Team</th>;
+                  }
+                  if (key === "form" || key === "trend") {
+                    return <th key={key} className="px-3 py-2.5 text-right font-medium uppercase tracking-wider">{key === "form" ? "Form" : "Trend"}</th>;
+                  }
+                  return (
+                    <th key={key} className={`px-3 py-2.5 font-medium ${key === "rank" ? "" : "text-right"}`}>
+                      <button
+                        onClick={() => toggleSort(key)}
+                        className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-sp-text ${sortKey === key ? "text-sp-gold" : ""}`}
+                      >
+                        {SORT_LABELS[key]}
+                        {sortKey === key && <span aria-hidden>{sortAsc ? "▲" : "▼"}</span>}
+                      </button>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody data-testid="team-hub-rows">
@@ -254,11 +281,12 @@ export function TeamHubPage({ api, season, sport }: { api: SportApi; season: num
                     <td className="px-3 py-2 text-right font-mono text-sp-text-dim">
                       {row.projectedWins == null ? "—" : `${row.projectedWins.toFixed(1)}-${(row.projectedLosses ?? 0).toFixed(1)}`}
                     </td>
+                    <td className="px-3 py-2 text-right"><FormChips form={row.form} team={row.team} /></td>
                     <td className="px-3 py-2 text-right"><Trend delta={row.rankDelta} /></td>
                   </tr>
                   {expanded === row.team && (
                     <tr key={`${row.team}-form`} className="border-b border-sp-border/30 bg-sp-900/40">
-                      <td colSpan={7} className="px-3 py-3" data-testid={`team-form-${row.team}`}>
+                      <td colSpan={8} className="px-3 py-3" data-testid={`team-form-${row.team}`}>
                         <p className="mb-2 font-display text-xs font-semibold uppercase tracking-wider text-sp-text-faint">
                           Last 5 — {row.team}
                         </p>

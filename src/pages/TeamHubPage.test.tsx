@@ -60,6 +60,14 @@ describe("mergeTeamRows", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].pointDiff).toBeUndefined();
   });
+
+  it("carries the recent-form string through mergeTeamRows", () => {
+    const rows = mergeTeamRows(
+      [{ team: "KC", rating: 1600, rank: 1, wins: 8, losses: 1, ties: 0, recent_form: "WWLWW" }],
+      [],
+    );
+    expect(rows[0].form).toBe("WWLWW");
+  });
 });
 
 describe("TeamHubPage", () => {
@@ -104,6 +112,25 @@ describe("TeamHubPage", () => {
     expect(within(expanded).getByText("W")).toBeInTheDocument();
     expect(within(expanded).getByText("L")).toBeInTheDocument();
     expect(within(expanded).getByText(/27-24/)).toBeInTheDocument();
+  });
+
+  it("renders recent-form chips inline without expanding the row", async () => {
+    const api = mockApi();
+    api.powerRankings = vi.fn().mockResolvedValue({
+      season: 2026,
+      rankings: [
+        { team: "KC", rating: 1612.4, rank: 1, wins: 8, losses: 1, ties: 0, recent_form: "WWLWT" },
+      ],
+    });
+    render(<TeamHubPage api={api} season={2026} sport="nfl" />);
+    await waitFor(() => expect(screen.getByText("KC")).toBeInTheDocument());
+
+    const chips = within(screen.getByTestId("team-form-chips-KC"));
+    expect(chips.getAllByText("W")).toHaveLength(3);
+    expect(chips.getAllByText("L")).toHaveLength(1);
+    expect(chips.getAllByText("T")).toHaveLength(1);
+    // no extra fetch: the string came with the rankings payload
+    expect(api.teamForm).not.toHaveBeenCalled();
   });
 
   it("sorts by rating when the rating header is clicked", async () => {

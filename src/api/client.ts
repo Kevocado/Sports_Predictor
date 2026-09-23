@@ -17,13 +17,18 @@ import type {
 export function createApiClient(baseUrl: string): SportApi {
   const cleanBase = baseUrl.replace(/\/+$/, "");
 
-  // 45s TTL promise cache for GETs. Closure-local per client, so the NFL
-  // and CFB clients never share entries even for identical relative paths.
-  // Caching the promise (not the payload) also dedupes in-flight requests.
-  const TTL_MS = 45_000;
+  // 10-minute TTL promise cache for GETs. Closure-local per client, so the
+  // NFL and CFB clients never share entries even for identical relative
+  // paths. Caching the promise (not the payload) also dedupes in-flight
+  // requests. 10 minutes (not 45s) because these endpoints change slowly --
+  // a short TTL made every tab revisit / sport switch re-fire the whole
+  // request chain against the backends.
+  const TTL_MS = 10 * 60_000;
+  // current-week only flips when the calendar moves to a new week.
+  const CURRENT_WEEK_TTL_MS = 60 * 60_000;
   const cache = new Map<string, { promise: Promise<unknown>; expiresAt: number }>();
 
-  function cached<T>(path: string, fetcher: () => Promise<T>): Promise<T> {
+  function cached<T>(path: string, fetcher: () => Promise<T>, ttlMs: number = TTL_MS): Promise<T> {
     const now = Date.now();
     const hit = cache.get(path);
     if (hit && hit.expiresAt > now) return hit.promise as Promise<T>;
@@ -32,11 +37,11 @@ export function createApiClient(baseUrl: string): SportApi {
     promise.catch(() => {
       if (cache.get(path)?.promise === promise) cache.delete(path);
     });
-    cache.set(path, { promise, expiresAt: now + TTL_MS });
+    cache.set(path, { promise, expiresAt: now + ttlMs });
     return promise;
   }
 
-  async function get<T>(path: string): Promise<T> {
+  async function get<T>(path: string, ttlMs: number = TTL_MS): Promise<T> {
     return cached(path, async () => {
       const res = await fetch(`${cleanBase}${path}`);
       if (!res.ok) {
@@ -44,7 +49,7 @@ export function createApiClient(baseUrl: string): SportApi {
         throw new Error(body.detail ?? `${res.status} ${res.statusText}`);
       }
       return res.json();
-    });
+    }, ttlMs);
   }
 
   async function getOrNull<T>(path: string): Promise<T | null> {
@@ -77,7 +82,7 @@ export function createApiClient(baseUrl: string): SportApi {
     retrain: () => post<RetrainResponse>("/retrain"),
     gameVerdict: (gameId) => getOrNull<GameVerdict>(`/games/${gameId}/verdict`),
     predictionsForWeek: (season, week) => get<WeekPrediction[]>(`/predictions/${season}/${week}`),
-    currentWeek: () => get<CurrentWeek>("/current-week"),
+    currentWeek: () => get<CurrentWeek>("/current-week", CURRENT_WEEK_TTL_MS),
     standings: (season) => get<StandingsEntry[]>(`/standings?season=${season}`),
     powerRankings: (season) => get<PowerRankingsResponse>(`/power-rankings?season=${season}`),
     predictionsBatch: (season, week) =>
@@ -106,11 +111,12 @@ export const cfbApi = createApiClient(CFB_BASE_URL);
 
 /**
  * Best-effort warm of both sport clients: current week first, then the main
- * endpoints in parallel (each call is behind the client's 45s TTL cache).
- * Fire-and-forget from the app shell shortly after first paint.
+ * endpoints in parallel (each call is behind the client's TTL cache).
+ * Fire-and-forget from the app shell shortly after first paint, and again
+ * whenever the tab becomes visible (device wakeup / tab switch back).
  */
 export async function preloadAll(): Promise<void> {
-  for (const api of [nflApi, cfbApi]) {
+  async function warmSport(api: SportApi): Promise<void> {
     try {
       const cw = await api.currentWeek();
       await Promise.allSettled([
@@ -125,4 +131,7 @@ export async function preloadAll(): Promise<void> {
       // Preload is best-effort; pages fetch for themselves on demand.
     }
   }
+  // Warm both sports concurrently: the old sequential loop doubled the time
+  // before the second sport's tabs stopped hanging on cold navigation.
+  await Promise.allSettled([warmSport(nflApi), warmSport(cfbApi)]);
 }

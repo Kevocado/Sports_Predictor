@@ -4,16 +4,15 @@ import { PlayersPage } from "./PlayersPage";
 import { StandingsPage } from "./StandingsPage";
 import { TeamHubPage } from "./TeamHubPage";
 import { TrackRecordPage } from "./TrackRecordPage";
-import { PowerRankingsPanel } from "../components/PowerRankingsPanel";
 
-type HubSubTab = "players" | "teams" | "rankings" | "standings" | "track-record";
-const SUBTABS = [["players", "Player Hub"], ["teams", "Team Hub"], ["rankings", "Power Rankings"], ["standings", "Standings"], ["track-record", "Track Record"]] as const;
+type HubSubTab = "players" | "teams" | "standings" | "track-record";
+const SUBTABS = [["players", "Player Hub"], ["teams", "Team Hub"], ["standings", "Standings"], ["track-record", "Track Record"]] as const;
 
 /**
  * The Hub consolidates everything that is not the game list: player props,
- * team hub, power rankings, standings, and the track record. The panel
- * components fetch their own data; the hub only resolves the season for the
- * rankings/team panels (behind the client's TTL cache).
+ * the team hub (which absorbed the old power-rankings panel), standings, and
+ * the track record. The panel components fetch their own data; the hub only
+ * resolves the season for the team panel (behind the client's TTL cache).
  */
 export function HubPage() {
   const { api, sport } = useSport();
@@ -44,9 +43,6 @@ export function HubPage() {
       {subtab === "players" ? <PlayersPage />
         : subtab === "teams" ? (season != null
           ? <TeamHubPage api={api} season={season} sport={sport} />
-          : <p className="text-sm text-sp-text-faint">Loading…</p>)
-        : subtab === "rankings" ? (season != null
-          ? <PowerRankingsPanel api={api} season={season} sport={sport} />
           : <p className="text-sm text-sp-text-faint">Loading…</p>)
         : subtab === "standings" ? <StandingsPage />
         : <TrackRecordPage />}

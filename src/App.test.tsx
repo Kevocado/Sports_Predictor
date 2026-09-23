@@ -39,7 +39,7 @@ describe("App tab shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Hub" }));
     // The Hub opens on its Player Hub sub-tab.
     expect(await screen.findByText("No player predictions available for this week yet.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Power Rankings" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Team Hub" })).toBeInTheDocument();
     // Games tab content is still in the document, just hidden.
     expect(screen.getByText("No games scheduled for this week.")).toBeInTheDocument();
     expect(document.querySelector('[data-tab="games"]')).toHaveStyle("display: none");
@@ -65,6 +65,37 @@ describe("App tab shell", () => {
       expect(urls).toContain("http://localhost:8001/api/current-week");
       expect(urls).toContain("http://localhost:8003/api/current-week");
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-warms both sports in the background when the tab becomes visible again", async () => {
+    vi.useFakeTimers();
+    const visibilityDescriptor = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    try {
+      fetchMock.mockReset();
+      fetchMock.mockImplementation((url: string) =>
+        String(url).endsWith("/current-week")
+          ? Promise.resolve(okJson({ season: 2026, week: 7 }))
+          : Promise.resolve(okJson([])),
+      );
+      render(<App />);
+      await vi.advanceTimersByTimeAsync(1000);
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+      // Let the warm cache expire, as it would after the device slept.
+      // 61 minutes also expires current-week (1-hour TTL).
+      await vi.advanceTimersByTimeAsync(61 * 60_000);
+      fetchMock.mockClear();
+      Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+      for (let i = 0; i < 50; i++) await Promise.resolve();
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+      expect(urls).toContain("http://localhost:8001/api/current-week");
+      expect(urls).toContain("http://localhost:8003/api/current-week");
+      expect(urls).toContain("http://localhost:8001/api/predictions/2026/7/batch");
+      expect(urls).toContain("http://localhost:8003/api/predictions/2026/7/batch");
+    } finally {
+      if (visibilityDescriptor) Object.defineProperty(document, "visibilityState", visibilityDescriptor);
       vi.useRealTimers();
     }
   });

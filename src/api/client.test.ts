@@ -47,7 +47,7 @@ describe("createApiClient TTL cache", () => {
     fetchMock.mockResolvedValue(okJson([]));
   });
 
-  it("dedupes concurrent and repeated GETs within the 45s TTL", async () => {
+  it("dedupes concurrent and repeated GETs within the 10-minute TTL", async () => {
     vi.useFakeTimers();
     try {
       const api = createApiClient("https://example.test/api/");
@@ -55,11 +55,29 @@ describe("createApiClient TTL cache", () => {
       const p2 = api.games(2026, 1);
       await p1; await p2;
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      vi.advanceTimersByTime(44_000);
+      vi.advanceTimersByTime(9 * 60_000 + 59_000);
       await api.games(2026, 1);
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      vi.advanceTimersByTime(2_000); // past the TTL
+      vi.advanceTimersByTime(2_000); // past the 10-minute TTL
       await api.games(2026, 1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("caches currentWeek for an hour since it only changes weekly", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockResolvedValue(okJson({ season: 2026, week: 7 }));
+      const api = createApiClient("https://example.test/api/");
+      await api.currentWeek();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(59 * 60_000);
+      await api.currentWeek();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(61_000); // past the hour
+      await api.currentWeek();
       expect(fetchMock).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
@@ -101,5 +119,38 @@ describe("preloadAll", () => {
     expect(urls).toContain("http://localhost:8003/api/predictions/2026/7/batch");
     expect(urls).toContain("http://localhost:8001/api/power-rankings?season=2026");
     expect(urls).toContain("http://localhost:8003/api/power-rankings?season=2026");
+  });
+
+  it("warms both sports concurrently instead of one after the other", async () => {
+    vi.useFakeTimers();
+    try {
+      // Expire anything the earlier preload test cached in the shared clients.
+      // The clock must stay fake while preloadAll runs: expiry is evaluated
+      // with Date.now(), so flipping back to real timers would un-expire it.
+      vi.advanceTimersByTime(61 * 60_000);
+
+      fetchMock.mockReset();
+      let resolveNflWeek!: () => void;
+      const nflWeekGate = new Promise<void>((resolve) => { resolveNflWeek = resolve; });
+      fetchMock.mockImplementation((url: string) => {
+        const u = String(url);
+        if (u === "http://localhost:8001/api/current-week") {
+          return nflWeekGate.then(() => okJson({ season: 2026, week: 7 }));
+        }
+        return Promise.resolve(okJson(u.endsWith("/current-week") ? { season: 2026, week: 7 } : []));
+      });
+      const warming = preloadAll();
+      for (let i = 0; i < 50; i++) await Promise.resolve();
+      // The NFL week request is still hanging, yet CFB warming already started.
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+      expect(urls).toContain("http://localhost:8003/api/current-week");
+      resolveNflWeek();
+      await warming;
+      const urlsAfter = fetchMock.mock.calls.map((c) => String(c[0]));
+      expect(urlsAfter).toContain("http://localhost:8001/api/predictions/2026/7/batch");
+      expect(urlsAfter).toContain("http://localhost:8003/api/predictions/2026/7/batch");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

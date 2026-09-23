@@ -27,6 +27,18 @@ function AppShell() {
     return () => clearTimeout(timer);
   }, []);
 
+  // Re-warm both sports in the background whenever the tab becomes visible
+  // again (device wakeup, tab switch back). Best-effort and non-blocking:
+  // the 10-minute TTL cache means a recent warm is a no-op, and anything
+  // already on screen keeps showing its data while the refresh happens.
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void preloadAll();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
+
   return (
     <div className="mx-auto min-h-screen max-w-6xl px-6 py-8" data-sport={sport}>
       <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
