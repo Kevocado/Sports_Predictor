@@ -24,10 +24,12 @@ describe("TeamLogo", () => {
     expect(screen.getByRole("img", { name: "Nowhere State" })).toHaveTextContent("NS");
   });
 
-  it("drops the image when the logo fails to load", () => {
-    const { container } = render(<TeamLogo sport="nfl" team="KC" />);
+  it("keeps the badge slot (same size) when the logo fails to load, so the card stays aligned", () => {
+    const { container } = render(<TeamLogo sport="nfl" team="KC" size="md" />);
     fireEvent.error(screen.getByAltText("KC logo"));
     expect(container.querySelector("img")).toBeNull();
+    expect(container.firstElementChild).toHaveClass("h-10");
+    expect(container.firstElementChild).toHaveAttribute("aria-hidden", "true");
   });
 
   it("sizes the logo with the requested size variant", () => {

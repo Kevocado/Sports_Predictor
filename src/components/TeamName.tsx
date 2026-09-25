@@ -6,8 +6,9 @@ import type { Sport } from "../types";
 
 /**
  * A short code for a team that has no logo: abbreviations stay as they are
- * ("KC"), multi-word names become initials ("Ohio State" → "OS"), single
- * short words are upper-cased ("Army" → "ARMY").
+ * ("KC"), multi-word names become initials ("Ohio State" → "OS"), and a
+ * single short word is upper-cased ("Army" → "ARMY"; the name beside it
+ * already says it, so TeamLogo shows no chip for it).
  */
 export function teamCode(team: string): string {
   const words = team.trim().split(/[\s-]+/).filter(Boolean);
@@ -30,9 +31,10 @@ export function TeamLogo({ sport, team, size = "md" }: { sport: Sport; team: str
   const url = teamLogoUrl(sport, team);
   if (!url || failed) {
     // A team already written as its code ("PIT") needs no chip: the name
-    // beside it says the same thing. Longer names get a neutral initials
-    // chip; no real team colour is known here, so none is invented.
-    if (teamCode(team) === team.toUpperCase()) return null;
+    // beside it says the same thing, so keep only an empty slot of the
+    // logo's size to hold the card's alignment. Longer names get a neutral
+    // initials chip; no real team colour is known here, so none is invented.
+    if (teamCode(team) === team.toUpperCase()) return <span aria-hidden="true" className={`block shrink-0 ${SIZES[size]}`} />;
     return <TeamChip code={teamCode(team)} name={team} />;
   }
   return (

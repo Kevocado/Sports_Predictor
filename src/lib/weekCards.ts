@@ -1,4 +1,4 @@
-import { kickoff, spread, type Segment, type Side, type Status } from "../predictor-ui";
+import { kickoff, parseKickoff, spread, type Segment, type Side, type Status } from "../predictor-ui";
 import type { GamePrediction, GameSummary, WeekPrediction } from "../types";
 
 export type CardModel = {
@@ -13,28 +13,53 @@ export type CardModel = {
 };
 
 const isFinal = (g: GameSummary) => g.home_score != null && g.away_score != null;
+const kickoffMs = (g: GameSummary) => parseKickoff(g.gameday).getTime();
 
 function localTime(iso: string, timeZone?: string): string {
-  return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone });
+  return parseKickoff(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone });
 }
 
-// Spread, total, weather and rest in plain words. nflverse spread_line is
-// positive when the home team is favoured, so the home line is its negative.
+// Spread, total, weather, rest and (CFB) conferences in plain words. nflverse
+// spread_line is positive when the home team is favoured, so the home line is
+// its negative.
 function metaLine(g: GameSummary): string | undefined {
   const parts: string[] = [];
   if (g.spread_line != null) parts.push(spread(g.home_team, -g.spread_line));
   if (g.total_line != null) parts.push(`Total ${g.total_line}`);
+  if (g.roof && g.roof !== "outdoors") parts.push(g.roof === "dome" ? "Dome" : "Roof closed");
   if (g.temp != null) parts.push(`${Math.round(g.temp)}°F`);
   if (g.wind != null) parts.push(`${Math.round(g.wind)} mph wind`);
   if (g.away_rest != null && g.home_rest != null) parts.push(`Rest ${g.away_rest} v ${g.home_rest} days`);
   if (g.div_game) parts.push("Divisional");
+  if (g.home_conference || g.away_conference) {
+    parts.push(`${g.away_conference || "Independent"} at ${g.home_conference || "Independent"}`);
+  }
   return parts.length ? parts.join(" · ") : undefined;
 }
 
+function pickFrom(game: GameSummary, homeProb: number): { pick: CardModel["pick"]; bar: Segment[] } {
+  const pick =
+    homeProb === 0.5
+      ? { label: "Toss-up", prob: 0.5 }
+      : homeProb > 0.5
+        ? { label: game.home_team, prob: homeProb }
+        : { label: game.away_team, prob: 1 - homeProb };
+  return {
+    pick,
+    bar: [
+      { label: game.away_team, prob: 1 - homeProb },
+      { label: game.home_team, prob: homeProb },
+    ],
+  };
+}
+
 /**
- * One NFL/CFB game as a family MatchCard: away left, home right (US order),
- * the favourite as the pick, and a final judged only on its pre-kickoff
- * verdict. A final with no snapshot is "No pick yet", never a miss.
+ * One NFL/CFB game as a family MatchCard: away left, home right (US order).
+ *
+ * The honesty rule: a game that has started is judged only on the pick
+ * snapshotted before kickoff (the week row), never on today's model; a pick
+ * rebuilt after kickoff is labelled and never counted; with no snapshot there
+ * is no pick. Games still to come show the current model's pick.
  */
 export function toCardModel(
   game: GameSummary,
@@ -42,8 +67,10 @@ export function toCardModel(
   week: WeekPrediction | undefined,
   isNext: boolean,
   timeZone?: string,
+  now: number = Date.now(),
 ): CardModel {
   const final = isFinal(game);
+  const started = final || kickoffMs(game) <= now;
   const day = kickoff(game.gameday, timeZone).split(" · ")[0];
   const model: CardModel = {
     left: { code: game.away_team, name: game.away_team },
@@ -53,33 +80,44 @@ export function toCardModel(
     meta: metaLine(game),
   };
 
-  const homeProb = prediction?.home_win_prob ?? (week?.status === "resolved" ? week.home_win_prob : undefined);
-  const untrackedFinal = final && week?.status === "untracked";
-  if (homeProb != null && !untrackedFinal) {
-    const homeFav = homeProb >= 0.5;
-    model.pick = { label: homeFav ? game.home_team : game.away_team, prob: homeFav ? homeProb : 1 - homeProb };
-    model.bar = [
-      { label: game.away_team, prob: 1 - homeProb },
-      { label: game.home_team, prob: homeProb },
-    ];
-  }
+  const snapshotProb = week && week.status !== "untracked" ? week.home_win_prob : undefined;
+  const homeProb = started ? snapshotProb : (prediction?.home_win_prob ?? snapshotProb);
+  if (homeProb != null) Object.assign(model, pickFrom(game, homeProb));
 
   if (final) {
-    if (week?.status === "resolved" && week.verdict) model.status = week.verdict.moneyline.hit ? "called" : "missed";
-    else if (!model.pick || untrackedFinal) model.status = "nopick";
+    if (!model.pick) model.status = "nopick";
+    else if (week?.rebuilt) model.status = "rebuilt";
+    else if (week?.status === "resolved" && week.verdict) model.status = week.verdict.moneyline.hit ? "called" : "missed";
+  } else if (started) {
+    model.status = "live";
   } else if (isNext) {
     model.status = "next";
   }
   return model;
 }
 
-/** The time zone the page's kickoff times are shown in ("CDT"), said once per page. */
-export function kickoffZone(iso: string, timeZone?: string): string {
-  return kickoff(iso, timeZone).split(" ").pop() ?? "";
+/** "Next up": every game at the earliest kickoff still to come, in the current week only. */
+export function nextUpIds(games: GameSummary[], isCurrentWeek: boolean, now: number = Date.now()): Set<string> {
+  if (!isCurrentWeek) return new Set();
+  const future = games.filter((g) => !isFinal(g) && kickoffMs(g) > now);
+  if (future.length === 0) return new Set();
+  const first = Math.min(...future.map(kickoffMs));
+  return new Set(future.filter((g) => kickoffMs(g) === first).map((g) => g.game_id));
 }
 
-/** The week's record: resolved pre-kickoff picks only (snapshots are refused after kickoff). */
+/** The zone(s) a week's kickoff times are shown in: "CDT", or "CDT/CST" across a clock change. */
+export function kickoffZones(gamedays: string[], timeZone?: string): string {
+  const zones = [...new Set(gamedays.map((iso) => kickoff(iso, timeZone).split(" ").pop() ?? ""))].filter(Boolean);
+  return zones.join("/");
+}
+
+/** The week's record: resolved picks made before kickoff; rebuilt ones counted apart. */
 export function weekTally(week: WeekPrediction[]): { hits: number; settled: number; rebuilt: number } {
   const resolved = week.filter((w) => w.status === "resolved" && w.verdict);
-  return { hits: resolved.filter((w) => w.verdict!.moneyline.hit).length, settled: resolved.length, rebuilt: 0 };
+  const counted = resolved.filter((w) => !w.rebuilt);
+  return {
+    hits: counted.filter((w) => w.verdict!.moneyline.hit).length,
+    settled: counted.length,
+    rebuilt: resolved.length - counted.length,
+  };
 }

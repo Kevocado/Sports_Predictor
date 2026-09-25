@@ -1,4 +1,4 @@
-// Synced from predictor-ui@272a7bfaea10. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
+// Synced from predictor-ui@333af8a188d1. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
 // The one owner of numbers on screen. Models and APIs keep full precision;
 // rounding, signs, team names and time zones happen here, once, so every
 // Predictor site reads the same.
@@ -70,6 +70,16 @@ export function spread(team: string, line: number): string {
   return `${team} ${line < 0 ? MINUS : "+"}${n}`;
 }
 
+/**
+ * A kickoff timestamp as a Date. An ISO date-time with no zone is UTC: the
+ * NFL API sends "2026-10-04T17:00:00" meaning 17:00 UTC, which browsers
+ * would otherwise read as local time (hours off, sometimes the wrong day).
+ */
+export function parseKickoff(iso: string): Date {
+  const zoneless = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(iso);
+  return new Date(zoneless ? `${iso}Z` : iso);
+}
+
 function formatParts(d: Date, timeZone: string | undefined, withTime: boolean): Record<string, string> {
   const options: Intl.DateTimeFormatOptions = { timeZone, weekday: "short", day: "numeric", month: "short" };
   if (withTime) Object.assign(options, { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
@@ -80,7 +90,7 @@ function formatParts(d: Date, timeZone: string | undefined, withTime: boolean): 
  *  date ("2026-10-04") has no time, so it reads as the date alone. */
 export function kickoff(iso: string, timeZone?: string): string {
   const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
-  const d = new Date(dateOnly ? `${iso}T12:00:00Z` : iso);
+  const d = dateOnly ? new Date(`${iso}T12:00:00Z`) : parseKickoff(iso);
   if (Number.isNaN(d.getTime())) return DASH;
   let parts: Record<string, string>;
   try {

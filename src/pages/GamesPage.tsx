@@ -4,7 +4,7 @@ import { useSport } from "../context/SportContext";
 import { sortByConfidence } from "../lib/confidenceSort";
 import { TeamLogo } from "../components/TeamName";
 import { ErrorState, MatchCard, RoundNavigator, Skeleton } from "../predictor-ui";
-import { kickoffZone, toCardModel, weekTally } from "../lib/weekCards";
+import { kickoffZones, nextUpIds, toCardModel, weekTally } from "../lib/weekCards";
 import { GameDetailModal } from "../components/GameDetailModal";
 
 const FALLBACK_SEASON = 2026;
@@ -36,6 +36,7 @@ export function GamesPage() {
   const [games, setGames] = useState<GameSummary[]>([]);
   const [predictions, setPredictions] = useState<Record<string, GamePrediction>>({});
   const [weekPredictions, setWeekPredictions] = useState<WeekPrediction[]>([]);
+  const [weekLoaded, setWeekLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [predictionsSettled, setPredictionsSettled] = useState(false);
@@ -65,12 +66,13 @@ export function GamesPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true); setError(null); setGames([]); setPredictions({}); setWeekPredictions([]); setPredictionsSettled(false); setSelectedGame(null);
+    setLoading(true); setError(null); setGames([]); setPredictions({}); setWeekPredictions([]); setWeekLoaded(false); setPredictionsSettled(false); setSelectedGame(null);
     // Tracked pre-kickoff verdicts for the week (Called it / Missed and the
     // record line). Best-effort: without them finals simply show no verdict.
     api.predictionsForWeek(season, week)
       .then((rows) => { if (!cancelled) setWeekPredictions(Array.isArray(rows) ? rows : []); })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setWeekLoaded(true); });
     api.games(season, week).then(async (fetchedGames) => {
       if (cancelled) return;
       setGames(fetchedGames);
@@ -108,9 +110,11 @@ export function GamesPage() {
     return () => { cancelled = true; };
   }, [api, season, week, reloadKey]);
 
-  const conferenceOptions = Array.from(
-    new Set(games.flatMap((g) => [g.home_conference, g.away_conference]).filter((c): c is string => Boolean(c))),
-  ).sort();
+  const hasConferences = games.some((g) => g.home_conference || g.away_conference);
+  // Teams with no conference are filtered as "Independent", so offer it too.
+  const conferenceOptions = hasConferences
+    ? Array.from(new Set(games.flatMap((g) => [g.home_conference || "Independent", g.away_conference || "Independent"]))).sort()
+    : [];
 
   const filteredGames = conferenceFilter
     ? games.filter((g) => (g.home_conference || "Independent") === conferenceFilter || (g.away_conference || "Independent") === conferenceFilter)
@@ -122,10 +126,7 @@ export function GamesPage() {
 
   const isCurrentWeek = currentWeek != null && currentWeek.season === season && currentWeek.week === week;
   const byId = new Map(weekPredictions.map((w) => [w.game_id, w]));
-  // "Next up" is the soonest game still to kick off, one per week.
-  const nextId = [...games]
-    .filter((g) => g.home_score == null && new Date(g.gameday).getTime() >= Date.now() - 4 * 3600_000)
-    .sort((a, b) => new Date(a.gameday).getTime() - new Date(b.gameday).getTime())[0]?.game_id;
+  const nextIds = nextUpIds(games, isCurrentWeek);
 
   const retry = () => setReloadKey((k) => k + 1);
   const pillClass = (on: boolean) =>
@@ -134,7 +135,7 @@ export function GamesPage() {
   return (
     <div>
       <RoundNavigator
-        label={`Week ${week}`}
+        label={`${season} · Week ${week}`}
         unit="week"
         canPrev={week > 1}
         canNext
@@ -145,7 +146,7 @@ export function GamesPage() {
       />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1 rounded-pr border border-pr-rule bg-pr-panel p-1" aria-label="Order games">
+        <div role="group" aria-label="Order games" className="flex gap-1 rounded-pr border border-pr-rule bg-pr-panel p-1">
           <button type="button" aria-pressed={sortMode === "chronological"} onClick={() => setSortMode("chronological")} className={pillClass(sortMode === "chronological")}>Kickoff order</button>
           <button type="button" aria-pressed={sortMode === "confidence"} onClick={() => setSortMode("confidence")} className={pillClass(sortMode === "confidence")}>Most confident first</button>
         </div>
@@ -173,26 +174,31 @@ export function GamesPage() {
       {loading && <Skeleton label="Loading games…" />}
       {error && <ErrorState message="We couldn't load this week's games. Check your connection and try again." onRetry={retry} />}
       {!loading && !error && predictionsSettled && games.length > 0 && Object.keys(predictions).length === 0 && (
-        <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-pr border border-pr-rule bg-pr-panel px-4 py-3 text-sm text-pr-text">
+        <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-pr border border-pr-rule bg-pr-panel px-4 py-3 text-sm text-pr-text">
           <span>Picks for this week couldn't load. The schedule is below.</span>
           <button type="button" onClick={retry} className="rounded-pr border border-pr-rule bg-pr-panel-2 px-3 py-1.5 text-xs font-semibold text-pr-text transition-colors hover:border-pr-accent">Try again</button>
         </div>
       )}
       {!loading && !error && orderedGames.length === 0 && (
-        <p className="text-sm text-pr-text-dim">No games scheduled for this week.</p>
+        <p className="text-sm text-pr-text-dim">
+          {conferenceFilter && games.length > 0 ? `No ${conferenceFilter} games this week.` : "No games scheduled for this week."}
+        </p>
       )}
 
       {orderedGames.length > 0 && (
-        <p className="mb-3 text-xs text-pr-text-dim">Kickoff times in {kickoffZone(orderedGames[0].gameday)}</p>
+        <p className="mb-3 text-xs text-pr-text-dim">Kickoff times in {kickoffZones(orderedGames.map((g) => g.gameday))}</p>
       )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {orderedGames.map((game) => {
-          const model = toCardModel(game, predictions[game.game_id] ?? null, byId.get(game.game_id), game.game_id === nextId);
-          const pending = !predictionsSettled && !predictions[game.game_id] && game.home_score == null;
+          const model = toCardModel(game, predictions[game.game_id] ?? null, byId.get(game.game_id), nextIds.has(game.game_id));
+          // Finals wait for the week's snapshots; games to come wait for picks.
+          const isFinal = game.home_score != null;
+          const pending = isFinal ? !weekLoaded : !predictionsSettled && !predictions[game.game_id];
           return (
             <MatchCard
               key={game.game_id}
               {...model}
+              status={pending && isFinal ? undefined : model.status}
               left={{ ...model.left, badge: <TeamLogo sport={sport} team={game.away_team} size="md" /> }}
               right={{ ...model.right, badge: <TeamLogo sport={sport} team={game.home_team} size="md" /> }}
               pickPlaceholder={pending ? "Loading pick…" : undefined}

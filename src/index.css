@@ -7,9 +7,13 @@
      Condensed for scores and headers. */
   --font-sans: var(--font-pr-body);
   --font-display: var(--font-pr-display);
+}
 
-  /* Legacy sp-* names, kept so components not yet rebuilt on predictor-ui
-     adopt the family palette. New code uses the pr-* tokens directly. */
+/* Legacy sp-* names, kept so components not yet rebuilt on predictor-ui adopt
+   the family palette. Inline, so each utility keeps var(--color-pr-accent)
+   and follows the page's data-sport accent (a plain @theme would resolve it
+   once, at :root, to the Hub's white). New code uses the pr-* tokens. */
+@theme inline {
   --color-sp-950: var(--color-pr-stage);
   --color-sp-900: var(--color-pr-stage);
   --color-sp-850: var(--color-pr-panel);

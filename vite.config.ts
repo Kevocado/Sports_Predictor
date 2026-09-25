@@ -25,5 +25,7 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: "./src/test-setup.ts",
+    // Outside UTC, so a timestamp read in the wrong zone fails a test.
+    env: { TZ: "America/Chicago" },
   },
 });

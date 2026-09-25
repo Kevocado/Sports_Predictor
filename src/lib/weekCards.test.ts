@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { kickoffZone, toCardModel, weekTally } from "./weekCards";
+import { toCardModel, weekTally } from "./weekCards";
 import type { GamePrediction, GameSummary, WeekPrediction } from "../types";
 
 const TZ = "America/Chicago";
@@ -72,8 +72,74 @@ describe("weekTally", () => {
   });
 });
 
-describe("kickoffZone", () => {
-  it("names the zone the page's kickoff times are in", () => {
-    expect(kickoffZone("2026-10-04T17:00:00Z", "America/Chicago")).toBe("CDT");
+
+describe("review fixes", () => {
+  const now = Date.parse("2026-10-04T12:00:00Z");
+
+  it("reads the NFL API's zoneless kickoff as UTC", () => {
+    const m = toCardModel({ ...upcoming, gameday: "2026-10-04T17:00:00" }, pred, undefined, false, TZ, now);
+    expect(m.centre).toBe("12:00 PM");
+    expect(m.when).toBe("Sun 4 Oct");
+  });
+
+  it("judges a final only on its pre-kickoff snapshot, never on today's model", () => {
+    const snapshotPickedAway: WeekPrediction = {
+      game_id: final.game_id, status: "resolved", home_win_prob: 0.32, away_win_prob: 0.68,
+      verdict: { game_id: final.game_id, resolved: true, moneyline: { hit: true, predicted: "PIT" }, ats: null, totals: null },
+    };
+    const liveModelFavoursHome = { ...pred, home_win_prob: 0.68, away_win_prob: 0.32 };
+    const m = toCardModel(final, liveModelFavoursHome, snapshotPickedAway, false, TZ, now);
+    expect(m.pick?.label).toBe("PIT");
+    expect(m.pick?.prob).toBeCloseTo(0.68);
+    expect(m.status).toBe("called");
+  });
+
+  it("shows no pick on a final with no snapshot row, rather than today's model", () => {
+    const m = toCardModel(final, pred, undefined, false, TZ, now);
+    expect(m.pick).toBeUndefined();
+    expect(m.status).toBe("nopick");
+  });
+
+  it("labels a pick rebuilt after kickoff and does not count it", () => {
+    const rebuilt: WeekPrediction = { ...resolved(true), rebuilt: true };
+    expect(toCardModel(final, pred, rebuilt, false, TZ, now).status).toBe("rebuilt");
+    expect(weekTally([resolved(true), rebuilt])).toEqual({ hits: 1, settled: 1, rebuilt: 1 });
+  });
+
+  it("marks a game that has kicked off but has no score as Live, never Next up", () => {
+    const started = { ...upcoming, gameday: "2026-10-04T11:00:00Z" };
+    expect(toCardModel(started, pred, undefined, true, TZ, now).status).toBe("live");
+  });
+
+  it("calls an exact 50/50 a toss-up", () => {
+    const even = { ...pred, home_win_prob: 0.5, away_win_prob: 0.5 };
+    expect(toCardModel(upcoming, even, undefined, false, TZ, now).pick?.label).toBe("Toss-up");
+  });
+
+  it("keeps CFB conferences and indoor roofs on the card", () => {
+    const cfb: GameSummary = { ...upcoming, spread_line: null, total_line: null, temp: null, wind: null, home_rest: null, away_rest: null, home_conference: "SEC", away_conference: "Big Ten" };
+    expect(toCardModel(cfb, pred, undefined, false, TZ, now).meta).toBe("Big Ten at SEC");
+    expect(toCardModel({ ...upcoming, roof: "dome", temp: null, wind: null }, pred, undefined, false, TZ, now).meta).toContain("Dome");
+  });
+});
+
+describe("nextUpIds", () => {
+  it("marks every game at the earliest future kickoff in the current week only", async () => {
+    const { nextUpIds } = await import("./weekCards");
+    const now = Date.parse("2026-10-04T12:00:00Z");
+    const a = { ...upcoming, game_id: "a", gameday: "2026-10-04T17:00:00" };
+    const b = { ...upcoming, game_id: "b", gameday: "2026-10-04T17:00:00" };
+    const c = { ...upcoming, game_id: "c", gameday: "2026-10-04T20:25:00" };
+    const started = { ...upcoming, game_id: "s", gameday: "2026-10-04T11:00:00" };
+    expect([...nextUpIds([c, a, b, started], true, now)].sort()).toEqual(["a", "b"]);
+    expect(nextUpIds([a, b, c], false, now).size).toBe(0);
+  });
+});
+
+describe("kickoffZones", () => {
+  it("names every zone a week spans (DST weeks have two)", async () => {
+    const { kickoffZones } = await import("./weekCards");
+    expect(kickoffZones(["2026-10-29T23:15:00Z", "2026-11-01T18:00:00Z"], TZ)).toBe("CDT/CST");
+    expect(kickoffZones(["2026-10-04T17:00:00", "2026-10-04T20:25:00"], TZ)).toBe("CDT");
   });
 });

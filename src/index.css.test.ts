@@ -14,6 +14,11 @@ describe("index.css", () => {
     expect(css).not.toMatch(/Inter/);
     expect(css).not.toMatch(/radial-gradient/);
   });
+  it("declares the legacy aliases inline so they follow each sport's accent", () => {
+    // A plain @theme resolves var(--color-pr-accent) once at :root (the Hub's
+    // white); inline keeps the var() in each utility, where data-sport applies.
+    expect(css).toMatch(/@theme inline\s*\{[^}]*--color-sp-gold:\s*var\(--color-pr-accent\)/);
+  });
   it("maps every legacy sp colour onto a family token", () => {
     const legacy = [...css.matchAll(/--color-sp-[\w-]+:\s*([^;]+);/g)].map((m) => m[1].trim());
     expect(legacy.length).toBeGreaterThan(0);

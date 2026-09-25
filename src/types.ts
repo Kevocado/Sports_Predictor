@@ -61,7 +61,9 @@ export interface RetrainResponse { trained_at: string; chosen_candidate: string;
 export interface MarketVerdict { hit: boolean; predicted: string; actual?: string; }
 export interface GameVerdict { game_id: string; resolved: boolean; moneyline: MarketVerdict; ats: MarketVerdict | null; totals: MarketVerdict | null; actual_home_score?: number; actual_away_score?: number; home_spread_line?: number | null; total_line?: number | null; }
 export type WeekPredictionStatus = "untracked" | "pending" | "resolved";
-export interface WeekPrediction { game_id: string; status: WeekPredictionStatus; home_win_prob?: number; away_win_prob?: number; verdict: GameVerdict | null; }
+// rebuilt: snapshotted at or after kickoff (a backfill), so shown but never
+// counted as a pre-kickoff call. Absent from older API builds.
+export interface WeekPrediction { game_id: string; status: WeekPredictionStatus; rebuilt?: boolean; home_win_prob?: number; away_win_prob?: number; verdict: GameVerdict | null; }
 export interface CurrentWeek { season: number; week: number; }
 // NFL groups by division (current_division_rank/...), CFB has no fixed
 // divisions and groups by conference alone (current_conference_rank/...) --

@@ -64,7 +64,9 @@ describe("PlayersPage", () => {
 
   it("keeps the full ranked list below the spotlight and filters it by search", async () => {
     render(<PlayersPage />);
-    await waitFor(() => expect(screen.getByText("Joe Burrow")).toBeInTheDocument());
+    // Burrow renders in the spotlight and the list; wait for either, with room
+    // for a loaded test run (the default 1s raced the full suite).
+    await screen.findAllByText("Joe Burrow", {}, { timeout: 5000 });
 
     fireEvent.change(screen.getByPlaceholderText(/search player/i), { target: { value: "burrow" } });
     // Burrow appears in both the spotlight card and the full list.
