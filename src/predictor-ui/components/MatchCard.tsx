@@ -1,4 +1,4 @@
-// Synced from predictor-ui@311cc820f598. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
+// Synced from predictor-ui@876ec2dbb2e9. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
 import type { ReactNode } from "react";
 import { pct } from "../fmt";
 import { ProbabilityBar, type Segment } from "./ProbabilityBar";
@@ -12,7 +12,8 @@ type Props = {
   right: Side;
   /** Kickoff time before the game, the score after it. */
   centre: string;
-  status: Status;
+  /** Omit for an upcoming game that is not next up: no badge. */
+  status?: Status;
   pick?: { label: string; prob: number };
   /** Top-left line, usually the kickoff date. */
   when?: string;
@@ -50,8 +51,12 @@ export function MatchCard({ left, right, centre, status, pick, when, meta, bar, 
     >
       <span className="flex w-full items-center justify-between gap-2">
         <span className="text-xs uppercase tracking-wide text-pr-text-dim">{when}</span>
-        <Sep />
-        <StatusBadge status={status} />
+        {status && (
+          <>
+            <Sep />
+            <StatusBadge status={status} />
+          </>
+        )}
       </span>
       <Sep />
       <span className="flex w-full items-center gap-2">

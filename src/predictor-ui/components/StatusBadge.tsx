@@ -1,4 +1,4 @@
-// Synced from predictor-ui@311cc820f598. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
+// Synced from predictor-ui@876ec2dbb2e9. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
 export type Status = "next" | "live" | "called" | "missed" | "nopick" | "rebuilt";
 
 // Status always carries words; colour only reinforces them.

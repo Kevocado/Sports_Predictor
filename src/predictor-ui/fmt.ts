@@ -1,4 +1,4 @@
-// Synced from predictor-ui@311cc820f598. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
+// Synced from predictor-ui@876ec2dbb2e9. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
 // The one owner of numbers on screen. Models and APIs keep full precision;
 // rounding, signs, team names and time zones happen here, once, so every
 // Predictor site reads the same.
