@@ -49,7 +49,8 @@ describe("GameDetailModal", () => {
   it("restates the spread/total line near the match markets", async () => {
     const api = mockApi();
     render(<GameDetailModal game={{ ...game, spread_line: -2.5, total_line: 46.5 }} api={api} onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByText("Spread -2.5 · Total 46.5")).toBeInTheDocument());
+    // nflverse spread_line −2.5 means the away side is favoured, so the home team is +2.5.
+    await waitFor(() => expect(screen.getByText("Ravens +2.5 · Total 46.5")).toBeInTheDocument());
   });
 
   it("shows a confidence band from predicted_margin and sigma", async () => {

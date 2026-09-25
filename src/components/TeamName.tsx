@@ -29,8 +29,10 @@ export function TeamLogo({ sport, team, size = "md" }: { sport: Sport; team: str
   const [failed, setFailed] = useState(false);
   const url = teamLogoUrl(sport, team);
   if (!url || failed) {
-    // No real team colour is known here, so the chip stays neutral rather
-    // than inventing one.
+    // A team already written as its code ("PIT") needs no chip: the name
+    // beside it says the same thing. Longer names get a neutral initials
+    // chip; no real team colour is known here, so none is invented.
+    if (teamCode(team) === team.toUpperCase()) return null;
     return <TeamChip code={teamCode(team)} name={team} />;
   }
   return (

@@ -29,12 +29,12 @@ export function HubPage() {
 
   return (
     <div>
-      <nav aria-label="Hub sections" className="mb-5 flex gap-1 rounded-lg border border-sp-border bg-sp-850/60 p-1">
+      <nav aria-label="Hub sections" className="mb-5 flex max-w-full gap-1 overflow-x-auto rounded-lg border border-sp-border bg-sp-850/60 p-1 sm:w-fit">
         {SUBTABS.map(([key, label]) => (
           <button
             key={key}
             onClick={() => setSubtab(key)}
-            className={`rounded-md px-3.5 py-1.5 font-display text-sm font-semibold uppercase tracking-wider transition ${subtab === key ? "bg-sp-gold text-sp-950" : "text-sp-text-dim hover:text-sp-text"}`}
+            className={`whitespace-nowrap rounded-md px-3.5 py-1.5 font-display text-sm font-semibold uppercase tracking-wider transition ${subtab === key ? "bg-sp-gold text-sp-950" : "text-sp-text-dim hover:text-sp-text"}`}
           >
             {label}
           </button>

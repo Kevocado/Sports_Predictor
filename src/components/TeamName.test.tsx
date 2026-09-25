@@ -16,6 +16,7 @@ describe("TeamName", () => {
   });
   it("falls back to a neutral family chip with the team's initials, not an invented team colour", () => {
     const { container } = renderWithSport(<TeamName team="Kansas City Chiefs" />);
+    // (Kansas City Chiefs has no mapped logo in the CFB/NFL table under this name.)
     expect(screen.getByText("Kansas City Chiefs")).toBeInTheDocument();
     expect(screen.getByText("KCC")).toBeInTheDocument();
     expect(container.innerHTML).not.toMatch(/linear-gradient/);

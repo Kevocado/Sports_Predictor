@@ -19,16 +19,15 @@ describe("TeamLogo", () => {
   });
 
   it("falls back to a code chip named for the team when there is no mapped logo", () => {
-    const { container } = render(<TeamLogo sport="nfl" team="XYZ" />);
+    const { container } = render(<TeamLogo sport="cfb" team="Nowhere State" />);
     expect(container.querySelector("img")).toBeNull();
-    expect(screen.getByRole("img", { name: "XYZ" })).toHaveTextContent("XYZ");
+    expect(screen.getByRole("img", { name: "Nowhere State" })).toHaveTextContent("NS");
   });
 
-  it("falls back to the code chip when the logo image fails to load", () => {
+  it("drops the image when the logo fails to load", () => {
     const { container } = render(<TeamLogo sport="nfl" team="KC" />);
     fireEvent.error(screen.getByAltText("KC logo"));
     expect(container.querySelector("img")).toBeNull();
-    expect(screen.getByRole("img", { name: "KC" })).toHaveTextContent("KC");
   });
 
   it("sizes the logo with the requested size variant", () => {
@@ -36,5 +35,10 @@ describe("TeamLogo", () => {
     expect(container.querySelector("img")).toHaveClass("h-14");
     const { container: sm } = render(<TeamLogo sport="nfl" team="KC" size="sm" />);
     expect(sm.querySelector("img")).toHaveClass("h-7");
+  });
+
+  it("adds no chip when the team is already written as its code (the name beside it says it)", () => {
+    const { container } = render(<TeamLogo sport="nfl" team="QQQ" />);
+    expect(container.textContent).toBe("");
   });
 });

@@ -1,4 +1,4 @@
-// Synced from predictor-ui@4e22de94281c. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
+// Synced from predictor-ui@272a7bfaea10. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
 import type { ReactNode } from "react";
 import { pct } from "../fmt";
 import { ProbabilityBar, type Segment } from "./ProbabilityBar";
@@ -34,7 +34,7 @@ function Team({ side }: { side: Side }) {
   return (
     <span className="flex min-w-0 flex-1 flex-col items-center gap-1.5 text-center">
       <span aria-hidden="true">{side.badge ?? <TeamChip code={side.code} color={side.color} />}</span>
-      <span className="block w-full truncate text-sm font-semibold text-pr-text">{side.name ?? side.code}</span>
+      <span className="block w-full break-words text-sm font-semibold leading-tight text-pr-text [text-wrap:balance]">{side.name ?? side.code}</span>
     </span>
   );
 }

@@ -49,7 +49,7 @@ export function toCardModel(
     left: { code: game.away_team, name: game.away_team },
     right: { code: game.home_team, name: game.home_team },
     centre: final ? `${game.away_score}–${game.home_score}` : localTime(game.gameday, timeZone),
-    when: final ? `${day} · Final` : kickoff(game.gameday, timeZone),
+    when: final ? `${day} · Final` : day,
     meta: metaLine(game),
   };
 
@@ -71,6 +71,11 @@ export function toCardModel(
     model.status = "next";
   }
   return model;
+}
+
+/** The time zone the page's kickoff times are shown in ("CDT"), said once per page. */
+export function kickoffZone(iso: string, timeZone?: string): string {
+  return kickoff(iso, timeZone).split(" ").pop() ?? "";
 }
 
 /** The week's record: resolved pre-kickoff picks only (snapshots are refused after kickoff). */

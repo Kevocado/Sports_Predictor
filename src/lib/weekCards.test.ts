@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toCardModel, weekTally } from "./weekCards";
+import { kickoffZone, toCardModel, weekTally } from "./weekCards";
 import type { GamePrediction, GameSummary, WeekPrediction } from "../types";
 
 const TZ = "America/Chicago";
@@ -26,7 +26,9 @@ describe("toCardModel", () => {
   it("marks exactly the next game 'Next up' and shows its local kickoff", () => {
     const m = toCardModel(upcoming, pred, undefined, true, TZ);
     expect(m.status).toBe("next");
-    expect(m.when).toBe("Sun 4 Oct · 12:00 PM CDT");
+    // The day on the card, the time in the scoreboard slot; the zone is said
+    // once for the page (kickoffZone) instead of on every card.
+    expect(m.when).toBe("Sun 4 Oct");
     expect(m.centre).toBe("12:00 PM");
   });
   it("writes the spread with the favoured home team, a positive nflverse line meaning home favoured", () => {
@@ -67,5 +69,11 @@ describe("weekTally", () => {
     const untracked: WeekPrediction = { game_id: "u", status: "untracked", verdict: null };
     expect(weekTally([resolved(true), resolved(false), resolved(true), pending, untracked])).toEqual({ hits: 2, settled: 3, rebuilt: 0 });
     expect(weekTally([])).toEqual({ hits: 0, settled: 0, rebuilt: 0 });
+  });
+});
+
+describe("kickoffZone", () => {
+  it("names the zone the page's kickoff times are in", () => {
+    expect(kickoffZone("2026-10-04T17:00:00Z", "America/Chicago")).toBe("CDT");
   });
 });

@@ -1,3 +1,4 @@
+import { spread } from "../predictor-ui";
 import { useEffect, useMemo, useState } from "react";
 import type { GamePrediction, GameSummary, GameVerdict, HeadToHead as HeadToHeadData, PlayerPropPrediction, SportApi, TeamForm } from "../types";
 import { TeamName } from "./TeamName";
@@ -184,7 +185,7 @@ export function GameDetailModal({ game, api, onClose }: Props) {
             {/* The card only shows these on the list view; restate them here
                 so the modal is self-contained. */}
             {game.spread_line != null && (
-              <p className="text-[11px] text-sp-text-faint">{`Spread ${game.spread_line} · Total ${game.total_line ?? "—"}`}</p>
+              <p className="text-xs text-sp-text-dim">{`${spread(game.home_team, -game.spread_line)} · Total ${game.total_line ?? "—"}`}</p>
             )}
             {prediction && prediction.predicted_margin != null && prediction.sigma != null && (
               <p className="text-xs text-sp-text-dim">
@@ -233,7 +234,7 @@ export function GameDetailModal({ game, api, onClose }: Props) {
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Model Player Projections</h3>
-                <p className="text-[11px] text-sp-text-dim">Predicted touchdown probabilities and expected yardage milestones from your machine learning models.</p>
+                <p className="text-xs text-sp-text-dim">Each player's chance to score a touchdown and projected yards for this game.</p>
               </div>
               {availablePositions.length > 1 && (
                 <div className="flex gap-1 rounded-lg border border-sp-border bg-sp-850/60 p-1">

@@ -4,7 +4,7 @@ import { useSport } from "../context/SportContext";
 import { sortByConfidence } from "../lib/confidenceSort";
 import { TeamLogo } from "../components/TeamName";
 import { ErrorState, MatchCard, RoundNavigator, Skeleton } from "../predictor-ui";
-import { toCardModel, weekTally } from "../lib/weekCards";
+import { kickoffZone, toCardModel, weekTally } from "../lib/weekCards";
 import { GameDetailModal } from "../components/GameDetailModal";
 
 const FALLBACK_SEASON = 2026;
@@ -182,6 +182,9 @@ export function GamesPage() {
         <p className="text-sm text-pr-text-dim">No games scheduled for this week.</p>
       )}
 
+      {orderedGames.length > 0 && (
+        <p className="mb-3 text-xs text-pr-text-dim">Kickoff times in {kickoffZone(orderedGames[0].gameday)}</p>
+      )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {orderedGames.map((game) => {
           const model = toCardModel(game, predictions[game.game_id] ?? null, byId.get(game.game_id), game.game_id === nextId);
