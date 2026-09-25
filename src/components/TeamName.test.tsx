@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { TeamName, teamColor, teamInitial } from "./TeamName";
+import { TeamName, teamCode } from "./TeamName";
 import { SportProvider } from "../context/SportContext";
 
 function renderWithSport(ui: ReactElement) {
@@ -14,15 +14,17 @@ describe("TeamName", () => {
     expect(screen.getByText("KC")).toBeInTheDocument();
     expect(screen.getByAltText("KC logo")).toBeInTheDocument();
   });
-  it("renders the initial avatar when the team has no logo", () => {
-    renderWithSport(<TeamName team="Kansas City Chiefs" />);
+  it("falls back to a neutral family chip with the team's initials, not an invented team colour", () => {
+    const { container } = renderWithSport(<TeamName team="Kansas City Chiefs" />);
     expect(screen.getByText("Kansas City Chiefs")).toBeInTheDocument();
-    expect(screen.getByText("K")).toBeInTheDocument();
+    expect(screen.getByText("KCC")).toBeInTheDocument();
+    expect(container.innerHTML).not.toMatch(/linear-gradient/);
   });
-  it("derives a deterministic color for the same team name", () => {
-    expect(teamColor("Texas")).toBe(teamColor("Texas"));
-  });
-  it("falls back to ? for an empty team name", () => {
-    expect(teamInitial("")).toBe("?");
+  it("builds short codes from team names", () => {
+    expect(teamCode("KC")).toBe("KC");
+    expect(teamCode("Ohio State")).toBe("OS");
+    expect(teamCode("Louisiana-Monroe")).toBe("LM");
+    expect(teamCode("Army")).toBe("ARMY");
+    expect(teamCode("")).toBe("?");
   });
 });

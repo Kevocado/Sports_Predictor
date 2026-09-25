@@ -41,7 +41,7 @@ export function groupByPosition(props: PlayerPropPrediction[]): Record<SkillPosi
 }
 
 // Tiered coloring for a single probability (anytime-TD chance) -- same
-// visual language as ConfidenceBadge's win-probability tiers, just tuned
+// visual language as the old win-probability confidence tiers, just tuned
 // for a lower-magnitude stat (a 50% anytime-TD chance is already elite;
 // nothing in this model realistically clears 70%).
 export function tdConfidenceTone(prob: number): string {

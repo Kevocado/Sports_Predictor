@@ -1,49 +1,37 @@
 import { useState } from "react";
+import { TeamChip } from "../predictor-ui";
 import { teamLogoUrl } from "../data/teamLogos";
 import { useSport } from "../context/SportContext";
 import type { Sport } from "../types";
 
-const PALETTE = ["#f2a900", "#2e6bd8", "#d8571f", "#22c55e", "#8b5cf6", "#ec4899", "#05d1c8", "#ef4444"];
-
-function hashString(value: string): number {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 31 + value.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash);
-}
-
-export function teamColor(team: string): string {
-  return PALETTE[hashString(team) % PALETTE.length];
-}
-
-export function teamInitial(team: string): string {
-  return team.trim().charAt(0).toUpperCase() || "?";
+/**
+ * A short code for a team that has no logo: abbreviations stay as they are
+ * ("KC"), multi-word names become initials ("Ohio State" → "OS"), single
+ * short words are upper-cased ("Army" → "ARMY").
+ */
+export function teamCode(team: string): string {
+  const words = team.trim().split(/[\s-]+/).filter(Boolean);
+  if (words.length === 0) return "?";
+  if (words.length === 1) return words[0].length <= 4 ? words[0].toUpperCase() : words[0].slice(0, 3).toUpperCase();
+  return words.map((w) => w[0]).join("").slice(0, 4).toUpperCase();
 }
 
 type LogoSize = "sm" | "md" | "lg";
 
 const SIZES: Record<LogoSize, string> = {
-  sm: "h-7 w-7 text-[10px]",
-  md: "h-10 w-10 text-xs",
-  lg: "h-14 w-14 text-sm",
+  sm: "h-7 w-7",
+  md: "h-10 w-10",
+  lg: "h-14 w-14",
 };
 
 /** Team logo from the ESPN mapping, falling back to the initial-letter avatar. */
 export function TeamLogo({ sport, team, size = "md" }: { sport: Sport; team: string; size?: LogoSize }) {
   const [failed, setFailed] = useState(false);
   const url = teamLogoUrl(sport, team);
-  const color = teamColor(team);
   if (!url || failed) {
-    return (
-      <div
-        className={`flex shrink-0 items-center justify-center rounded-full font-bold text-white ${SIZES[size]}`}
-        style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)`, boxShadow: `0 0 0 1px rgba(255,255,255,0.08), 0 2px 8px -2px ${color}88` }}
-        title={team}
-      >
-        {teamInitial(team)}
-      </div>
-    );
+    // No real team colour is known here, so the chip stays neutral rather
+    // than inventing one.
+    return <TeamChip code={teamCode(team)} name={team} />;
   }
   return (
     <img

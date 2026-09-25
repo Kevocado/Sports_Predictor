@@ -18,17 +18,17 @@ describe("TeamLogo", () => {
     );
   });
 
-  it("falls back to the team initial when there is no mapped logo", () => {
-    render(<TeamLogo sport="nfl" team="XYZ" />);
-    expect(screen.queryByRole("img")).not.toBeInTheDocument();
-    expect(screen.getByText("X")).toBeInTheDocument();
+  it("falls back to a code chip named for the team when there is no mapped logo", () => {
+    const { container } = render(<TeamLogo sport="nfl" team="XYZ" />);
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByRole("img", { name: "XYZ" })).toHaveTextContent("XYZ");
   });
 
-  it("falls back to the team initial when the logo image fails to load", () => {
-    render(<TeamLogo sport="nfl" team="KC" />);
+  it("falls back to the code chip when the logo image fails to load", () => {
+    const { container } = render(<TeamLogo sport="nfl" team="KC" />);
     fireEvent.error(screen.getByAltText("KC logo"));
-    expect(screen.queryByRole("img")).not.toBeInTheDocument();
-    expect(screen.getByText("K")).toBeInTheDocument();
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByRole("img", { name: "KC" })).toHaveTextContent("KC");
   });
 
   it("sizes the logo with the requested size variant", () => {
