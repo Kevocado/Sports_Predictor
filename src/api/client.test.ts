@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createApiClient, preloadAll, NFL_BASE_URL, CFB_BASE_URL } from "./client";
+import { createApiClient, preloadAll, NFL_BASE_URL, CFB_BASE_URL, REQUEST_TIMEOUT_MS } from "./client";
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
@@ -17,19 +17,19 @@ describe("createApiClient new endpoints", () => {
   it("powerRankings hits /power-rankings with the season", async () => {
     const api = createApiClient("https://example.test/api/");
     await api.powerRankings(2026);
-    expect(fetchMock).toHaveBeenCalledWith("https://example.test/api/power-rankings?season=2026");
+    expect(fetchMock).toHaveBeenCalledWith("https://example.test/api/power-rankings?season=2026", expect.anything());
   });
 
   it("predictionsBatch hits the batch route for the season and week", async () => {
     const api = createApiClient("https://example.test/api/");
     await api.predictionsBatch(2026, 7);
-    expect(fetchMock).toHaveBeenCalledWith("https://example.test/api/predictions/2026/7/batch");
+    expect(fetchMock).toHaveBeenCalledWith("https://example.test/api/predictions/2026/7/batch", expect.anything());
   });
 
   it("teamForm hits /teams/{team}/form with season and n, URL-encoding the team", async () => {
     const api = createApiClient("https://example.test/api/");
     await api.teamForm("Ohio State", 2026);
-    expect(fetchMock).toHaveBeenCalledWith("https://example.test/api/teams/Ohio%20State/form?season=2026&n=5");
+    expect(fetchMock).toHaveBeenCalledWith("https://example.test/api/teams/Ohio%20State/form?season=2026&n=5", expect.anything());
   });
 
   it("headToHead hits /games/{id}/head-to-head with season, week and n_seasons", async () => {
@@ -37,6 +37,7 @@ describe("createApiClient new endpoints", () => {
     await api.headToHead("2026_01_KC_BAL", 2026, 1);
     expect(fetchMock).toHaveBeenCalledWith(
       "https://example.test/api/games/2026_01_KC_BAL/head-to-head?season=2026&week=1&n_seasons=8",
+      expect.anything(),
     );
   });
 });
@@ -90,8 +91,8 @@ describe("createApiClient TTL cache", () => {
     await nfl.games(2026, 1);
     await cfb.games(2026, 1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "https://nfl.test/api/games?season=2026&week=1");
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "https://cfb.test/api/games?season=2026&week=1");
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "https://nfl.test/api/games?season=2026&week=1", expect.anything());
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "https://cfb.test/api/games?season=2026&week=1", expect.anything());
   });
 
   it("does not cache rejected requests", async () => {
@@ -159,5 +160,24 @@ describe("API base URLs", () => {
   it("default to same-origin paths so the page works on any host", () => {
     expect(NFL_BASE_URL).toBe("/api/nfl");
     expect(CFB_BASE_URL).toBe("/api/cfb");
+  });
+});
+
+describe("request timeout", () => {
+  it("rejects a request the server never answers, so the page can show its error state", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockReset();
+      fetchMock.mockImplementation((_u: string, init?: RequestInit) =>
+        new Promise((_resolve, reject) =>
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("timed out", "AbortError"))),
+        ));
+      const api = createApiClient("https://example.test/api");
+      const assertion = expect(api.games(2026, 1)).rejects.toThrow();
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS + 1);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

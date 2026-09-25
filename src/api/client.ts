@@ -14,6 +14,16 @@ import type {
   WeekPrediction,
 } from "../types";
 
+// A backend that accepts the connection but never answers must still end in
+// the page's error state (with Try again), never an endless "Loading…".
+export const REQUEST_TIMEOUT_MS = 15_000;
+
+function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 export function createApiClient(baseUrl: string): SportApi {
   const cleanBase = baseUrl.replace(/\/+$/, "");
 
@@ -43,7 +53,7 @@ export function createApiClient(baseUrl: string): SportApi {
 
   async function get<T>(path: string, ttlMs: number = TTL_MS): Promise<T> {
     return cached(path, async () => {
-      const res = await fetch(`${cleanBase}${path}`);
+      const res = await fetchWithTimeout(`${cleanBase}${path}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail ?? `${res.status} ${res.statusText}`);
@@ -54,7 +64,7 @@ export function createApiClient(baseUrl: string): SportApi {
 
   async function getOrNull<T>(path: string): Promise<T | null> {
     return cached(path, async () => {
-      const res = await fetch(`${cleanBase}${path}`);
+      const res = await fetchWithTimeout(`${cleanBase}${path}`);
       if (res.status === 404) return null;
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));

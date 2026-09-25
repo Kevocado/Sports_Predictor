@@ -20,7 +20,7 @@ export function GameCard({ game, prediction, predictionsSettled = false, onClick
         ) : prediction ? (
           <ConfidenceBadge homeWinProb={prediction.home_win_prob} awayWinProb={prediction.away_win_prob} />
         ) : (
-          <span role="status" className="rounded bg-sp-700/60 px-1.5 py-0.5 text-xs normal-case tracking-normal text-sp-text-dim">
+          <span className="rounded bg-sp-700/60 px-1.5 py-0.5 text-xs normal-case tracking-normal text-sp-text-dim">
             {predictionsSettled ? "No pick yet" : "Loading pick…"}
           </span>
         )}

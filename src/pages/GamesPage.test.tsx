@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { GamesPage } from "./GamesPage";
 import type { GamePrediction, GameSummary, SportApi } from "../types";
 
@@ -26,6 +26,14 @@ vi.mock("../context/SportContext", () => ({
 
 describe("GamesPage", () => {
   beforeEach(() => { vi.clearAllMocks(); });
+  // Restore default behaviour even when a test fails midway, so one failure
+  // can't cascade into the next test's mocks.
+  afterEach(() => {
+    games.mockImplementation(async (_s: number, w: number) => (w === 7 ? [g1, g2] : []));
+    predictionsBatch.mockImplementation(async (_s: number, w: number) => (w === 7 ? { g1: pred1 } : {}));
+    gamePrediction.mockImplementation(async () => pred2);
+    currentWeek.mockImplementation(async () => ({ season: 2026, week: 7 }));
+  });
 
   it("loads predictions via the batch endpoint, with per-game fallback for missing ids", async () => {
     render(<GamesPage />);
@@ -36,11 +44,15 @@ describe("GamesPage", () => {
   });
 
   it("shows a readable error with Try again when games fail, and retries on click", async () => {
-    games.mockRejectedValueOnce(new Error("502 Bad Gateway"));
+    // Persistent until the retry: the page loads week 1 and then jumps to the
+    // current week, so a one-shot rejection could land on either load.
+    games.mockRejectedValue(new Error("502 Bad Gateway"));
     render(<GamesPage />);
+    await waitFor(() => expect(games).toHaveBeenCalledWith(2026, 7));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("We couldn't load this week's games.");
     expect(alert).not.toHaveTextContent("502");
+    games.mockImplementation(async (_s: number, w: number) => (w === 7 ? [g1, g2] : []));
     const callsBefore = games.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(games.mock.calls.length).toBe(callsBefore + 1));
@@ -56,13 +68,23 @@ describe("GamesPage", () => {
     expect(await screen.findByText("Picks for this week couldn't load. The schedule is below.")).toBeInTheDocument();
     expect(screen.getAllByText("No pick yet")).toHaveLength(2);
     expect(screen.getAllByText("Chiefs").length).toBeGreaterThan(0);
-    gamePrediction.mockResolvedValue(pred2);
-    predictionsBatch.mockImplementation(async (_s: number, w: number) => (w === 7 ? { g1: pred1 } : {}));
   });
 
-  it("says when it could not find the current week", async () => {
+  it("says when it could not find the current week, and finds it on Try again", async () => {
     currentWeek.mockRejectedValueOnce(new Error("down"));
     render(<GamesPage />);
-    expect(await screen.findByText("Couldn't find the current week, so this shows week 1.")).toBeInTheDocument();
+    const notice = await screen.findByText("Couldn't find the current week, so this shows week 1.");
+    fireEvent.click(within(notice.parentElement as HTMLElement).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(currentWeek).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText(/Couldn't find the current week/)).not.toBeInTheDocument());
+    expect(await screen.findByText(/Week 7/i)).toBeInTheDocument();
+  });
+
+  it("drops the week-1 notice once the visitor moves to another week", async () => {
+    currentWeek.mockRejectedValueOnce(new Error("down"));
+    render(<GamesPage />);
+    await screen.findByText(/Couldn't find the current week/);
+    fireEvent.click(screen.getByRole("button", { name: "Next week" }));
+    await waitFor(() => expect(screen.queryByText(/Couldn't find the current week/)).not.toBeInTheDocument());
   });
 });

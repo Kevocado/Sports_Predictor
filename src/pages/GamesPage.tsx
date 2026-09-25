@@ -57,7 +57,8 @@ export function GamesPage() {
       })
       .catch(() => { if (!cancelled) { setCurrentWeek(null); setCurrentWeekFailed(true); } });
     return () => { cancelled = true; };
-  }, [api, sport]);
+  // reloadKey: every Try again also re-asks for the current week.
+  }, [api, sport, reloadKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,8 +184,11 @@ export function GamesPage() {
         </div>
       )}
 
-      {currentWeekFailed && (
-        <p role="status" className="mb-3 text-sm text-sp-text-dim">Couldn't find the current week, so this shows week 1.</p>
+      {currentWeekFailed && season === FALLBACK_SEASON && week === 1 && (
+        <div role="status" className="mb-3 flex flex-wrap items-center gap-3 text-sm text-sp-text-dim">
+          <span>Couldn't find the current week, so this shows week 1.</span>
+          <button onClick={() => setReloadKey((k) => k + 1)} className="rounded-md border border-sp-border bg-sp-850 px-3 py-1.5 text-xs font-semibold text-sp-text transition hover:border-sp-gold/60">Try again</button>
+        </div>
       )}
       {loading && <p role="status" aria-live="polite" className="text-sm text-sp-text-dim">Loading games…</p>}
       {error && (
