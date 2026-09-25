@@ -35,6 +35,9 @@ export function GamesPage() {
   const [predictions, setPredictions] = useState<Record<string, GamePrediction>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [predictionsSettled, setPredictionsSettled] = useState(false);
+  const [currentWeekFailed, setCurrentWeekFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [sortMode, setSortMode] = useState<SortMode>("chronological");
   const [conferenceFilter, setConferenceFilter] = useState<string | null>(null);
   const [selectedGame, setSelectedGame] = useState<GameSummary | null>(null);
@@ -44,6 +47,7 @@ export function GamesPage() {
   // the time anyone's looking).
   useEffect(() => {
     let cancelled = false;
+    setCurrentWeekFailed(false);
     api.currentWeek()
       .then((cw) => {
         if (cancelled) return;
@@ -51,13 +55,13 @@ export function GamesPage() {
         setSeason(cw.season);
         setWeek(cw.week);
       })
-      .catch(() => { if (!cancelled) setCurrentWeek(null); });
+      .catch(() => { if (!cancelled) { setCurrentWeek(null); setCurrentWeekFailed(true); } });
     return () => { cancelled = true; };
   }, [api, sport]);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true); setError(null); setGames([]); setPredictions({}); setSelectedGame(null);
+    setLoading(true); setError(null); setGames([]); setPredictions({}); setPredictionsSettled(false); setSelectedGame(null);
     api.games(season, week).then(async (fetchedGames) => {
       if (cancelled) return;
       setGames(fetchedGames);
@@ -87,10 +91,13 @@ export function GamesPage() {
         if (entry) merged[entry[0]] = entry[1];
       }
       setPredictions(merged);
-    }).catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); })
+      setPredictionsSettled(true);
+    // The raw message ("502 Bad Gateway", "Failed to fetch") is never shown;
+    // the alert below says what failed and how to recover.
+    }).catch(() => { if (!cancelled) setError("games"); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [api, season, week]);
+  }, [api, season, week, reloadKey]);
 
   // Get all unique conferences for filter chips
   const allConferences = new Set<string>();
@@ -176,10 +183,24 @@ export function GamesPage() {
         </div>
       )}
 
-      {loading && <p className="text-sm text-sp-text-faint">Loading…</p>}
-      {error && <p role="alert" className="text-sm text-loss">{error}</p>}
+      {currentWeekFailed && (
+        <p role="status" className="mb-3 text-sm text-sp-text-dim">Couldn't find the current week, so this shows week 1.</p>
+      )}
+      {loading && <p role="status" aria-live="polite" className="text-sm text-sp-text-dim">Loading games…</p>}
+      {error && (
+        <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-loss/40 bg-loss/10 px-4 py-3 text-sm text-sp-text">
+          <span>We couldn't load this week's games. Check your connection and try again.</span>
+          <button onClick={() => setReloadKey((k) => k + 1)} className="rounded-md border border-sp-border bg-sp-850 px-3 py-1.5 text-xs font-semibold text-sp-text transition hover:border-sp-gold/60">Try again</button>
+        </div>
+      )}
+      {!loading && !error && predictionsSettled && games.length > 0 && Object.keys(predictions).length === 0 && (
+        <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sp-border bg-sp-850/70 px-4 py-3 text-sm text-sp-text">
+          <span>Picks for this week couldn't load. The schedule is below.</span>
+          <button onClick={() => setReloadKey((k) => k + 1)} className="rounded-md border border-sp-border bg-sp-850 px-3 py-1.5 text-xs font-semibold text-sp-text transition hover:border-sp-gold/60">Try again</button>
+        </div>
+      )}
       {!loading && !error && orderedGames.length === 0 && (
-        <p className="text-sm text-sp-text-faint">No games scheduled for this week.</p>
+        <p className="text-sm text-sp-text-dim">No games scheduled for this week.</p>
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -202,7 +223,8 @@ export function GamesPage() {
               )}
               <GameCard 
                 game={game} 
-                prediction={predictions[game.game_id] ?? null} 
+                prediction={predictions[game.game_id] ?? null}
+                predictionsSettled={predictionsSettled}
                 onClick={() => setSelectedGame(game)} 
               />
             </div>
