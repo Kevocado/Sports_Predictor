@@ -32,11 +32,24 @@ vi.mock("./context/SportContext", async (importOriginal) => {
   return { ...actual, useSport: () => ({ sport: "nfl", setSport: () => {}, api }) };
 });
 
+describe("family frame", () => {
+  it("names the site, links every Predictor sport, and marks the current one", async () => {
+    render(<App />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("NFL Predictor");
+    const sports = screen.getByRole("navigation", { name: "Sports" });
+    expect([...sports.querySelectorAll("a")].map((a) => a.textContent)).toEqual(["PL", "F1", "NFL", "CFB", "NBA"]);
+    expect(screen.getByRole("link", { name: "NFL" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "CFB" })).toHaveAttribute("href", "?sport=cfb");
+    expect(screen.getByRole("link", { name: "NBA" }).getAttribute("href")).toMatch(/^https:\/\/nba\./);
+    expect(await screen.findByText("No games scheduled for this week.")).toBeInTheDocument();
+  });
+});
+
 describe("App tab shell", () => {
   it("keeps visited tabs mounted and hides inactive ones instead of unmounting", async () => {
     render(<App />);
     expect(await screen.findByText("No games scheduled for this week.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Hub" }));
+    fireEvent.click(screen.getByRole("button", { name: "Data Hub" }));
     // The Hub opens on its Player Hub sub-tab.
     expect(await screen.findByText("No player predictions available for this week yet.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Team Hub" })).toBeInTheDocument();

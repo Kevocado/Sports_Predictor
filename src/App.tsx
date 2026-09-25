@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { SportProvider, useSport } from "./context/SportContext";
-import { SportToggle } from "./components/SportToggle";
+import { AppFrame } from "./predictor-ui";
+import { SITES } from "./lib/sites";
 import { GamesPage } from "./pages/GamesPage";
 import { HubPage } from "./pages/HubPage";
 import { preloadAll } from "./api/client";
 
 type Tab = "games" | "hub";
-const TABS = [["games","Games"],["hub","Hub"]] as const;
+const TABS = [["games", "Games"], ["hub", "Data Hub"]] as const;
 
 function AppShell() {
   const [tab, setTab] = useState<Tab>("games");
@@ -40,32 +41,20 @@ function AppShell() {
   }, []);
 
   return (
-    <div className="mx-auto min-h-screen max-w-6xl px-6 py-8" data-sport={sport}>
-      <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="clip-corner flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-sp-gold to-sp-600 font-black text-sp-950">SP</div>
-          <div>
-            <h1 className="text-xl font-extrabold tracking-tight text-sp-text">Sports Predictor</h1>
-            <p className="text-xs text-sp-text-faint">NFL &amp; CFB game and player predictions</p>
-          </div>
+    <AppFrame
+      sport={sport}
+      sportName={sport === "nfl" ? "NFL" : "CFB"}
+      sites={SITES}
+      tabs={TABS.map(([id, label]) => ({ id, label }))}
+      activeTab={tab}
+      onTab={(id) => showTab(id as Tab)}
+    >
+      {TABS.map(([key]) => mountedTabs.has(key) && (
+        <div key={key} data-tab={key} style={{ display: tab === key ? undefined : "none" }}>
+          {key === "games" ? <GamesPage /> : <HubPage />}
         </div>
-        <div className="flex items-center gap-3">
-          <SportToggle />
-          <nav className="flex gap-1 rounded-lg border border-sp-border bg-sp-850/60 p-1">
-            {TABS.map(([key, label]) => (
-              <button key={key} onClick={() => showTab(key)} className={`rounded-md px-3.5 py-1.5 font-display text-sm font-semibold uppercase tracking-wider transition ${tab === key ? "bg-sp-gold text-sp-950" : "text-sp-text-dim hover:text-sp-text"}`}>{label}</button>
-            ))}
-          </nav>
-        </div>
-      </header>
-      <main>
-        {TABS.map(([key]) => mountedTabs.has(key) && (
-          <div key={key} data-tab={key} style={{ display: tab === key ? undefined : "none" }}>
-            {key === "games" ? <GamesPage /> : <HubPage />}
-          </div>
-        ))}
-      </main>
-    </div>
+      ))}
+    </AppFrame>
   );
 }
 
