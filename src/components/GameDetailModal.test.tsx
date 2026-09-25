@@ -108,3 +108,28 @@ describe("GameDetailModal", () => {
     expect(screen.getByText("Ravens won")).toBeInTheDocument();
   });
 });
+
+describe("GameDetailModal on a final", () => {
+  const finalGame = { ...game, home_score: 20, away_score: 17 };
+
+  it("shows the pick made before kickoff, and labels today's model as reference only", async () => {
+    const api = mockApi();
+    const week = { game_id: finalGame.game_id, status: "resolved" as const, home_win_prob: 0.32, away_win_prob: 0.68, verdict: null };
+    render(<GameDetailModal game={finalGame} api={api} weekPrediction={week} onClose={() => {}} />);
+    expect(await screen.findByText("Pick before kickoff: Chiefs · 68%")).toBeInTheDocument();
+    expect(screen.getByText(/Today's model, for reference/)).toBeInTheDocument();
+  });
+
+  it("labels a pick rebuilt after kickoff", async () => {
+    const api = mockApi();
+    const week = { game_id: finalGame.game_id, status: "resolved" as const, rebuilt: true, home_win_prob: 0.5, away_win_prob: 0.5, verdict: null };
+    render(<GameDetailModal game={finalGame} api={api} weekPrediction={week} onClose={() => {}} />);
+    expect(await screen.findByText(/Rebuilt after kickoff/)).toBeInTheDocument();
+  });
+
+  it("says when there was no pick before kickoff", async () => {
+    const api = mockApi();
+    render(<GameDetailModal game={finalGame} api={api} onClose={() => {}} />);
+    expect(await screen.findByText("No pick was made before kickoff.")).toBeInTheDocument();
+  });
+});

@@ -4,7 +4,8 @@ import { useSport } from "../context/SportContext";
 import { sortByConfidence } from "../lib/confidenceSort";
 import { TeamLogo } from "../components/TeamName";
 import { ErrorState, MatchCard, RoundNavigator, Skeleton } from "../predictor-ui";
-import { kickoffZones, nextUpIds, toCardModel, weekTally } from "../lib/weekCards";
+import { hasStarted, kickoffZones, nextUpIds, toCardModel, weekTally } from "../lib/weekCards";
+import { parseKickoff } from "../predictor-ui";
 import { GameDetailModal } from "../components/GameDetailModal";
 
 const FALLBACK_SEASON = 2026;
@@ -122,7 +123,7 @@ export function GamesPage() {
 
   const orderedGames = sortMode === "confidence"
     ? sortByConfidence(filteredGames, predictions)
-    : [...filteredGames].sort((a, b) => new Date(a.gameday).getTime() - new Date(b.gameday).getTime());
+    : [...filteredGames].sort((a, b) => parseKickoff(a.gameday).getTime() - parseKickoff(b.gameday).getTime());
 
   const isCurrentWeek = currentWeek != null && currentWeek.season === season && currentWeek.week === week;
   const byId = new Map(weekPredictions.map((w) => [w.game_id, w]));
@@ -191,14 +192,15 @@ export function GamesPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {orderedGames.map((game) => {
           const model = toCardModel(game, predictions[game.game_id] ?? null, byId.get(game.game_id), nextIds.has(game.game_id));
-          // Finals wait for the week's snapshots; games to come wait for picks.
-          const isFinal = game.home_score != null;
-          const pending = isFinal ? !weekLoaded : !predictionsSettled && !predictions[game.game_id];
+          // Started games (finals and games under way) are judged on the
+          // week's snapshots, so they wait for those; games to come wait for picks.
+          const started = hasStarted(game);
+          const pending = started ? !weekLoaded : !predictionsSettled && !predictions[game.game_id];
           return (
             <MatchCard
               key={game.game_id}
               {...model}
-              status={pending && isFinal ? undefined : model.status}
+              status={pending && started ? undefined : model.status}
               left={{ ...model.left, badge: <TeamLogo sport={sport} team={game.away_team} size="md" /> }}
               right={{ ...model.right, badge: <TeamLogo sport={sport} team={game.home_team} size="md" /> }}
               pickPlaceholder={pending ? "Loading pick…" : undefined}
@@ -208,7 +210,7 @@ export function GamesPage() {
         })}
       </div>
 
-      {selectedGame && <GameDetailModal game={selectedGame} api={api} onClose={() => setSelectedGame(null)} />}
+      {selectedGame && <GameDetailModal game={selectedGame} api={api} weekPrediction={byId.get(selectedGame.game_id)} onClose={() => setSelectedGame(null)} />}
     </div>
   );
 }

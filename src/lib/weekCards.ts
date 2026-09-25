@@ -13,6 +13,9 @@ export type CardModel = {
 };
 
 const isFinal = (g: GameSummary) => g.home_score != null && g.away_score != null;
+// A game past kickoff with no score is Live only this long; after that the
+// score feed is behind (or the game was postponed), so it's "Awaiting result".
+const LIVE_WINDOW_MS = 5 * 3600_000;
 const kickoffMs = (g: GameSummary) => parseKickoff(g.gameday).getTime();
 
 function localTime(iso: string, timeZone?: string): string {
@@ -89,11 +92,17 @@ export function toCardModel(
     else if (week?.rebuilt) model.status = "rebuilt";
     else if (week?.status === "resolved" && week.verdict) model.status = week.verdict.moneyline.hit ? "called" : "missed";
   } else if (started) {
-    model.status = "live";
+    if (now - kickoffMs(game) < LIVE_WINDOW_MS) model.status = "live";
+    else model.when = `${day} · Awaiting result`;
   } else if (isNext) {
     model.status = "next";
   }
   return model;
+}
+
+/** Whether a game has kicked off (by the clock, or because it has a score). */
+export function hasStarted(game: GameSummary, now: number = Date.now()): boolean {
+  return isFinal(game) || kickoffMs(game) <= now;
 }
 
 /** "Next up": every game at the earliest kickoff still to come, in the current week only. */

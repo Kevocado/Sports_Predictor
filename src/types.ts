@@ -34,6 +34,8 @@ export interface PlayerPropPrediction { player_id: string; player_name: string; 
 export interface WeeklyTrendEntry { week: number; pct_moneyline_correct: number; n_games: number; }
 export interface GamesTrackRecord {
   n_resolved: number;
+  // Picks rebuilt after kickoff: reported, never counted. Absent from older API builds.
+  n_rebuilt?: number;
   pct_moneyline_correct: number | null;
   pct_ats_correct: number | null;
   pct_totals_correct: number | null;

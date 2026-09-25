@@ -77,6 +77,11 @@ export function TrackRecordPage() {
         <p className="mb-4 text-xs text-sp-text-faint">How good the model actually is, in aggregate — not a game-by-game log.</p>
 
         <h3 className="mb-2 font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Game predictions</h3>
+        {(games.n_rebuilt ?? 0) > 0 && (
+          <p className="mb-2 text-xs text-sp-text-dim">
+            {games.n_rebuilt} pick{games.n_rebuilt === 1 ? "" : "s"} rebuilt after kickoff {games.n_rebuilt === 1 ? "is" : "are"} shown on {games.n_rebuilt === 1 ? "its game" : "their games"} but not counted here.
+          </p>
+        )}
         {games.n_resolved === 0 ? (
           <p className="text-sm text-sp-text-faint">No resolved games yet — check back once this week's games are final.</p>
         ) : (

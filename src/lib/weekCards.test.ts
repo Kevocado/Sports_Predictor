@@ -143,3 +143,13 @@ describe("kickoffZones", () => {
     expect(kickoffZones(["2026-10-04T17:00:00", "2026-10-04T20:25:00"], TZ)).toBe("CDT");
   });
 });
+
+describe("live window", () => {
+  it("stops calling a game Live five hours after kickoff and says the result is awaited", () => {
+    const now = Date.parse("2026-10-04T23:00:00Z");
+    const old = { ...upcoming, gameday: "2026-10-04T17:00:00Z" };
+    const m = toCardModel(old, pred, undefined, false, TZ, now);
+    expect(m.status).toBeUndefined();
+    expect(m.when).toBe("Sun 4 Oct · Awaiting result");
+  });
+});
