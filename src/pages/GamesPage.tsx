@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import type { GamePrediction, GameSummary } from "../types";
+import type { GamePrediction, GameSummary, WeekPrediction } from "../types";
 import { useSport } from "../context/SportContext";
 import { sortByConfidence } from "../lib/confidenceSort";
-import { GameCard } from "../components/GameCard";
+import { TeamLogo } from "../components/TeamName";
+import { ErrorState, MatchCard, RoundNavigator, Skeleton } from "../predictor-ui";
+import { toCardModel, weekTally } from "../lib/weekCards";
 import { GameDetailModal } from "../components/GameDetailModal";
 
 const FALLBACK_SEASON = 2026;
@@ -33,6 +35,7 @@ export function GamesPage() {
   const [currentWeek, setCurrentWeek] = useState<{ season: number; week: number } | null>(null);
   const [games, setGames] = useState<GameSummary[]>([]);
   const [predictions, setPredictions] = useState<Record<string, GamePrediction>>({});
+  const [weekPredictions, setWeekPredictions] = useState<WeekPrediction[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [predictionsSettled, setPredictionsSettled] = useState(false);
@@ -62,7 +65,12 @@ export function GamesPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true); setError(null); setGames([]); setPredictions({}); setPredictionsSettled(false); setSelectedGame(null);
+    setLoading(true); setError(null); setGames([]); setPredictions({}); setWeekPredictions([]); setPredictionsSettled(false); setSelectedGame(null);
+    // Tracked pre-kickoff verdicts for the week (Called it / Missed and the
+    // record line). Best-effort: without them finals simply show no verdict.
+    api.predictionsForWeek(season, week)
+      .then((rows) => { if (!cancelled) setWeekPredictions(Array.isArray(rows) ? rows : []); })
+      .catch(() => {});
     api.games(season, week).then(async (fetchedGames) => {
       if (cancelled) return;
       setGames(fetchedGames);
@@ -100,142 +108,97 @@ export function GamesPage() {
     return () => { cancelled = true; };
   }, [api, season, week, reloadKey]);
 
-  // Get all unique conferences for filter chips
-  const allConferences = new Set<string>();
-  for (const game of games) {
-    if (game.home_conference) allConferences.add(game.home_conference);
-    if (game.away_conference) allConferences.add(game.away_conference);
-  }
-  const conferenceFilters = Array.from(allConferences).sort();
+  const conferenceOptions = Array.from(
+    new Set(games.flatMap((g) => [g.home_conference, g.away_conference]).filter((c): c is string => Boolean(c))),
+  ).sort();
 
-  // Apply conference filter if selected
   const filteredGames = conferenceFilter
-    ? games.filter(g => {
-        const homeConf = g.home_conference || 'Independent';
-        const awayConf = g.away_conference || 'Independent';
-        return homeConf === conferenceFilter || awayConf === conferenceFilter;
-      })
+    ? games.filter((g) => (g.home_conference || "Independent") === conferenceFilter || (g.away_conference || "Independent") === conferenceFilter)
     : games;
 
-  const orderedGames = sortMode === "confidence" 
-    ? sortByConfidence(filteredGames, predictions) 
+  const orderedGames = sortMode === "confidence"
+    ? sortByConfidence(filteredGames, predictions)
     : [...filteredGames].sort((a, b) => new Date(a.gameday).getTime() - new Date(b.gameday).getTime());
-  
+
   const isCurrentWeek = currentWeek != null && currentWeek.season === season && currentWeek.week === week;
+  const byId = new Map(weekPredictions.map((w) => [w.game_id, w]));
+  // "Next up" is the soonest game still to kick off, one per week.
+  const nextId = [...games]
+    .filter((g) => g.home_score == null && new Date(g.gameday).getTime() >= Date.now() - 4 * 3600_000)
+    .sort((a, b) => new Date(a.gameday).getTime() - new Date(b.gameday).getTime())[0]?.game_id;
+
+  const retry = () => setReloadKey((k) => k + 1);
+  const pillClass = (on: boolean) =>
+    `rounded-pr px-3 py-1 text-xs font-semibold transition-colors ${on ? "bg-pr-accent text-pr-accent-ink" : "text-pr-text-dim hover:text-pr-text"}`;
 
   return (
     <div>
+      <RoundNavigator
+        label={`Week ${week}`}
+        unit="week"
+        canPrev={week > 1}
+        canNext
+        onPrev={() => setWeek((w) => Math.max(1, w - 1))}
+        onNext={() => setWeek((w) => w + 1)}
+        onJumpToCurrent={!isCurrentWeek && currentWeek ? () => { setSeason(currentWeek.season); setWeek(currentWeek.week); } : undefined}
+        record={weekTally(weekPredictions)}
+      />
+
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setWeek((w) => Math.max(1, w - 1))}
-            disabled={week <= 1}
-            aria-label="Previous week"
-            className="rounded-lg border border-sp-border bg-sp-850/60 px-2.5 py-1.5 text-sp-text-dim transition hover:text-sp-text disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            &larr;
-          </button>
-          <h2 className="font-display text-2xl font-semibold uppercase tracking-wide text-sp-text">
-            {season} &middot; Week {week}
-          </h2>
-          <button
-            onClick={() => setWeek((w) => w + 1)}
-            aria-label="Next week"
-            className="rounded-lg border border-sp-border bg-sp-850/60 px-2.5 py-1.5 text-sp-text-dim transition hover:text-sp-text"
-          >
-            &rarr;
-          </button>
-          {!isCurrentWeek && currentWeek && (
-            <button
-              onClick={() => { setSeason(currentWeek.season); setWeek(currentWeek.week); }}
-              className="rounded-lg border border-sp-gold/40 bg-sp-gold/10 px-2.5 py-1.5 text-xs font-medium text-sp-gold transition hover:bg-sp-gold/20"
+        <div className="flex gap-1 rounded-pr border border-pr-rule bg-pr-panel p-1" aria-label="Order games">
+          <button type="button" aria-pressed={sortMode === "chronological"} onClick={() => setSortMode("chronological")} className={pillClass(sortMode === "chronological")}>Kickoff order</button>
+          <button type="button" aria-pressed={sortMode === "confidence"} onClick={() => setSortMode("confidence")} className={pillClass(sortMode === "confidence")}>Most confident first</button>
+        </div>
+        {conferenceOptions.length > 0 && (
+          <label className="flex items-center gap-2 text-sm text-pr-text-dim">
+            Conference
+            <select
+              value={conferenceFilter ?? ""}
+              onChange={(e) => setConferenceFilter(e.target.value || null)}
+              className="rounded-pr border border-pr-rule bg-pr-panel px-2 py-1.5 text-sm text-pr-text"
             >
-              Jump to current week
-            </button>
-          )}
-        </div>
-        <div className="flex gap-1 rounded-lg border border-sp-border bg-sp-850/60 p-1">
-          {(["chronological", "confidence"] as const).map((mode) => (
-            <button key={mode} onClick={() => setSortMode(mode)} className={`rounded-md px-3 py-1 text-xs font-medium transition ${sortMode === mode ? "bg-sp-gold text-sp-950" : "text-sp-text-dim hover:text-sp-text"}`}>
-              {mode === "chronological" ? "Kickoff order" : "Sort by confidence"}
-            </button>
-          ))}
-        </div>
+              <option value="">All conferences</option>
+              {conferenceOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+        )}
       </div>
 
-      {/* Conference filter chips */}
-      {conferenceFilters.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
-          <button
-            onClick={() => setConferenceFilter(null)}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition ${conferenceFilter === null ? "bg-sp-gold text-sp-950" : "border border-sp-border bg-sp-850/60 text-sp-text-dim hover:text-sp-text"}`}
-          >
-            All
-          </button>
-          {conferenceFilters.map((conf) => (
-            <button
-              key={conf}
-              onClick={() => setConferenceFilter(conf === conferenceFilter ? null : conf)}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition ${conferenceFilter === conf ? "bg-sp-gold text-sp-950" : "border border-sp-border bg-sp-850/60 text-sp-text-dim hover:text-sp-text"}`}
-            >
-              {conf}
-            </button>
-          ))}
-        </div>
-      )}
-
       {currentWeekFailed && season === FALLBACK_SEASON && week === 1 && (
-        <div role="status" className="mb-3 flex flex-wrap items-center gap-3 text-sm text-sp-text-dim">
+        <div role="status" className="mb-3 flex flex-wrap items-center gap-3 text-sm text-pr-text-dim">
           <span>Couldn't find the current week, so this shows week 1.</span>
-          <button onClick={() => setReloadKey((k) => k + 1)} className="rounded-md border border-sp-border bg-sp-850 px-3 py-1.5 text-xs font-semibold text-sp-text transition hover:border-sp-gold/60">Try again</button>
+          <button type="button" onClick={retry} className="rounded-pr border border-pr-rule bg-pr-panel-2 px-3 py-1.5 text-xs font-semibold text-pr-text transition-colors hover:border-pr-accent">Try again</button>
         </div>
       )}
-      {loading && <p role="status" aria-live="polite" className="text-sm text-sp-text-dim">Loading games…</p>}
-      {error && (
-        <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-loss/40 bg-loss/10 px-4 py-3 text-sm text-sp-text">
-          <span>We couldn't load this week's games. Check your connection and try again.</span>
-          <button onClick={() => setReloadKey((k) => k + 1)} className="rounded-md border border-sp-border bg-sp-850 px-3 py-1.5 text-xs font-semibold text-sp-text transition hover:border-sp-gold/60">Try again</button>
-        </div>
-      )}
+      {loading && <Skeleton label="Loading games…" />}
+      {error && <ErrorState message="We couldn't load this week's games. Check your connection and try again." onRetry={retry} />}
       {!loading && !error && predictionsSettled && games.length > 0 && Object.keys(predictions).length === 0 && (
-        <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sp-border bg-sp-850/70 px-4 py-3 text-sm text-sp-text">
+        <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-pr border border-pr-rule bg-pr-panel px-4 py-3 text-sm text-pr-text">
           <span>Picks for this week couldn't load. The schedule is below.</span>
-          <button onClick={() => setReloadKey((k) => k + 1)} className="rounded-md border border-sp-border bg-sp-850 px-3 py-1.5 text-xs font-semibold text-sp-text transition hover:border-sp-gold/60">Try again</button>
+          <button type="button" onClick={retry} className="rounded-pr border border-pr-rule bg-pr-panel-2 px-3 py-1.5 text-xs font-semibold text-pr-text transition-colors hover:border-pr-accent">Try again</button>
         </div>
       )}
       {!loading && !error && orderedGames.length === 0 && (
-        <p className="text-sm text-sp-text-dim">No games scheduled for this week.</p>
+        <p className="text-sm text-pr-text-dim">No games scheduled for this week.</p>
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {orderedGames.map((game) => {
-          // Only show conference badges for CFB
-          const showConf = sport === "cfb";
-          const homeConf = game.home_conference || 'Independent';
-          const awayConf = game.away_conference || 'Independent';
+          const model = toCardModel(game, predictions[game.game_id] ?? null, byId.get(game.game_id), game.game_id === nextId);
+          const pending = !predictionsSettled && !predictions[game.game_id] && game.home_score == null;
           return (
-            <div key={game.game_id} className="relative">
-              {showConf && homeConf && awayConf && (
-                <div className="absolute -top-3 right-2 z-10 flex gap-1">
-                  <span className="rounded bg-sp-900 px-1.5 py-0.5 text-[10px] font-semibold text-sp-text-dim border border-sp-border/50">
-                    {homeConf}
-                  </span>
-                  <span className="rounded bg-sp-900 px-1.5 py-0.5 text-[10px] font-semibold text-sp-text-dim border border-sp-border/50">
-                    {awayConf}
-                  </span>
-                </div>
-              )}
-              <GameCard 
-                game={game} 
-                prediction={predictions[game.game_id] ?? null}
-                predictionsSettled={predictionsSettled}
-                onClick={() => setSelectedGame(game)} 
-              />
-            </div>
+            <MatchCard
+              key={game.game_id}
+              {...model}
+              left={{ ...model.left, badge: <TeamLogo sport={sport} team={game.away_team} size="md" /> }}
+              right={{ ...model.right, badge: <TeamLogo sport={sport} team={game.home_team} size="md" /> }}
+              pickPlaceholder={pending ? "Loading pick…" : undefined}
+              onOpen={() => setSelectedGame(game)}
+            />
           );
         })}
       </div>
-      
+
       {selectedGame && <GameDetailModal game={selectedGame} api={api} onClose={() => setSelectedGame(null)} />}
     </div>
   );

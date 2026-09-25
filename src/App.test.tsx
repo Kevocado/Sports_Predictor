@@ -23,7 +23,7 @@ const api = {
     },
   })),
   powerRankings: vi.fn(async () => ({ season: 2026, rankings: [] })),
-  gamePrediction: vi.fn(), gameVerdict: vi.fn(), predictionsForWeek: vi.fn(),
+  gamePrediction: vi.fn(), gameVerdict: vi.fn(), predictionsForWeek: vi.fn(async () => []),
   retrain: vi.fn(), teamForm: vi.fn(), headToHead: vi.fn(),
 } as unknown as SportApi;
 

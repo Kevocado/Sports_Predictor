@@ -1,4 +1,4 @@
-// Synced from predictor-ui@876ec2dbb2e9. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
+// Synced from predictor-ui@4e22de94281c. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
 import type { ReactNode } from "react";
 import { pct } from "../fmt";
 import { ProbabilityBar, type Segment } from "./ProbabilityBar";
@@ -20,6 +20,8 @@ type Props = {
   /** Sport-specific line under the pick: a spread, a total, a venue. */
   meta?: string;
   bar?: Segment[];
+  /** Shown instead of a pick when there is none yet (default "No pick yet"). */
+  pickPlaceholder?: string;
   onOpen: () => void;
 };
 
@@ -38,10 +40,10 @@ function Team({ side }: { side: Side }) {
 }
 
 /** The family match card: one pick, one status, a labelled bar. */
-export function MatchCard({ left, right, centre, status, pick, when, meta, bar, onOpen }: Props) {
+export function MatchCard({ left, right, centre, status, pick, when, meta, bar, pickPlaceholder = "No pick yet", onOpen }: Props) {
   // A missing pick is always said out loud; the status badge only covers it
   // when the badge itself reads "No pick yet".
-  const pickLine = pick ? `Pick: ${pick.label} · ${pct(pick.prob)}` : status === "nopick" ? undefined : "No pick yet";
+  const pickLine = pick ? `Pick: ${pick.label} · ${pct(pick.prob)}` : status === "nopick" ? undefined : pickPlaceholder;
 
   return (
     <button

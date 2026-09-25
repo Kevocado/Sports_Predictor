@@ -1,4 +1,4 @@
-// Synced from predictor-ui@876ec2dbb2e9. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
+// Synced from predictor-ui@4e22de94281c. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
 import { record as fmtRecord } from "../fmt";
 
 type RoundRecord = { hits: number; settled: number; rebuilt: number };
@@ -30,11 +30,11 @@ export function RoundNavigator({ label, unit = "week", canPrev, canNext, onPrev,
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" aria-label="Previous" disabled={!canPrev} onClick={onPrev} className={stepClass}>
+        <button type="button" aria-label={`Previous ${unit}`} disabled={!canPrev} onClick={onPrev} className={stepClass}>
           ←
         </button>
         <h2 className="whitespace-nowrap font-pr-display text-2xl font-bold uppercase tracking-wide text-pr-text">{label}</h2>
-        <button type="button" aria-label="Next" disabled={!canNext} onClick={onNext} className={stepClass}>
+        <button type="button" aria-label={`Next ${unit}`} disabled={!canNext} onClick={onNext} className={stepClass}>
           →
         </button>
         {onJumpToCurrent && (

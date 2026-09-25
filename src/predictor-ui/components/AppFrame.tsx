@@ -1,4 +1,4 @@
-// Synced from predictor-ui@876ec2dbb2e9. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
+// Synced from predictor-ui@4e22de94281c. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
 import type { ReactNode } from "react";
 
 export type Sport = "pl" | "f1" | "nfl" | "cfb" | "nba" | "hub";
