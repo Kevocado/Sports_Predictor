@@ -1,5 +1,15 @@
 :80 {
-    root * /usr/share/caddy
-    file_server
-    try_files {path} /index.html
+    handle_path /api/nfl/* {
+        rewrite * /api{uri}
+        reverse_proxy {$NFL_API_UPSTREAM:nfl-predictor:8001}
+    }
+    handle_path /api/cfb/* {
+        rewrite * /api{uri}
+        reverse_proxy {$CFB_API_UPSTREAM:cfb-predictor:8003}
+    }
+    handle {
+        root * /usr/share/caddy
+        try_files {path} /index.html
+        file_server
+    }
 }

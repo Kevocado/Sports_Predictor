@@ -62,8 +62,8 @@ describe("App tab shell", () => {
       // Let the preload's promise chain settle.
       for (let i = 0; i < 20; i++) await Promise.resolve();
       const urls = fetchMock.mock.calls.map((c) => String(c[0]));
-      expect(urls).toContain("http://localhost:8001/api/current-week");
-      expect(urls).toContain("http://localhost:8003/api/current-week");
+      expect(urls).toContain("/api/nfl/current-week");
+      expect(urls).toContain("/api/cfb/current-week");
     } finally {
       vi.useRealTimers();
     }
@@ -90,10 +90,10 @@ describe("App tab shell", () => {
       document.dispatchEvent(new Event("visibilitychange"));
       for (let i = 0; i < 50; i++) await Promise.resolve();
       const urls = fetchMock.mock.calls.map((c) => String(c[0]));
-      expect(urls).toContain("http://localhost:8001/api/current-week");
-      expect(urls).toContain("http://localhost:8003/api/current-week");
-      expect(urls).toContain("http://localhost:8001/api/predictions/2026/7/batch");
-      expect(urls).toContain("http://localhost:8003/api/predictions/2026/7/batch");
+      expect(urls).toContain("/api/nfl/current-week");
+      expect(urls).toContain("/api/cfb/current-week");
+      expect(urls).toContain("/api/nfl/predictions/2026/7/batch");
+      expect(urls).toContain("/api/cfb/predictions/2026/7/batch");
     } finally {
       if (visibilityDescriptor) Object.defineProperty(document, "visibilityState", visibilityDescriptor);
       vi.useRealTimers();

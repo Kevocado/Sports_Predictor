@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createApiClient, preloadAll } from "./client";
+import { createApiClient, preloadAll, NFL_BASE_URL, CFB_BASE_URL } from "./client";
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
@@ -113,12 +113,12 @@ describe("preloadAll", () => {
     );
     await preloadAll();
     const urls = fetchMock.mock.calls.map((c) => String(c[0]));
-    expect(urls).toContain("http://localhost:8001/api/current-week");
-    expect(urls).toContain("http://localhost:8003/api/current-week");
-    expect(urls).toContain("http://localhost:8001/api/predictions/2026/7/batch");
-    expect(urls).toContain("http://localhost:8003/api/predictions/2026/7/batch");
-    expect(urls).toContain("http://localhost:8001/api/power-rankings?season=2026");
-    expect(urls).toContain("http://localhost:8003/api/power-rankings?season=2026");
+    expect(urls).toContain("/api/nfl/current-week");
+    expect(urls).toContain("/api/cfb/current-week");
+    expect(urls).toContain("/api/nfl/predictions/2026/7/batch");
+    expect(urls).toContain("/api/cfb/predictions/2026/7/batch");
+    expect(urls).toContain("/api/nfl/power-rankings?season=2026");
+    expect(urls).toContain("/api/cfb/power-rankings?season=2026");
   });
 
   it("warms both sports concurrently instead of one after the other", async () => {
@@ -134,7 +134,7 @@ describe("preloadAll", () => {
       const nflWeekGate = new Promise<void>((resolve) => { resolveNflWeek = resolve; });
       fetchMock.mockImplementation((url: string) => {
         const u = String(url);
-        if (u === "http://localhost:8001/api/current-week") {
+        if (u === "/api/nfl/current-week") {
           return nflWeekGate.then(() => okJson({ season: 2026, week: 7 }));
         }
         return Promise.resolve(okJson(u.endsWith("/current-week") ? { season: 2026, week: 7 } : []));
@@ -143,14 +143,21 @@ describe("preloadAll", () => {
       for (let i = 0; i < 50; i++) await Promise.resolve();
       // The NFL week request is still hanging, yet CFB warming already started.
       const urls = fetchMock.mock.calls.map((c) => String(c[0]));
-      expect(urls).toContain("http://localhost:8003/api/current-week");
+      expect(urls).toContain("/api/cfb/current-week");
       resolveNflWeek();
       await warming;
       const urlsAfter = fetchMock.mock.calls.map((c) => String(c[0]));
-      expect(urlsAfter).toContain("http://localhost:8001/api/predictions/2026/7/batch");
-      expect(urlsAfter).toContain("http://localhost:8003/api/predictions/2026/7/batch");
+      expect(urlsAfter).toContain("/api/nfl/predictions/2026/7/batch");
+      expect(urlsAfter).toContain("/api/cfb/predictions/2026/7/batch");
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("API base URLs", () => {
+  it("default to same-origin paths so the page works on any host", () => {
+    expect(NFL_BASE_URL).toBe("/api/nfl");
+    expect(CFB_BASE_URL).toBe("/api/cfb");
   });
 });
