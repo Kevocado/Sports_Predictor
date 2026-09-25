@@ -17,9 +17,14 @@ describe("GameCard", () => {
     expect(screen.getAllByText("Chiefs").length).toBeGreaterThan(0);
     expect(screen.getByText("62% confident")).toBeInTheDocument();
   });
-  it("shows a loading state when prediction is null", () => {
+  it("shows a named loading state while predictions are still loading", () => {
     render(<GameCard game={game} prediction={null} onClick={() => {}} />);
-    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    expect(screen.getByText("Loading pick…")).toBeInTheDocument();
+  });
+  it("says there is no pick, instead of loading forever, once predictions have settled", () => {
+    render(<GameCard game={game} prediction={null} predictionsSettled onClick={() => {}} />);
+    expect(screen.getByText("No pick yet")).toBeInTheDocument();
+    expect(screen.queryByText(/Loading/)).not.toBeInTheDocument();
   });
   it("calls onClick when clicked", () => {
     const onClick = vi.fn();

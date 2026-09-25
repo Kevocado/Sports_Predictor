@@ -8,7 +8,7 @@ function formatKickoff(iso: string): { date: string; time: string } {
   return { date: d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }), time: d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) };
 }
 
-export function GameCard({ game, prediction, onClick }: { game: GameSummary; prediction: GamePrediction | null; onClick: () => void }) {
+export function GameCard({ game, prediction, predictionsSettled = false, onClick }: { game: GameSummary; prediction: GamePrediction | null; predictionsSettled?: boolean; onClick: () => void }) {
   const { date, time } = formatKickoff(game.gameday);
   const isFinal = game.home_score != null && game.away_score != null;
   return (
@@ -20,7 +20,9 @@ export function GameCard({ game, prediction, onClick }: { game: GameSummary; pre
         ) : prediction ? (
           <ConfidenceBadge homeWinProb={prediction.home_win_prob} awayWinProb={prediction.away_win_prob} />
         ) : (
-          <span className="rounded bg-sp-700/60 px-1.5 py-0.5 text-sp-text-dim">Loading…</span>
+          <span role="status" className="rounded bg-sp-700/60 px-1.5 py-0.5 text-xs normal-case tracking-normal text-sp-text-dim">
+            {predictionsSettled ? "No pick yet" : "Loading pick…"}
+          </span>
         )}
       </div>
       <div className="flex items-center justify-between gap-2">
@@ -34,7 +36,9 @@ export function GameCard({ game, prediction, onClick }: { game: GameSummary; pre
           {isFinal && <span className="font-display text-lg font-semibold text-sp-text">{game.home_score}</span>}
         </div>
       </div>
-      {prediction ? <ProbabilityBar home={prediction.home_win_prob} away={prediction.away_win_prob} homeLabel={game.home_team} awayLabel={game.away_team} /> : <div className="h-2.5 w-full animate-pulse rounded-full bg-sp-850" />}
+      {prediction ? <ProbabilityBar home={prediction.home_win_prob} away={prediction.away_win_prob} homeLabel={game.home_team} awayLabel={game.away_team} /> : predictionsSettled
+          ? <div className="h-2.5 w-full rounded-full bg-sp-850" aria-hidden="true" />
+          : <div className="h-2.5 w-full rounded-full bg-sp-850 motion-safe:animate-pulse" aria-hidden="true" />}
       {game.spread_line != null && <p className="text-[11px] text-sp-text-faint">Spread {game.spread_line} · Total {game.total_line ?? "—"}</p>}
       {/* NFL-only kickoff context the /games endpoint already returns; CFB
           responses omit these fields so the line simply never renders there. */}
