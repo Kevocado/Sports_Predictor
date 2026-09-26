@@ -1,22 +1,23 @@
 import { useEffect, useState } from "react";
 import { useSport } from "../context/SportContext";
+import { Skeleton } from "../predictor-ui";
 import { PlayersPage } from "./PlayersPage";
 import { StandingsPage } from "./StandingsPage";
 import { TeamHubPage } from "./TeamHubPage";
 import { TrackRecordPage } from "./TrackRecordPage";
 
-type HubSubTab = "players" | "teams" | "standings" | "track-record";
-const SUBTABS = [["players", "Player Hub"], ["teams", "Team Hub"], ["standings", "Standings"], ["track-record", "Track Record"]] as const;
+type HubSubTab = "teams" | "players" | "standings" | "track-record";
+const SUBTABS = [["teams", "Teams"], ["players", "Players"], ["standings", "Standings"], ["track-record", "Track record"]] as const;
 
 /**
- * The Hub consolidates everything that is not the game list: player props,
- * the team hub (which absorbed the old power-rankings panel), standings, and
- * the track record. The panel components fetch their own data; the hub only
+ * The Hub consolidates everything that is not the game list: season team
+ * and player tables (efficiency, form, leaders, this week's projections),
+ * standings, and the track record. The panel components fetch their own data; the hub only
  * resolves the season for the team panel (behind the client's TTL cache).
  */
 export function HubPage() {
   const { api, sport } = useSport();
-  const [subtab, setSubtab] = useState<HubSubTab>("players");
+  const [subtab, setSubtab] = useState<HubSubTab>("teams");
   const [season, setSeason] = useState<number | null>(null);
 
   useEffect(() => {
@@ -33,6 +34,8 @@ export function HubPage() {
         {SUBTABS.map(([key, label]) => (
           <button
             key={key}
+            type="button"
+            aria-pressed={subtab === key}
             onClick={() => setSubtab(key)}
             className={`whitespace-nowrap rounded-md px-3.5 py-1.5 font-display text-sm font-semibold uppercase tracking-wider transition ${subtab === key ? "bg-sp-gold text-sp-950" : "text-sp-text-dim hover:text-sp-text"}`}
           >
@@ -43,7 +46,7 @@ export function HubPage() {
       {subtab === "players" ? <PlayersPage />
         : subtab === "teams" ? (season != null
           ? <TeamHubPage api={api} season={season} sport={sport} />
-          : <p className="text-sm text-sp-text-faint">Loading…</p>)
+          : <Skeleton label="Loading teams…" />)
         : subtab === "standings" ? <StandingsPage />
         : <TrackRecordPage />}
     </div>

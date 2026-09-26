@@ -1,308 +1,175 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { FormStrip } from "../components/FormStrip";
 import { TeamLogo } from "../components/TeamName";
-import type { FormEntry, Sport, SportApi, StandingsEntry, TeamRanking } from "../types";
+import { epa, perGame, share, signedInt } from "../lib/hubFormat";
+import { EmptyState, ErrorState, Skeleton, StatTable, streak, type Column } from "../predictor-ui";
+import type { FormEntry, HubRecentGame, HubTeam, HubTeamsResponse, Sport, SportApi } from "../types";
 
-export interface TeamHubRow {
-  team: string;
-  rank: number;
-  rating: number;
-  wins: number;
-  losses: number;
-  ties: number;
-  group: string | null;
-  pointDiff?: number;
-  projectedWins?: number;
-  projectedLosses?: number;
-  rankDelta?: number;
-  /** Recent-form string from the rankings payload (e.g. "WWLWW"). */
-  form?: string | null;
+const EPA_TIP = "Expected points added per play: how much each snap moved the team's scoring chances. Above 0 beats an average offense.";
+const DEF_EPA_TIP = "Expected points allowed per play. Lower is better: below 0 means the defense takes points away.";
+const SUCCESS_TIP = "Share of plays that gained enough yards to keep the drive on schedule.";
+
+function recordOf(t: HubTeam): string {
+  return `${t.wins}-${t.losses}${t.ties ? `-${t.ties}` : ""}`;
 }
 
-function groupOf(r: TeamRanking): string | null {
-  return r.division ?? r.conference ?? null;
+function trendWord(t: HubTeam): string {
+  switch (t.form_trend) {
+    case "up": return "Rising";
+    case "down": return "Slipping";
+    case "steady": return "Steady";
+    default: return t.games === 0 ? "New this season" : "Early days";
+  }
+}
+
+// FormStrip reads oldest first; recent_games arrives newest first.
+function formEntries(t: HubTeam): FormEntry[] {
+  return [...t.recent_games].reverse().map((g) => ({ ...g, game_id: `${g.gameday}-${g.opponent}` }));
+}
+
+function gameLine(g: HubRecentGame): string {
+  return `${g.result} ${g.team_score}–${g.opponent_score} ${g.is_home ? "v" : "at"} ${g.opponent}`;
+}
+
+function TeamDetail({ team }: { team: HubTeam }) {
+  const extras: [string, string][] = [
+    ["Streak", streak(team.streak)],
+    ["Yards/play", perGame(team.yards_per_play)],
+    ["Pass rate", share(team.pass_rate)],
+    ["Def success rate", share(team.def_success_rate)],
+  ];
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:gap-8">
+      <div>
+        <p className="mb-1.5 font-pr-display text-xs font-semibold uppercase tracking-wide text-pr-text-dim">Last {team.recent_games.length || 5}</p>
+        {team.recent_games.length === 0 ? (
+          <p className="text-xs text-pr-text-dim">No games yet this season.</p>
+        ) : (
+          <ul className="flex flex-col gap-1 font-mono text-sm tabular-nums">
+            {team.recent_games.map((g) => (
+              <li key={`${g.gameday}-${g.opponent}`} className="text-pr-text">
+                {gameLine(g)} <span className="text-xs text-pr-text-dim">{g.gameday}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
+        {extras.map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-xs text-pr-text-dim">{label}</dt>
+            <dd className="font-mono tabular-nums text-pr-text">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function columns(sport: Sport, advanced: boolean, hasTurnovers: boolean): Column<HubTeam>[] {
+  const played = (t: HubTeam) => t.games > 0;
+  const cols: (Column<HubTeam> | false)[] = [
+    {
+      key: "team", label: "Team", value: (t) => t.team,
+      render: (t) => (
+        <span className="inline-flex items-center gap-2">
+          <TeamLogo sport={sport} team={t.team} size="sm" />
+          {t.team}
+        </span>
+      ),
+    },
+    {
+      key: "record", label: "Record", numeric: true,
+      value: (t) => (played(t) ? (t.wins + t.ties / 2) / t.games : null),
+      render: recordOf,
+    },
+    advanced && { key: "off_epa", label: "Off EPA/play", numeric: true, tooltip: EPA_TIP, value: (t) => t.off_epa_play, render: (t) => epa(t.off_epa_play) },
+    // Lower is better on defense, so sort it the other way up by negating.
+    advanced && { key: "def_epa", label: "Def EPA/play", numeric: true, tooltip: DEF_EPA_TIP, value: (t) => (t.def_epa_play == null ? null : -t.def_epa_play), render: (t) => epa(t.def_epa_play) },
+    advanced && { key: "success", label: "Success rate", numeric: true, tooltip: SUCCESS_TIP, value: (t) => t.off_success_rate, render: (t) => share(t.off_success_rate) },
+    { key: "pf", label: "Pts for/g", numeric: true, value: (t) => t.points_for_pg, render: (t) => perGame(t.points_for_pg) },
+    { key: "pa", label: "Pts against/g", numeric: true, value: (t) => (t.points_against_pg == null ? null : -t.points_against_pg), render: (t) => perGame(t.points_against_pg) },
+    hasTurnovers && { key: "to", label: "Turnovers ±", numeric: true, value: (t) => t.turnover_margin, render: (t) => signedInt(t.turnover_margin) },
+    {
+      key: "form", label: "Form",
+      value: (t) => (played(t) ? t.form.filter((r) => r === "W").length : null),
+      render: (t) => (
+        <span className="inline-flex items-center gap-2">
+          <FormStrip entries={formEntries(t)} wrap={false} />
+          <span className="text-xs text-pr-text-dim">{trendWord(t)}</span>
+        </span>
+      ),
+    },
+  ];
+  return cols.filter((c): c is Column<HubTeam> => c !== false);
 }
 
 /**
- * Join the power-rankings list (every ranked team) with the standings rows.
- * Drops the known-stale OAK duplicate when LV is present so the table never
- * shows the same franchise twice; OAK alone is kept so real data is hidden.
+ * Season team table at PL depth: record, efficiency (EPA per play, success
+ * rate), scoring, turnovers and form, sortable, one row expanding into the
+ * last five results.
  */
-export function mergeTeamRows(rankings: TeamRanking[], standings: StandingsEntry[]): TeamHubRow[] {
-  const byTeam = new Map(standings.map((s) => [s.team, s]));
-  const hasLV = rankings.some((r) => r.team === "LV");
-  return rankings
-    .filter((r) => r.team !== "OAK" || !hasLV)
-    .map((r) => {
-      const s = byTeam.get(r.team);
-      return {
-        team: r.team,
-        rank: r.rank,
-        rating: r.rating,
-        wins: r.wins,
-        losses: r.losses,
-        ties: r.ties,
-        group: groupOf(r),
-        pointDiff: s?.point_diff,
-        projectedWins: s?.projected_wins,
-        projectedLosses: s?.projected_losses,
-        rankDelta: s?.division_rank_delta ?? s?.conference_rank_delta,
-        form: r.recent_form ?? null,
-      };
-    });
-}
-
-type SortKey = "rank" | "rating" | "wins" | "pointDiff" | "projectedWins";
-
-const SORT_LABELS: Record<SortKey, string> = {
-  rank: "Rank",
-  rating: "Rating",
-  wins: "Record",
-  pointDiff: "+/-",
-  projectedWins: "Proj",
-};
-
-function sortValue(row: TeamHubRow, key: SortKey): number {
-  switch (key) {
-    case "rank": return row.rank;
-    case "rating": return row.rating;
-    case "wins": return row.wins + row.ties * 0.5 - row.losses * 0.001;
-    case "pointDiff": return row.pointDiff ?? Number.NEGATIVE_INFINITY;
-    case "projectedWins": return row.projectedWins ?? Number.NEGATIVE_INFINITY;
-  }
-}
-
-function recordOf(row: TeamHubRow): string {
-  return `${row.wins}-${row.losses}${row.ties ? `-${row.ties}` : ""}`;
-}
-
-function Trend({ delta }: { delta?: number }) {
-  if (delta == null || delta === 0) return <span className="text-sp-text-faint">–</span>;
-  const up = delta < 0; // negative delta = projected to climb (lower rank number)
-  return (
-    <span className={up ? "text-win" : "text-loss"} title={up ? "Projected to climb" : "Projected to fall"}>
-      {up ? "▲" : "▼"}{Math.abs(delta)}
-    </span>
-  );
-}
-
-function FormChips({ form, team }: { form?: string | null; team: string }) {
-  const results = (form ?? "").toUpperCase().split("").filter((c) => c === "W" || c === "L" || c === "T");
-  if (results.length === 0) return <span className="text-sp-text-faint">—</span>;
-  return (
-    <span data-testid={`team-form-chips-${team}`} className="inline-flex items-center justify-end gap-0.5">
-      {results.map((r, i) => (
-        <span
-          key={i}
-          className={`flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold ${r === "W" ? "bg-win/20 text-win" : r === "L" ? "bg-loss/20 text-loss" : "bg-sp-text-faint/20 text-sp-text-dim"}`}
-        >
-          {r}
-        </span>
-      ))}
-    </span>
-  );
-}
-
-function FormDetail({ entries }: { entries: FormEntry[] }) {
-  if (entries.length === 0) return <p className="text-xs text-sp-text-faint">No recent games.</p>;
-  return (
-    <ul className="flex flex-wrap gap-2">
-      {entries.map((e) => (
-        <li
-          key={e.game_id}
-          className="flex items-center gap-2 rounded-lg border border-sp-border/60 bg-sp-900/60 px-2.5 py-1.5 text-xs"
-          title={`${e.gameday} ${e.is_home ? "vs" : "@"} ${e.opponent}`}
-        >
-          <span className={`flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold ${e.result === "W" ? "bg-win/20 text-win" : e.result === "L" ? "bg-loss/20 text-loss" : "bg-sp-text-faint/20 text-sp-text-dim"}`}>
-            {e.result}
-          </span>
-          <span className="text-sp-text-dim">{e.is_home ? "vs" : "@"} {e.opponent}</span>
-          <span className="font-mono text-sp-text">{e.team_score}-{e.opponent_score}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 export function TeamHubPage({ api, season, sport }: { api: SportApi; season: number; sport: Sport }) {
-  const [rows, setRows] = useState<TeamHubRow[] | null>(null);
+  const [data, setData] = useState<HubTeamsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [query, setQuery] = useState("");
-  const [group, setGroup] = useState<string>("all");
-  const [sortKey, setSortKey] = useState<SortKey>("rank");
-  const [sortAsc, setSortAsc] = useState(true);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [forms, setForms] = useState<Record<string, FormEntry[]>>({});
-  const [formLoading, setFormLoading] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setRows(null); setError(null); setExpanded(null); setForms({});
-    Promise.all([api.powerRankings(season), api.standings(season)])
-      .then(([pr, st]) => { if (!cancelled) setRows(mergeTeamRows(pr.rankings, st)); })
+    setData(null); setError(null);
+    api.hubTeams(season)
+      .then((res) => { if (!cancelled) setData(res); })
       .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); });
     return () => { cancelled = true; };
-  }, [api, season]);
+  }, [api, season, attempt]);
 
-  const groups = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of rows ?? []) if (r.group) set.add(r.group);
-    return [...set].sort((a, b) => a.localeCompare(b));
-  }, [rows]);
-
+  const advanced = data?.advanced_available !== false;
+  const cols = useMemo(
+    () => columns(sport, advanced, (data?.teams ?? []).some((t) => t.turnover_margin != null)),
+    [sport, advanced, data],
+  );
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const filtered = (rows ?? []).filter(
-      (r) => (group === "all" || r.group === group) && (!q || r.team.toLowerCase().includes(q)),
-    );
-    const dir = sortAsc ? 1 : -1;
-    return [...filtered].sort((a, b) => (sortValue(a, sortKey) - sortValue(b, sortKey)) * dir);
-  }, [rows, query, group, sortKey, sortAsc]);
+    return (data?.teams ?? []).filter((t) => !q || t.team.toLowerCase().includes(q));
+  }, [data, query]);
 
-  const maxRating = useMemo(() => Math.max(1, ...(rows ?? []).map((r) => r.rating)), [rows]);
-
-  function toggleSort(key: SortKey) {
-    if (key === sortKey) {
-      setSortAsc((v) => !v);
-    } else {
-      setSortKey(key);
-      setSortAsc(key === "rank");
-    }
-  }
-
-  function toggleExpand(team: string) {
-    if (expanded === team) {
-      setExpanded(null);
-      return;
-    }
-    setExpanded(team);
-    if (!forms[team] && formLoading !== team) {
-      setFormLoading(team);
-      api.teamForm(team, season, 5)
-        .then((f) => setForms((prev) => ({ ...prev, [team]: f.recent_form })))
-        .catch(() => setForms((prev) => ({ ...prev, [team]: [] })))
-        .finally(() => setFormLoading((cur) => (cur === team ? null : cur)));
-    }
-  }
-
-  if (error) return <p role="alert" className="text-sm text-loss">{error}</p>;
-  if (!rows) return <p className="text-sm text-sp-text-faint">Loading team hub…</p>;
+  if (error) return <ErrorState message={`Couldn't load team stats: ${error}`} onRetry={() => setAttempt((n) => n + 1)} />;
+  if (!data) return <Skeleton label="Loading teams…" />;
+  if (data.teams.length === 0) return <EmptyState message={`No team stats for ${season} yet.`} />;
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="font-display text-2xl font-semibold uppercase tracking-wide text-sp-text">Team Hub</h2>
-          <p className="text-xs text-sp-text-faint">
-            Power ratings, records, projections, and recent form for every ranked team. Click a row for last-5 games with scores.
-          </p>
+          <h2 className="font-pr-display text-2xl font-semibold uppercase tracking-wide text-pr-text">Teams</h2>
+          <p className="text-xs text-pr-text-dim">{season} season. Pick a header to sort; open a team for its last five games.</p>
         </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search teams…"
-            aria-label="Search teams"
-            className="rounded-lg border border-sp-border bg-sp-900/70 px-3 py-1.5 text-sm text-sp-text placeholder:text-sp-text-faint focus:border-sp-gold focus:outline-none"
-          />
-          {groups.length > 1 && (
-            <select
-              value={group}
-              onChange={(e) => setGroup(e.target.value)}
-              aria-label="Filter by group"
-              className="rounded-lg border border-sp-border bg-sp-900/70 px-3 py-1.5 text-sm text-sp-text focus:border-sp-gold focus:outline-none"
-            >
-              <option value="all">All groups</option>
-              {groups.map((g) => (
-                <option key={g} value={g}>{g}</option>
-              ))}
-            </select>
-          )}
-        </div>
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search teams…"
+          aria-label="Search teams"
+          className="rounded-pr border border-pr-rule bg-pr-panel px-3 py-1.5 text-sm text-pr-text placeholder:text-pr-text-faint focus:border-pr-accent focus:outline-none"
+        />
       </div>
-
+      {!advanced && (
+        <p role="status" className="mb-3 rounded-pr border border-pr-rule bg-pr-panel px-3 py-2 text-sm text-pr-text-dim">
+          Advanced stats unavailable right now. Showing results and scoring only.
+        </p>
+      )}
       {visible.length === 0 ? (
-        <p className="text-sm text-sp-text-faint">No teams match.</p>
+        <EmptyState message="No teams match." action={{ label: "Clear search", onClick: () => setQuery("") }} />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-sp-border bg-sp-850/40">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-sp-border/60 text-left text-xs text-sp-text-faint">
-                {(["rank", "team", "rating", "wins", "pointDiff", "projectedWins", "form", "trend"] as const).map((key) => {
-                  if (key === "team") {
-                    return <th key={key} className="px-3 py-2.5 font-medium uppercase tracking-wider">Team</th>;
-                  }
-                  if (key === "form" || key === "trend") {
-                    return <th key={key} className="px-3 py-2.5 text-right font-medium uppercase tracking-wider">{key === "form" ? "Form" : "Trend"}</th>;
-                  }
-                  return (
-                    <th key={key} className={`px-3 py-2.5 font-medium ${key === "rank" ? "" : "text-right"}`}>
-                      <button
-                        onClick={() => toggleSort(key)}
-                        className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-sp-text ${sortKey === key ? "text-sp-gold" : ""}`}
-                      >
-                        {SORT_LABELS[key]}
-                        {sortKey === key && <span aria-hidden>{sortAsc ? "▲" : "▼"}</span>}
-                      </button>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody data-testid="team-hub-rows">
-              {visible.map((row) => (
-                <Fragment key={row.team}>
-                  <tr
-                    data-testid={`team-hub-row-${row.team}`}
-                    data-team={row.team}
-                    className={`border-b border-sp-border/30 transition hover:bg-sp-800/40 ${expanded === row.team ? "bg-sp-800/40" : ""}`}
-                  >
-                    <td className="px-3 py-2 font-mono text-sp-text-dim">{row.rank}</td>
-                    <td className="px-3 py-2">
-                      <button onClick={() => toggleExpand(row.team)} className="flex items-center gap-2.5 text-left" aria-expanded={expanded === row.team}>
-                        <TeamLogo sport={sport} team={row.team} size="sm" />
-                        <span>
-                          <span className="block font-medium leading-tight text-sp-text">{row.team}</span>
-                          {row.group && <span className="block text-[11px] leading-tight text-sp-text-faint">{row.group}</span>}
-                        </span>
-                      </button>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center justify-end gap-2">
-                        <div className="h-1.5 w-16 overflow-hidden rounded-full bg-sp-700/60">
-                          <div className="h-full rounded-full bg-sp-gold" style={{ width: `${(row.rating / maxRating) * 100}%` }} />
-                        </div>
-                        <span className="font-mono text-sp-text-dim">{Math.round(row.rating)}</span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-sp-text">{recordOf(row)}</td>
-                    <td className={`px-3 py-2 text-right font-mono ${(row.pointDiff ?? 0) >= 0 ? "text-win" : "text-loss"}`}>
-                      {row.pointDiff == null ? "—" : `${row.pointDiff > 0 ? "+" : ""}${Math.round(row.pointDiff)}`}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-sp-text-dim">
-                      {row.projectedWins == null ? "—" : `${row.projectedWins.toFixed(1)}-${(row.projectedLosses ?? 0).toFixed(1)}`}
-                    </td>
-                    <td className="px-3 py-2 text-right"><FormChips form={row.form} team={row.team} /></td>
-                    <td className="px-3 py-2 text-right"><Trend delta={row.rankDelta} /></td>
-                  </tr>
-                  {expanded === row.team && (
-                    <tr key={`${row.team}-form`} className="border-b border-sp-border/30 bg-sp-900/40">
-                      <td colSpan={8} className="px-3 py-3" data-testid={`team-form-${row.team}`}>
-                        <p className="mb-2 font-display text-xs font-semibold uppercase tracking-wider text-sp-text-faint">
-                          Last 5 — {row.team}
-                        </p>
-                        {formLoading === row.team ? (
-                          <p className="text-xs text-sp-text-faint">Loading form…</p>
-                        ) : (
-                          <FormDetail entries={forms[row.team] ?? []} />
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <StatTable
+          rows={visible}
+          columns={cols}
+          rowKey={(t) => t.team}
+          initialSort={{ key: "record", dir: "desc" }}
+          caption={`${season} team stats`}
+          expand={(t) => <TeamDetail team={t} />}
+        />
       )}
     </div>
   );

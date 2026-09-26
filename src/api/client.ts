@@ -4,6 +4,8 @@ import type {
   GameSummary,
   GameVerdict,
   HeadToHead,
+  HubPlayersResponse,
+  HubTeamsResponse,
   PlayerPropPrediction,
   PowerRankingsResponse,
   RetrainResponse,
@@ -101,6 +103,8 @@ export function createApiClient(baseUrl: string): SportApi {
       get<TeamForm>(`/teams/${encodeURIComponent(team)}/form?season=${season}&n=${n}`),
     headToHead: (gameId, season, week, nSeasons = 8) =>
       get<HeadToHead>(`/games/${gameId}/head-to-head?season=${season}&week=${week}&n_seasons=${nSeasons}`),
+    hubTeams: (season) => get<HubTeamsResponse>(`/hub/teams?season=${season}`),
+    hubPlayers: (season) => get<HubPlayersResponse>(`/hub/players?season=${season}`),
   };
 }
 

@@ -12,6 +12,8 @@ const api = {
   games: vi.fn(async () => []),
   predictionsBatch: vi.fn(async () => ({})),
   playerProps: vi.fn(async () => []),
+  hubTeams: vi.fn(async (season: number) => ({ season, teams: [] })),
+  hubPlayers: vi.fn(async (season: number) => ({ season, players: [], leaderboards: {} })),
   standings: vi.fn(async () => []),
   trackRecord: vi.fn(async () => ({
     games: { n_resolved: 0, pct_moneyline_correct: null, pct_ats_correct: null, pct_totals_correct: null, weekly_trend: [] },
@@ -50,9 +52,9 @@ describe("App tab shell", () => {
     render(<App />);
     expect(await screen.findByText("No games scheduled for this week.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Data Hub" }));
-    // The Hub opens on its Player Hub sub-tab.
-    expect(await screen.findByText("No player predictions available for this week yet.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Team Hub" })).toBeInTheDocument();
+    // The Hub opens on its Teams sub-tab.
+    expect(await screen.findByText("No team stats for 2026 yet.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Players" })).toBeInTheDocument();
     // Games tab content is still in the document, just hidden.
     expect(screen.getByText("No games scheduled for this week.")).toBeInTheDocument();
     expect(document.querySelector('[data-tab="games"]')).toHaveStyle("display: none");

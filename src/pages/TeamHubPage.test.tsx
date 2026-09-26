@@ -1,152 +1,76 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { mergeTeamRows, TeamHubPage } from "./TeamHubPage";
-import type { FormEntry, SportApi, StandingsEntry, TeamRanking } from "../types";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { TeamHubPage } from "./TeamHubPage";
+import type { HubTeam, HubTeamsResponse, SportApi } from "../types";
 
-const rankings: TeamRanking[] = [
-  { team: "KC", rating: 1612.4, rank: 1, wins: 8, losses: 1, ties: 0, conference: "AFC", division: "AFC West" },
-  { team: "BUF", rating: 1590.1, rank: 2, wins: 7, losses: 2, ties: 0, conference: "AFC", division: "AFC East" },
-  { team: "LV", rating: 1450.5, rank: 25, wins: 2, losses: 7, ties: 0, conference: "AFC", division: "AFC West" },
-  { team: "OAK", rating: 1400.0, rank: 26, wins: 0, losses: 0, ties: 0, conference: "AFC", division: "AFC West" },
-];
+const kc: HubTeam = {
+  team: "KC", games: 5, wins: 4, losses: 1, ties: 0,
+  points_for_pg: 27.4, points_against_pg: 19.2,
+  off_epa_play: 0.123, def_epa_play: -0.051,
+  off_success_rate: 0.482, def_success_rate: 0.41,
+  yards_per_play: 6.1, pass_rate: 0.6, turnover_margin: 3,
+  streak: 2, form: ["W", "L", "W", "W", "W"], form_trend: "up",
+  recent_games: [
+    { gameday: "2026-10-11", opponent: "BAL", is_home: true, team_score: 27, opponent_score: 20, result: "W" },
+    { gameday: "2026-10-04", opponent: "DEN", is_home: false, team_score: 17, opponent_score: 20, result: "L" },
+  ],
+};
+const expansion: HubTeam = {
+  team: "NEW", games: 0, wins: 0, losses: 0, ties: 0,
+  points_for_pg: null, points_against_pg: null,
+  off_epa_play: null, def_epa_play: null, off_success_rate: null, def_success_rate: null,
+  yards_per_play: null, pass_rate: null, turnover_margin: null,
+  streak: 0, form: [], form_trend: "new", recent_games: [],
+};
 
-function standing(team: string, pointDiff: number, projWins: number): StandingsEntry {
-  return {
-    team, conference: "AFC", division: "AFC West", played: 9,
-    wins: 8, losses: 1, ties: 0, point_diff: pointDiff,
-    projected_wins: projWins, projected_losses: 17 - projWins, projected_point_diff: pointDiff + 40,
-    current_division_rank: 1, projected_division_rank: 1, division_rank_delta: 0,
-  };
+function mockApi(res: HubTeamsResponse): SportApi {
+  return { hubTeams: vi.fn().mockResolvedValue(res) } as unknown as SportApi;
 }
-const standings: StandingsEntry[] = [standing("KC", 87, 12.4), standing("BUF", 45, 11.1), standing("LV", -60, 4.2)];
-
-function mockApi(): SportApi {
-  return {
-    games: vi.fn(), gamePrediction: vi.fn(), playerProps: vi.fn(), trackRecord: vi.fn(),
-    retrain: vi.fn(), gameVerdict: vi.fn(), predictionsForWeek: vi.fn(),
-    currentWeek: vi.fn(), standings: vi.fn().mockResolvedValue(standings),
-    powerRankings: vi.fn().mockResolvedValue({ season: 2026, rankings }),
-    predictionsBatch: vi.fn(), teamForm: vi.fn(), headToHead: vi.fn(),
-  };
-}
-
-describe("mergeTeamRows", () => {
-  it("joins standings fields onto each ranked team", () => {
-    const rows = mergeTeamRows(rankings, standings);
-    const kc = rows.find((r) => r.team === "KC")!;
-    expect(kc.rank).toBe(1);
-    expect(kc.rating).toBe(1612.4);
-    expect(kc.pointDiff).toBe(87);
-    expect(kc.projectedWins).toBe(12.4);
-    expect(kc.rankDelta).toBe(0);
-  });
-
-  it("drops the stale OAK duplicate when LV is present", () => {
-    const rows = mergeTeamRows(rankings, standings);
-    expect(rows.some((r) => r.team === "OAK")).toBe(false);
-    expect(rows.some((r) => r.team === "LV")).toBe(true);
-  });
-
-  it("keeps OAK when LV is absent so real data is never hidden", () => {
-    const rows = mergeTeamRows(rankings.filter((r) => r.team !== "LV"), standings);
-    expect(rows.some((r) => r.team === "OAK")).toBe(true);
-  });
-
-  it("keeps ranked teams that have no standings row yet", () => {
-    const rows = mergeTeamRows(
-      [{ team: "NEW", rating: 1500, rank: 30, wins: 0, losses: 0, ties: 0 }],
-      [],
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].pointDiff).toBeUndefined();
-  });
-
-  it("carries the recent-form string through mergeTeamRows", () => {
-    const rows = mergeTeamRows(
-      [{ team: "KC", rating: 1600, rank: 1, wins: 8, losses: 1, ties: 0, recent_form: "WWLWW" }],
-      [],
-    );
-    expect(rows[0].form).toBe("WWLWW");
-  });
-});
 
 describe("TeamHubPage", () => {
-  it("loads rankings and standings, then renders one row per team with logo and rating", async () => {
-    const api = mockApi();
+  it("shows every team with the advanced columns, EPA signed", async () => {
+    const api = mockApi({ season: 2026, teams: [kc, expansion] });
     render(<TeamHubPage api={api} season={2026} sport="nfl" />);
-
-    expect(api.powerRankings).toHaveBeenCalledWith(2026);
-    expect(api.standings).toHaveBeenCalledWith(2026);
-    await waitFor(() => expect(screen.getByText("KC")).toBeInTheDocument());
-    expect(screen.getByAltText("KC logo")).toBeInTheDocument();
-    expect(screen.getByText("1612")).toBeInTheDocument();
-    // OAK is dropped as a stale duplicate of LV
-    expect(screen.queryByText("OAK")).not.toBeInTheDocument();
-    expect(screen.getByText("LV")).toBeInTheDocument();
+    expect(await screen.findByText("+0.12")).toBeInTheDocument();
+    expect(api.hubTeams).toHaveBeenCalledWith(2026);
+    const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
+    for (const label of ["Team", "Record", "Off EPA/play", "Def EPA/play", "Success rate", "Pts for/g", "Pts against/g", "Turnovers ±", "Form"]) {
+      expect(headers.some((h) => h?.startsWith(label))).toBe(true);
+    }
+    expect(screen.getByText("−0.05")).toBeInTheDocument();
+    expect(screen.getByText("48%")).toBeInTheDocument();
+    expect(screen.getByText("+3")).toBeInTheDocument();
   });
 
-  it("filters teams by search text", async () => {
-    const api = mockApi();
-    render(<TeamHubPage api={api} season={2026} sport="nfl" />);
-    await waitFor(() => expect(screen.getByText("BUF")).toBeInTheDocument());
-
-    fireEvent.change(screen.getByPlaceholderText(/search teams/i), { target: { value: "buf" } });
-    expect(screen.getByText("BUF")).toBeInTheDocument();
-    expect(screen.queryByText("KC")).not.toBeInTheDocument();
+  it("gives a team with no games dashes and 'New this season', never zeros", async () => {
+    render(<TeamHubPage api={mockApi({ season: 2026, teams: [kc, expansion] })} season={2026} sport="nfl" />);
+    await screen.findByText("+0.12");
+    const row = screen.getByRole("button", { name: "Show NEW details" }).closest("tr")!;
+    expect(within(row).getByText("New this season")).toBeInTheDocument();
+    expect(within(row).getAllByText("—").length).toBeGreaterThanOrEqual(6);
+    expect(within(row).queryByText("0.0")).not.toBeInTheDocument();
   });
 
-  it("expands a row to show last-5 form fetched lazily", async () => {
-    const form: FormEntry[] = [
-      { game_id: "g1", opponent: "BUF", is_home: true, result: "W", team_score: 27, opponent_score: 24, gameday: "2026-09-13" },
-      { game_id: "g2", opponent: "DEN", is_home: false, result: "L", team_score: 17, opponent_score: 20, gameday: "2026-09-20" },
-    ];
-    const api = mockApi();
-    vi.mocked(api.teamForm).mockResolvedValue({ team: "KC", recent_form: form });
-    render(<TeamHubPage api={api} season={2026} sport="nfl" />);
-    await waitFor(() => expect(screen.getByText("BUF")).toBeInTheDocument());
-
-    expect(api.teamForm).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: /KC/i }));
-    await waitFor(() => expect(api.teamForm).toHaveBeenCalledWith("KC", 2026, 5));
-    const expanded = screen.getByTestId("team-form-KC");
-    expect(within(expanded).getByText("W")).toBeInTheDocument();
-    expect(within(expanded).getByText("L")).toBeInTheDocument();
-    expect(within(expanded).getByText(/27-24/)).toBeInTheDocument();
+  it("expands a team into its recent games, newest first", async () => {
+    render(<TeamHubPage api={mockApi({ season: 2026, teams: [kc, expansion] })} season={2026} sport="nfl" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Show KC details" }));
+    const games = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(games[0]).toContain("W 27–20 v BAL");
+    expect(games[1]).toContain("L 17–20 at DEN");
   });
 
-  it("renders recent-form chips inline without expanding the row", async () => {
-    const api = mockApi();
-    api.powerRankings = vi.fn().mockResolvedValue({
-      season: 2026,
-      rankings: [
-        { team: "KC", rating: 1612.4, rank: 1, wins: 8, losses: 1, ties: 0, recent_form: "WWLWT" },
-      ],
-    });
-    render(<TeamHubPage api={api} season={2026} sport="nfl" />);
-    await waitFor(() => expect(screen.getByText("KC")).toBeInTheDocument());
-
-    const chips = within(screen.getByTestId("team-form-chips-KC"));
-    expect(chips.getAllByText("W")).toHaveLength(3);
-    expect(chips.getAllByText("L")).toHaveLength(1);
-    expect(chips.getAllByText("T")).toHaveLength(1);
-    // no extra fetch: the string came with the rankings payload
-    expect(api.teamForm).not.toHaveBeenCalled();
+  it("says so and hides the EPA columns when advanced stats are unavailable", async () => {
+    render(<TeamHubPage api={mockApi({ season: 2026, teams: [kc], advanced_available: false })} season={2026} sport="cfb" />);
+    expect(await screen.findByText(/Advanced stats unavailable right now/)).toBeInTheDocument();
+    const headers = screen.getAllByRole("columnheader").map((h) => h.textContent ?? "");
+    expect(headers.some((h) => h.includes("EPA"))).toBe(false);
+    expect(headers.some((h) => h.startsWith("Record"))).toBe(true);
   });
 
-  it("sorts by rating when the rating header is clicked", async () => {
-    const api = mockApi();
+  it("offers Try again when the request fails", async () => {
+    const api = { hubTeams: vi.fn().mockRejectedValueOnce(new Error("boom")).mockResolvedValue({ season: 2026, teams: [kc] }) } as unknown as SportApi;
     render(<TeamHubPage api={api} season={2026} sport="nfl" />);
-    await waitFor(() => expect(screen.getByText("BUF")).toBeInTheDocument());
-
-    const rows = () => within(screen.getByTestId("team-hub-rows")).getAllByTestId(/team-hub-row-/);
-    // default: rank order
-    expect(rows()[0]).toHaveAttribute("data-team", "KC");
-    fireEvent.click(screen.getByRole("button", { name: /^rating/i }));
-    // best rating first
-    expect(rows()[0]).toHaveAttribute("data-team", "KC");
-    expect(rows()[2]).toHaveAttribute("data-team", "LV");
-    fireEvent.click(screen.getByRole("button", { name: /^rating/i }));
-    // toggles to ascending
-    expect(rows()[0]).toHaveAttribute("data-team", "LV");
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("+0.12")).toBeInTheDocument();
   });
 });

@@ -20,6 +20,8 @@ function mockApi(overrides: Partial<SportApi> = {}): SportApi {
     gameVerdict: vi.fn().mockResolvedValue(null),
     predictionsForWeek: vi.fn(),
     currentWeek: vi.fn(),
+    hubTeams: vi.fn(),
+    hubPlayers: vi.fn(),
     standings: vi.fn(),
     powerRankings: vi.fn(),
     predictionsBatch: vi.fn(),

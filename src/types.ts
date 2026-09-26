@@ -131,6 +131,74 @@ export interface HeadToHead {
   game_id: string;
   meetings: HeadToHeadMeeting[];
 }
+// Data Hub season tables (/hub/teams, /hub/players). Per-game and rate
+// fields are null when a team or player has no games yet, or when the
+// advanced feed is down: the UI shows a dash, never a zero.
+export interface HubRecentGame {
+  gameday: string;
+  opponent: string;
+  is_home: boolean;
+  team_score: number;
+  opponent_score: number;
+  result: "W" | "L" | "T";
+}
+export interface HubTeam {
+  team: string;
+  games: number;
+  wins: number;
+  losses: number;
+  ties: number;
+  points_for_pg: number | null;
+  points_against_pg: number | null;
+  off_epa_play: number | null;
+  def_epa_play: number | null;
+  off_success_rate: number | null;
+  def_success_rate: number | null;
+  yards_per_play: number | null;
+  pass_rate: number | null;
+  turnover_margin: number | null;
+  streak: number;
+  /** Oldest first, last five. */
+  form: ("W" | "L" | "T")[];
+  form_trend: "up" | "down" | "steady" | "new";
+  /** Newest first, last five. */
+  recent_games: HubRecentGame[];
+}
+export interface HubTeamsResponse {
+  season: number;
+  teams: HubTeam[];
+  /** CFB only: false while the advanced feed is unavailable. */
+  advanced_available?: boolean;
+}
+export interface HubPlayer {
+  player_id: string;
+  name: string;
+  team: string;
+  position: string;
+  games: number;
+  completions: number;
+  attempts: number;
+  passing_yards: number;
+  passing_tds: number;
+  interceptions: number;
+  carries: number;
+  rushing_yards: number;
+  rushing_tds: number;
+  receptions: number;
+  targets: number;
+  receiving_yards: number;
+  receiving_tds: number;
+  /** NFL: EPA summed over the season. CFB: PPA, the same idea. */
+  epa_total: number | null;
+  target_share: number | null;
+  air_yards_share: number | null;
+  fantasy_ppr_pg: number | null;
+}
+export interface HubPlayersResponse {
+  season: number;
+  players: HubPlayer[];
+  leaderboards: Record<string, HubPlayer[]>;
+}
 export interface SportApi {
   games: (season: number, week: number) => Promise<GameSummary[]>;
   gamePrediction: (season: number, week: number, gameId: string) => Promise<GamePrediction>;
@@ -145,4 +213,6 @@ export interface SportApi {
   predictionsBatch: (season: number, week: number) => Promise<Record<string, GamePrediction>>;
   teamForm: (team: string, season: number, n?: number) => Promise<TeamForm>;
   headToHead: (gameId: string, season: number, week: number, nSeasons?: number) => Promise<HeadToHead>;
+  hubTeams: (season: number) => Promise<HubTeamsResponse>;
+  hubPlayers: (season: number) => Promise<HubPlayersResponse>;
 }
