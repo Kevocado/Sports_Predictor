@@ -115,8 +115,44 @@ export function createApiClient(baseUrl: string): SportApi {
 export const NFL_BASE_URL: string = import.meta.env.VITE_NFL_API_BASE_URL ?? "/api/nfl";
 export const CFB_BASE_URL: string = import.meta.env.VITE_CFB_API_BASE_URL ?? "/api/cfb";
 
+export const NFL_EXPLAIN_BASE_URL: string = import.meta.env.VITE_NFL_EXPLAIN_BASE_URL ?? "/api/explain/nfl";
+export const CFB_EXPLAIN_BASE_URL: string = import.meta.env.VITE_CFB_EXPLAIN_BASE_URL ?? "/api/explain/cfb";
+
+export type Explanation = {
+  headline: string;
+  sections: { market: string; title: string; text: string }[];
+  source: "llm" | "template";
+  model: string;
+  generated_at: string;
+  sport: string;
+  pick_timing: "pre_kickoff" | "rebuilt" | "none";
+};
+
+/**
+ * The plain-English summary for one game. Same-origin like every other call
+ * here, on the family's 15 s timeout.
+ *
+ * It is deliberately NOT cached: the panel's own footer states how long ago
+ * the summary was written, and a cached copy would keep showing a stale age
+ * beside fresh numbers. The service caches by the facts it was given, so a
+ * repeat request is cheap at the other end.
+ */
+export function createExplainer(baseUrl: string) {
+  const cleanBase = baseUrl.replace(/\/+$/, "");
+  return async function explain(id: string): Promise<Explanation> {
+    const res = await fetchWithTimeout(`${cleanBase}/${encodeURIComponent(id)}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail ?? `${res.status} ${res.statusText}`);
+    }
+    return res.json();
+  };
+}
+
 export const nflApi = createApiClient(NFL_BASE_URL);
 export const cfbApi = createApiClient(CFB_BASE_URL);
+export const nflExplain = createExplainer(NFL_EXPLAIN_BASE_URL);
+export const cfbExplain = createExplainer(CFB_EXPLAIN_BASE_URL);
 
 /**
  * Best-effort warm of both sport clients: current week first, then the main

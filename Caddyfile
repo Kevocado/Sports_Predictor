@@ -2,6 +2,7 @@
 # page never needs to know where they live. Set per deployment:
 #   NFL_API_UPSTREAM  host:port of the NFL API (default nfl-predictor:8001)
 #   CFB_API_UPSTREAM  host:port of the CFB API (default cfb-predictor:8003)
+#   EXPLAINER_UPSTREAM  host:port of the explainer (default predictor-explainer:8090)
 :80 {
     handle_path /api/nfl/* {
         rewrite * /api{uri}
@@ -10,6 +11,15 @@
     handle_path /api/cfb/* {
         rewrite * /api{uri}
         reverse_proxy {$CFB_API_UPSTREAM:cfb-predictor:8003}
+    }
+    # The plain-English summary. Same shape as the two above: the site calls
+    # /api/explain/{sport}/{id}, handle_path drops the /api/explain prefix,
+    # and the rewrite puts back the /explain the service actually serves.
+    # With no key configured the service answers from its template, and the
+    # panel's footer says so rather than claiming a model wrote it.
+    handle_path /api/explain/* {
+        rewrite * /explain{uri}
+        reverse_proxy {$EXPLAINER_UPSTREAM:predictor-explainer:8090}
     }
     handle {
         root * /usr/share/caddy
