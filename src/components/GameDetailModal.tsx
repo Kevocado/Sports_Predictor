@@ -1,5 +1,6 @@
-import { pct, spread } from "../predictor-ui";
-import { useEffect, useMemo, useState } from "react";
+import { ExplainerPanel, pct, spread } from "../predictor-ui";
+import type { Explanation } from "../api/client";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GamePrediction, GameSummary, GameVerdict, HeadToHead as HeadToHeadData, PlayerPropPrediction, SportApi, TeamForm, WeekPrediction } from "../types";
 import { TeamName } from "./TeamName";
 import { MarketBar } from "./MarketBar";
@@ -30,7 +31,10 @@ function VerdictBadge({ label, hit }: { label: string; hit: boolean }) {
 // weekPrediction: the week's row for this game (the pick snapshotted before
 // kickoff, and whether it was rebuilt after). A final is judged on that pick,
 // never on today's model.
-interface Props { game: GameSummary; api: SportApi; weekPrediction?: WeekPrediction; onClose: () => void; }
+// explain: fetches the plain-English summary. Optional on purpose — a site
+// deployed before the explainer exists, or a game it has no summary for, must
+// still open this modal and show everything else in it.
+interface Props { game: GameSummary; api: SportApi; weekPrediction?: WeekPrediction; onClose: () => void; explain?: (sport: string, id: string) => Promise<Explanation>; sport?: string; }
 
 function PregamePick({ game, week }: { game: GameSummary; week?: WeekPrediction }) {
   if (week?.rebuilt) {
@@ -46,7 +50,7 @@ function PregamePick({ game, week }: { game: GameSummary; week?: WeekPrediction 
   return <p className="mb-2 text-sm font-semibold text-sp-text">{`Pick before kickoff: ${label} · ${pct(home >= 0.5 ? home : 1 - home)}`}</p>;
 }
 
-export function GameDetailModal({ game, api, weekPrediction, onClose }: Props) {
+export function GameDetailModal({ game, api, weekPrediction, onClose, explain, sport = "nfl" }: Props) {
   const [prediction, setPrediction] = useState<GamePrediction | null>(null);
   const [predictionError, setPredictionError] = useState<string | null>(null);
   const [allProps, setAllProps] = useState<PlayerPropPrediction[] | null>(null);
@@ -56,7 +60,27 @@ export function GameDetailModal({ game, api, weekPrediction, onClose }: Props) {
   const [homeForm, setHomeForm] = useState<TeamForm | null>(null);
   const [awayForm, setAwayForm] = useState<TeamForm | null>(null);
   const [h2h, setH2h] = useState<HeadToHeadData | null>(null);
+  const [summary, setSummary] = useState<Explanation | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState(false);
   const isFinal = game.home_score != null && game.away_score != null;
+
+  // The summary is fetched on its own and never gates the rest of the modal:
+  // it is the first thing on screen, so anything that waited for it would
+  // leave the whole detail view empty behind a spinner.
+  const loadSummary = useCallback(() => {
+    if (!explain) return;
+    let cancelled = false;
+    setSummaryLoading(true);
+    setSummaryError(false);
+    explain(sport, game.game_id)
+      .then((r) => { if (!cancelled) setSummary(r); })
+      .catch(() => { if (!cancelled) { setSummary(null); setSummaryError(true); } })
+      .finally(() => { if (!cancelled) setSummaryLoading(false); });
+    return () => { cancelled = true; };
+  }, [explain, sport, game.game_id]);
+
+  useEffect(() => loadSummary(), [loadSummary]);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,7 +147,19 @@ export function GameDetailModal({ game, api, weekPrediction, onClose }: Props) {
           <button onClick={onClose} className="rounded-full p-1.5 text-sp-text-dim transition hover:bg-sp-800 hover:text-sp-text" aria-label="Close">✕</button>
         </div>
         <div className="overflow-y-auto px-6 py-6 space-y-6">
-          
+
+          {/* In plain English — first, because it is the one-screen answer.
+              Hidden entirely when there is no explainer, rather than shown
+              empty. */}
+          {explain && (
+            <ExplainerPanel
+              data={summary}
+              loading={summaryLoading}
+              error={summaryError}
+              onRetry={() => loadSummary()}
+            />
+          )}
+
           {/* Header Matchup */}
           <div className="flex items-center justify-center gap-10">
             <div className="flex flex-col items-center gap-1">

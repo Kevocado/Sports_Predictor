@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { filterPlayerPropsForGame, GameDetailModal } from "./GameDetailModal";
 import type { GamePrediction, GameSummary, GameVerdict, PlayerPropPrediction, SportApi } from "../types";
 
@@ -133,5 +133,56 @@ describe("GameDetailModal on a final", () => {
     const api = mockApi();
     render(<GameDetailModal game={finalGame} api={api} onClose={() => {}} />);
     expect(await screen.findByText("No pick was made before kickoff.")).toBeInTheDocument();
+  });
+});
+
+describe("GameDetailModal and the plain-English panel", () => {
+  const explanation = {
+    headline: "Baltimore are the slight favourites, but this is close to a coin flip.",
+    sections: [{ market: "result", title: "Why Baltimore", text: "The model has them at 62%." }],
+    source: "llm" as const,
+    model: "gpt-4o-mini",
+    generated_at: new Date().toISOString(),
+    sport: "nfl",
+    pick_timing: "pre_kickoff" as const,
+  };
+
+  it("fetches the summary for this game and shows its headline", async () => {
+    const explain = vi.fn().mockResolvedValue(explanation);
+    render(<GameDetailModal game={game} api={mockApi()} onClose={() => {}} explain={explain} />);
+    expect(await screen.findByText(explanation.headline)).toBeInTheDocument();
+    expect(explain).toHaveBeenCalledWith("nfl", game.game_id);
+  });
+
+  it("shows the rest of the modal while the summary is still being written", async () => {
+    // The summary is the first thing in the modal, so if it gated the rest the
+    // whole detail view would sit empty behind a spinner.
+    let release: (v: typeof explanation) => void = () => {};
+    const explain = vi.fn().mockReturnValue(new Promise<typeof explanation>((r) => { release = r; }));
+    render(<GameDetailModal game={game} api={mockApi()} onClose={() => {}} explain={explain} />);
+    expect(screen.getByText("Writing the summary…")).toBeInTheDocument();
+    expect(screen.getByText("Game Detail & Model Projections")).toBeInTheDocument();
+    expect(await screen.findByText("Ravens")).toBeInTheDocument();
+    release(explanation);
+    expect(await screen.findByText(explanation.headline)).toBeInTheDocument();
+  });
+
+  it("says the summary failed and offers a retry that asks again", async () => {
+    const explain = vi.fn().mockRejectedValue(new Error("explainer down"));
+    render(<GameDetailModal game={game} api={mockApi()} onClose={() => {}} explain={explain} />);
+    const retry = await screen.findByRole("button", { name: "Try again" });
+    explain.mockResolvedValue(explanation);
+    fireEvent.click(retry);
+    expect(await screen.findByText(explanation.headline)).toBeInTheDocument();
+    expect(explain).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves the modal fully usable when there is no explainer at all", async () => {
+    // No explain prop is the deployed state before the service exists, and the
+    // 404 case behind it. The game detail must not depend on it.
+    render(<GameDetailModal game={game} api={mockApi()} onClose={() => {}} />);
+    expect(screen.queryByText("Writing the summary…")).not.toBeInTheDocument();
+    expect(screen.getByText("Game Detail & Model Projections")).toBeInTheDocument();
+    expect(await screen.findByText("Ravens")).toBeInTheDocument();
   });
 });
