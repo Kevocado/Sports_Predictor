@@ -36,8 +36,9 @@ const api = {
   playerProps: vi.fn().mockResolvedValue(props),
 } as unknown as SportApi;
 
+const sportState = { sport: "nfl" };
 vi.mock("../context/SportContext", () => ({
-  useSport: () => ({ sport: "nfl", setSport: () => {}, api }),
+  useSport: () => ({ sport: sportState.sport, setSport: () => {}, api }),
 }));
 
 const table = () => screen.getByRole("table");
@@ -95,5 +96,18 @@ describe("PlayersPage", () => {
     fireEvent.change(screen.getByRole("searchbox", { name: /search players/i }), { target: { value: "allen" } });
     expect(within(table()).getByText("Josh Allen")).toBeInTheDocument();
     expect(within(table()).queryByText("Patrick Mahomes")).not.toBeInTheDocument();
+  });
+
+  it("clears the previous sport's players while the new sport loads", async () => {
+    const { rerender } = render(<PlayersPage />);
+    await screen.findByRole("table");
+    let release: (v: { season: number; week: number }) => void = () => {};
+    vi.mocked(api.currentWeek).mockReturnValueOnce(new Promise((r) => { release = r; }));
+    sportState.sport = "cfb";
+    rerender(<PlayersPage />);
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    release({ season: 2026, week: 7 });
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    sportState.sport = "nfl";
   });
 });

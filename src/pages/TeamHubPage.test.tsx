@@ -73,4 +73,17 @@ describe("TeamHubPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
     expect(await screen.findByText("+0.12")).toBeInTheDocument();
   });
+
+  it("treats an empty payload (a failed snapshot build) as no stats yet, not a crash", async () => {
+    render(<TeamHubPage api={{ hubTeams: vi.fn().mockResolvedValue({}) } as unknown as SportApi} season={2026} sport="nfl" />);
+    expect(await screen.findByText("No team stats for 2026 yet.")).toBeInTheDocument();
+  });
+
+  it("puts the stingiest defense first on the first click, sorted ascending", async () => {
+    const stingy = { ...kc, team: "BAL", def_epa_play: -0.2 };
+    render(<TeamHubPage api={mockApi({ season: 2026, teams: [kc, stingy] })} season={2026} sport="nfl" />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Def EPA\/play/ }));
+    expect(screen.getByRole("columnheader", { name: /Def EPA/ })).toHaveAttribute("aria-sort", "ascending");
+    expect(screen.getAllByRole("button", { name: /^Show .* details$/ })[0]).toHaveAccessibleName("Show BAL details");
+  });
 });

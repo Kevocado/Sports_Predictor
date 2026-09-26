@@ -84,11 +84,11 @@ function columns(sport: Sport, advanced: boolean, hasTurnovers: boolean): Column
       render: recordOf,
     },
     advanced && { key: "off_epa", label: "Off EPA/play", numeric: true, tooltip: EPA_TIP, value: (t) => t.off_epa_play, render: (t) => epa(t.off_epa_play) },
-    // Lower is better on defense, so sort it the other way up by negating.
-    advanced && { key: "def_epa", label: "Def EPA/play", numeric: true, tooltip: DEF_EPA_TIP, value: (t) => (t.def_epa_play == null ? null : -t.def_epa_play), render: (t) => epa(t.def_epa_play) },
+    // Lower is better on defense: the first click puts the stingiest on top.
+    advanced && { key: "def_epa", label: "Def EPA/play", numeric: true, firstDir: "asc", tooltip: DEF_EPA_TIP, value: (t) => t.def_epa_play, render: (t) => epa(t.def_epa_play) },
     advanced && { key: "success", label: "Success rate", numeric: true, tooltip: SUCCESS_TIP, value: (t) => t.off_success_rate, render: (t) => share(t.off_success_rate) },
     { key: "pf", label: "Pts for/g", numeric: true, value: (t) => t.points_for_pg, render: (t) => perGame(t.points_for_pg) },
-    { key: "pa", label: "Pts against/g", numeric: true, value: (t) => (t.points_against_pg == null ? null : -t.points_against_pg), render: (t) => perGame(t.points_against_pg) },
+    { key: "pa", label: "Pts against/g", numeric: true, firstDir: "asc", value: (t) => t.points_against_pg, render: (t) => perGame(t.points_against_pg) },
     hasTurnovers && { key: "to", label: "Turnovers ±", numeric: true, value: (t) => t.turnover_margin, render: (t) => signedInt(t.turnover_margin) },
     {
       key: "form", label: "Form",
@@ -136,7 +136,7 @@ export function TeamHubPage({ api, season, sport }: { api: SportApi; season: num
 
   if (error) return <ErrorState message={`Couldn't load team stats: ${error}`} onRetry={() => setAttempt((n) => n + 1)} />;
   if (!data) return <Skeleton label="Loading teams…" />;
-  if (data.teams.length === 0) return <EmptyState message={`No team stats for ${season} yet.`} />;
+  if ((data.teams ?? []).length === 0) return <EmptyState message={`No team stats for ${season} yet.`} />;
 
   return (
     <div>

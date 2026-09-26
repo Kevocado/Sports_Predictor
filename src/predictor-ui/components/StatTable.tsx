@@ -1,4 +1,4 @@
-// Synced from predictor-ui@74c8e640f8de. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
+// Synced from predictor-ui@3b8f6e463b4e. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
 import { Fragment, useState, type ReactNode } from "react";
 
 export type Column<T> = {
@@ -10,6 +10,8 @@ export type Column<T> = {
   render?: (row: T) => ReactNode;
   numeric?: boolean;
   tooltip?: string;
+  /** First-click direction. Numbers default to high-first; pass "asc" where lower is better. */
+  firstDir?: "asc" | "desc";
 };
 
 type Sort = { key: string; dir: "asc" | "desc" };
@@ -52,7 +54,7 @@ export function StatTable<T>({ rows, columns, rowKey, initialSort, caption, expa
     setSort((cur) =>
       cur?.key === col.key
         ? { key: col.key, dir: cur.dir === "asc" ? "desc" : "asc" }
-        : { key: col.key, dir: col.numeric ? "desc" : "asc" },
+        : { key: col.key, dir: col.firstDir ?? (col.numeric ? "desc" : "asc") },
     );
 
   return (

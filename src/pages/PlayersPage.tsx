@@ -112,7 +112,8 @@ export function PlayersPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setWhen(null);
+    // Clear the previous sport's table so it never shows under this sport's logos.
+    setWhen(null); setData(null);
     api.currentWeek()
       .then((cw) => { if (!cancelled) setWhen({ season: cw.season, week: cw.week }); })
       .catch(() => { if (!cancelled) setWhen({ season: FALLBACK_SEASON, week: null }); });
