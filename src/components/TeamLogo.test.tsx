@@ -18,17 +18,18 @@ describe("TeamLogo", () => {
     );
   });
 
-  it("falls back to the team initial when there is no mapped logo", () => {
-    render(<TeamLogo sport="nfl" team="XYZ" />);
-    expect(screen.queryByRole("img")).not.toBeInTheDocument();
-    expect(screen.getByText("X")).toBeInTheDocument();
+  it("falls back to a code chip named for the team when there is no mapped logo", () => {
+    const { container } = render(<TeamLogo sport="cfb" team="Nowhere State" />);
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByRole("img", { name: "Nowhere State" })).toHaveTextContent("NS");
   });
 
-  it("falls back to the team initial when the logo image fails to load", () => {
-    render(<TeamLogo sport="nfl" team="KC" />);
+  it("keeps the badge slot (same size) when the logo fails to load, so the card stays aligned", () => {
+    const { container } = render(<TeamLogo sport="nfl" team="KC" size="md" />);
     fireEvent.error(screen.getByAltText("KC logo"));
-    expect(screen.queryByRole("img")).not.toBeInTheDocument();
-    expect(screen.getByText("K")).toBeInTheDocument();
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.firstElementChild).toHaveClass("h-10");
+    expect(container.firstElementChild).toHaveAttribute("aria-hidden", "true");
   });
 
   it("sizes the logo with the requested size variant", () => {
@@ -36,5 +37,10 @@ describe("TeamLogo", () => {
     expect(container.querySelector("img")).toHaveClass("h-14");
     const { container: sm } = render(<TeamLogo sport="nfl" team="KC" size="sm" />);
     expect(sm.querySelector("img")).toHaveClass("h-7");
+  });
+
+  it("adds no chip when the team is already written as its code (the name beside it says it)", () => {
+    const { container } = render(<TeamLogo sport="nfl" team="QQQ" />);
+    expect(container.textContent).toBe("");
   });
 });

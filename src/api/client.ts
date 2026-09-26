@@ -4,6 +4,8 @@ import type {
   GameSummary,
   GameVerdict,
   HeadToHead,
+  HubPlayersResponse,
+  HubTeamsResponse,
   PlayerPropPrediction,
   PowerRankingsResponse,
   RetrainResponse,
@@ -13,6 +15,16 @@ import type {
   TrackRecord,
   WeekPrediction,
 } from "../types";
+
+// A backend that accepts the connection but never answers must still end in
+// the page's error state (with Try again), never an endless "Loading…".
+export const REQUEST_TIMEOUT_MS = 15_000;
+
+function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
 
 export function createApiClient(baseUrl: string): SportApi {
   const cleanBase = baseUrl.replace(/\/+$/, "");
@@ -43,7 +55,7 @@ export function createApiClient(baseUrl: string): SportApi {
 
   async function get<T>(path: string, ttlMs: number = TTL_MS): Promise<T> {
     return cached(path, async () => {
-      const res = await fetch(`${cleanBase}${path}`);
+      const res = await fetchWithTimeout(`${cleanBase}${path}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail ?? `${res.status} ${res.statusText}`);
@@ -54,7 +66,7 @@ export function createApiClient(baseUrl: string): SportApi {
 
   async function getOrNull<T>(path: string): Promise<T | null> {
     return cached(path, async () => {
-      const res = await fetch(`${cleanBase}${path}`);
+      const res = await fetchWithTimeout(`${cleanBase}${path}`);
       if (res.status === 404) return null;
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -91,20 +103,17 @@ export function createApiClient(baseUrl: string): SportApi {
       get<TeamForm>(`/teams/${encodeURIComponent(team)}/form?season=${season}&n=${n}`),
     headToHead: (gameId, season, week, nSeasons = 8) =>
       get<HeadToHead>(`/games/${gameId}/head-to-head?season=${season}&week=${week}&n_seasons=${nSeasons}`),
+    hubTeams: (season) => get<HubTeamsResponse>(`/hub/teams?season=${season}`),
+    hubPlayers: (season) => get<HubPlayersResponse>(`/hub/players?season=${season}`),
   };
 }
 
-// DYNAMIC RESOLUTION: If running on the Azure production frontend domain, 
-// automatically point directly to the respective backend FQDNs. Otherwise, use local dev ports.
-const isProd = window.location.hostname.includes("azurecontainerapps.io");
-
-const NFL_BASE_URL = isProd
-  ? "https://nfl-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api"
-  : "http://localhost:8001/api";
-
-const CFB_BASE_URL = isProd
-  ? "https://cfb-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api"
-  : "http://localhost:8003/api";
+// Same-origin by default: the Caddy in front of this site (see Caddyfile)
+// and the Vite dev/preview server (vite.config.ts) both proxy these paths
+// to the NFL and CFB APIs. Override per build with VITE_NFL_API_BASE_URL /
+// VITE_CFB_API_BASE_URL only when the APIs live on another origin.
+export const NFL_BASE_URL: string = import.meta.env.VITE_NFL_API_BASE_URL ?? "/api/nfl";
+export const CFB_BASE_URL: string = import.meta.env.VITE_CFB_API_BASE_URL ?? "/api/cfb";
 
 export const nflApi = createApiClient(NFL_BASE_URL);
 export const cfbApi = createApiClient(CFB_BASE_URL);

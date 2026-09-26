@@ -1,5 +1,6 @@
+import { pct, spread } from "../predictor-ui";
 import { useEffect, useMemo, useState } from "react";
-import type { GamePrediction, GameSummary, GameVerdict, HeadToHead as HeadToHeadData, PlayerPropPrediction, SportApi, TeamForm } from "../types";
+import type { GamePrediction, GameSummary, GameVerdict, HeadToHead as HeadToHeadData, PlayerPropPrediction, SportApi, TeamForm, WeekPrediction } from "../types";
 import { TeamName } from "./TeamName";
 import { MarketBar } from "./MarketBar";
 import { FormStrip } from "./FormStrip";
@@ -26,9 +27,26 @@ function VerdictBadge({ label, hit }: { label: string; hit: boolean }) {
   );
 }
 
-interface Props { game: GameSummary; api: SportApi; onClose: () => void; }
+// weekPrediction: the week's row for this game (the pick snapshotted before
+// kickoff, and whether it was rebuilt after). A final is judged on that pick,
+// never on today's model.
+interface Props { game: GameSummary; api: SportApi; weekPrediction?: WeekPrediction; onClose: () => void; }
 
-export function GameDetailModal({ game, api, onClose }: Props) {
+function PregamePick({ game, week }: { game: GameSummary; week?: WeekPrediction }) {
+  if (week?.rebuilt) {
+    return (
+      <p className="mb-2 rounded-lg border border-sp-border/60 p-3 text-xs text-sp-text-dim">
+        Rebuilt after kickoff: this pick was made after the game started, so it is shown for reference and not counted.
+      </p>
+    );
+  }
+  const home = week && week.status !== "untracked" ? week.home_win_prob : undefined;
+  if (home == null) return <p className="mb-2 text-xs text-sp-text-dim">No pick was made before kickoff.</p>;
+  const label = home === 0.5 ? "Toss-up" : home > 0.5 ? game.home_team : game.away_team;
+  return <p className="mb-2 text-sm font-semibold text-sp-text">{`Pick before kickoff: ${label} · ${pct(home >= 0.5 ? home : 1 - home)}`}</p>;
+}
+
+export function GameDetailModal({ game, api, weekPrediction, onClose }: Props) {
   const [prediction, setPrediction] = useState<GamePrediction | null>(null);
   const [predictionError, setPredictionError] = useState<string | null>(null);
   const [allProps, setAllProps] = useState<PlayerPropPrediction[] | null>(null);
@@ -124,8 +142,9 @@ export function GameDetailModal({ game, api, onClose }: Props) {
             <section>
               <div className="mb-2">
                 <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Result &amp; verdict</h3>
-                <p className="text-[11px] text-sp-text-dim">Whether the model's pregame call matched what actually happened.</p>
+                <p className="text-xs text-sp-text-dim">Whether the model's pregame call matched what actually happened.</p>
               </div>
+              <PregamePick game={game} week={weekPrediction} />
               {verdict ? (
                 <div className="flex flex-col gap-2">
                   <p className="font-display text-lg font-semibold tracking-wide text-sp-text">
@@ -177,14 +196,18 @@ export function GameDetailModal({ game, api, onClose }: Props) {
           <section>
             <div className="mb-2">
               <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Match Markets</h3>
-              <p className="text-[11px] text-sp-text-dim">Win probability (straight-up), point spread cover chance, and total points line.</p>
+              <p className="text-xs text-sp-text-dim">
+                {isFinal
+                  ? "Today's model, for reference: the verdict above is judged on the pick made before kickoff."
+                  : "Win probability (straight-up), point spread cover chance, and total points line."}
+              </p>
             </div>
             {predictionError && <p className="text-xs text-loss">{predictionError}</p>}
             {!prediction && !predictionError && <p className="text-xs text-sp-text-faint">Loading match markets…</p>}
             {/* The card only shows these on the list view; restate them here
                 so the modal is self-contained. */}
             {game.spread_line != null && (
-              <p className="text-[11px] text-sp-text-faint">{`Spread ${game.spread_line} · Total ${game.total_line ?? "—"}`}</p>
+              <p className="text-xs text-sp-text-dim">{`${spread(game.home_team, -game.spread_line)} · Total ${game.total_line ?? "—"}`}</p>
             )}
             {prediction && prediction.predicted_margin != null && prediction.sigma != null && (
               <p className="text-xs text-sp-text-dim">
@@ -233,7 +256,7 @@ export function GameDetailModal({ game, api, onClose }: Props) {
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Model Player Projections</h3>
-                <p className="text-[11px] text-sp-text-dim">Predicted touchdown probabilities and expected yardage milestones from your machine learning models.</p>
+                <p className="text-xs text-sp-text-dim">Each player's chance to score a touchdown and projected yards for this game.</p>
               </div>
               {availablePositions.length > 1 && (
                 <div className="flex gap-1 rounded-lg border border-sp-border bg-sp-850/60 p-1">

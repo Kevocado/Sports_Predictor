@@ -1,19 +1,55 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Barlow+Condensed:wght@500;600;700&display=swap');
+@import "./predictor-ui/fonts.css";
 @import "tailwindcss";
+@import "./predictor-ui/tokens.css";
+
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Barlow Condensed", "Arial Narrow", ui-sans-serif, sans-serif;
-  /* Broadcast graphics palette: cool slate base/surface/border, hero gold. */
-  --color-sp-950: #12161d; --color-sp-900: #151b25; --color-sp-850: #1b212b; --color-sp-800: #232b3a; --color-sp-700: #2a323f; --color-sp-600: #3a4453; --color-sp-500: #4d586a; --color-sp-border: #2a323f; --color-sp-gold: #f2a900; --color-sp-gold-soft: #ffc233; --color-sp-cyan: #05d1c8; --color-sp-text: #f4f6fa; --color-sp-text-dim: #a9b3c1; --color-sp-text-faint: #6d7684; --color-nfl-blue: #2e6bd8; --color-cfb-orange: #d8571f; --color-win: #22c55e; --color-loss: #ef4444;
+  /* The family faces (see predictor-ui/tokens.css): Barlow for text, Barlow
+     Condensed for scores and headers. */
+  --font-sans: var(--font-pr-body);
+  --font-display: var(--font-pr-display);
 }
-html { color-scheme: dark; }
-/* Flat charcoal base with a single quiet top-edge vignette -- deliberately
-   not the two-stop radial-gradient glow (that was a direct carryover from
-   PL_Predictor's own palette formula, just recolored). Letting card content
-   and team colors carry the visual weight instead of the page chrome. */
-body { margin: 0; background: radial-gradient(ellipse 1400px 500px at 50% -10%, var(--color-sp-700) 0%, transparent 60%), var(--color-sp-950); min-height: 100vh; color: var(--color-sp-text); font-family: var(--font-sans); }
-::selection { background: var(--color-sp-gold); color: #12161d; }
-.clip-corner { clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%); }
-.clip-corner-lg { clip-path: polygon(0 0, calc(100% - 28px) 0, 100% 28px, 100% 100%, 0 100%); }
-@keyframes modal-in { from { opacity: 0; transform: scale(0.96) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-.animate-modal-in { animation: modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* Legacy sp-* names, kept so components not yet rebuilt on predictor-ui adopt
+   the family palette. Inline, so each utility keeps var(--color-pr-accent)
+   and follows the page's data-sport accent (a plain @theme would resolve it
+   once, at :root, to the Hub's white). New code uses the pr-* tokens. */
+@theme inline {
+  --color-sp-950: var(--color-pr-stage);
+  --color-sp-900: var(--color-pr-stage);
+  --color-sp-850: var(--color-pr-panel);
+  --color-sp-800: var(--color-pr-panel-2);
+  --color-sp-700: var(--color-pr-panel-2);
+  --color-sp-600: var(--color-pr-rule);
+  --color-sp-500: var(--color-pr-rule);
+  --color-sp-border: var(--color-pr-rule);
+  --color-sp-gold: var(--color-pr-accent);
+  --color-sp-gold-soft: var(--color-pr-accent);
+  --color-sp-cyan: var(--color-pr-accent);
+  --color-sp-text: var(--color-pr-text);
+  --color-sp-text-dim: var(--color-pr-text-dim);
+  --color-sp-text-faint: var(--color-pr-text-faint);
+  --color-win: var(--color-pr-win);
+  --color-loss: var(--color-pr-loss);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--color-pr-stage);
+  color: var(--color-pr-text);
+  font-family: var(--font-pr-body);
+}
+
+/* Legacy name for the family notch. */
+.clip-corner,
+.clip-corner-lg {
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .animate-modal-in { animation: modal-in 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
+}

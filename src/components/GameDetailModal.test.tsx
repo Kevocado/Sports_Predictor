@@ -20,6 +20,8 @@ function mockApi(overrides: Partial<SportApi> = {}): SportApi {
     gameVerdict: vi.fn().mockResolvedValue(null),
     predictionsForWeek: vi.fn(),
     currentWeek: vi.fn(),
+    hubTeams: vi.fn(),
+    hubPlayers: vi.fn(),
     standings: vi.fn(),
     powerRankings: vi.fn(),
     predictionsBatch: vi.fn(),
@@ -49,7 +51,8 @@ describe("GameDetailModal", () => {
   it("restates the spread/total line near the match markets", async () => {
     const api = mockApi();
     render(<GameDetailModal game={{ ...game, spread_line: -2.5, total_line: 46.5 }} api={api} onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByText("Spread -2.5 · Total 46.5")).toBeInTheDocument());
+    // nflverse spread_line −2.5 means the away side is favoured, so the home team is +2.5.
+    await waitFor(() => expect(screen.getByText("Ravens +2.5 · Total 46.5")).toBeInTheDocument());
   });
 
   it("shows a confidence band from predicted_margin and sigma", async () => {
@@ -105,5 +108,30 @@ describe("GameDetailModal", () => {
     expect(api.teamForm).toHaveBeenCalledWith("Chiefs", 2026);
     expect(api.headToHead).toHaveBeenCalledWith("2026_01_KC_BAL", 2026, 1);
     expect(screen.getByText("Ravens won")).toBeInTheDocument();
+  });
+});
+
+describe("GameDetailModal on a final", () => {
+  const finalGame = { ...game, home_score: 20, away_score: 17 };
+
+  it("shows the pick made before kickoff, and labels today's model as reference only", async () => {
+    const api = mockApi();
+    const week = { game_id: finalGame.game_id, status: "resolved" as const, home_win_prob: 0.32, away_win_prob: 0.68, verdict: null };
+    render(<GameDetailModal game={finalGame} api={api} weekPrediction={week} onClose={() => {}} />);
+    expect(await screen.findByText("Pick before kickoff: Chiefs · 68%")).toBeInTheDocument();
+    expect(screen.getByText(/Today's model, for reference/)).toBeInTheDocument();
+  });
+
+  it("labels a pick rebuilt after kickoff", async () => {
+    const api = mockApi();
+    const week = { game_id: finalGame.game_id, status: "resolved" as const, rebuilt: true, home_win_prob: 0.5, away_win_prob: 0.5, verdict: null };
+    render(<GameDetailModal game={finalGame} api={api} weekPrediction={week} onClose={() => {}} />);
+    expect(await screen.findByText(/Rebuilt after kickoff/)).toBeInTheDocument();
+  });
+
+  it("says when there was no pick before kickoff", async () => {
+    const api = mockApi();
+    render(<GameDetailModal game={finalGame} api={api} onClose={() => {}} />);
+    expect(await screen.findByText("No pick was made before kickoff.")).toBeInTheDocument();
   });
 });

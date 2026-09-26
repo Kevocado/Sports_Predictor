@@ -5,7 +5,7 @@ import type { SportApi } from "../types";
 
 const trackRecord = vi.fn(async () => ({
   games: {
-    n_resolved: 12, pct_moneyline_correct: 0.667, pct_ats_correct: 0.5, pct_totals_correct: 0.417,
+    n_resolved: 12, n_rebuilt: 3, pct_moneyline_correct: 0.667, pct_ats_correct: 0.5, pct_totals_correct: 0.417,
     weekly_trend: [{ week: 7, pct_moneyline_correct: 0.667, n_games: 12 }],
   },
   player_props: {
@@ -38,5 +38,10 @@ describe("TrackRecordPage", () => {
 
     const bars = container.querySelectorAll("[data-testid='accuracy-bar'] > span:first-child");
     expect(bars[0]).toHaveStyle({ width: "67%" });
+  });
+
+  it("says how many rebuilt picks it left out of the record", async () => {
+    render(<TrackRecordPage />);
+    expect(await screen.findByText("3 picks rebuilt after kickoff are shown on their games but not counted here.")).toBeInTheDocument();
   });
 });

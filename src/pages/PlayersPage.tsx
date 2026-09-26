@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import type { PlayerPropPrediction, Sport } from "../types";
-import { useSport } from "../context/SportContext";
 import { TeamLogo } from "../components/TeamName";
-import { POSITION_ORDER, groupByPosition, keyStatLabel, keyYardage, tdConfidenceTone, type SkillPosition } from "../lib/playerRank";
+import { epa, share } from "../lib/hubFormat";
+import { keyYardage, POSITION_ORDER, type SkillPosition } from "../lib/playerRank";
+import { EmptyState, ErrorState, pct, Skeleton, StatTable, type Column } from "../predictor-ui";
+import type { HubPlayer, HubPlayersResponse, PlayerPropPrediction, Sport } from "../types";
+import { useSport } from "../context/SportContext";
 
 const FALLBACK_SEASON = 2026;
 
@@ -13,161 +15,198 @@ const POSITION_LABEL: Record<SkillPosition, string> = {
   TE: "Tight ends",
 };
 
-// The feeds occasionally emit placeholder rows with no real player behind
-// them; a "top players" view must never crown one.
-function isRealPlayer(prop: PlayerPropPrediction): boolean {
-  const name = prop.player_name.trim().toLowerCase();
-  return name !== "" && name !== "team";
+const EPA_TIP: Record<Sport, string> = {
+  nfl: "Expected points added over the season: how much this player's plays moved their team's scoring chances.",
+  cfb: "Predicted points added over the season (college football's EPA): how much this player's plays moved their team's scoring chances.",
+};
+const PROJ_TIP = "The model's yardage projection for this week's game (passing for quarterbacks, rushing for running backs, receiving otherwise), with the chance they score.";
+
+// The feeds occasionally emit placeholder rows with no real player behind them.
+const isRealPlayer = (name: string) => !["", "team"].includes(name.trim().toLowerCase());
+
+type Row = HubPlayer & { prop: PlayerPropPrediction | null };
+type Col = Column<Row> & { optional?: boolean };
+
+const count = (key: keyof HubPlayer, label: string, optional = false): Col => ({
+  key, label, numeric: true, optional, value: (p) => p[key] as number,
+});
+
+function columns(position: SkillPosition, sport: Sport): Col[] {
+  const player: Col = {
+    key: "name", label: "Player", value: (p) => p.name,
+    render: (p) => (
+      <span className="inline-flex items-center gap-2">
+        <TeamLogo sport={sport} team={p.team} size="sm" />
+        <span>
+          {p.name} <span className="text-xs font-normal text-pr-text-dim">{p.team}</span>
+        </span>
+      </span>
+    ),
+  };
+  const byPosition: Record<SkillPosition, Col[]> = {
+    QB: [count("passing_yards", "Pass yds"), count("passing_tds", "Pass TD"), count("interceptions", "INT", true), count("rushing_yards", "Rush yds")],
+    RB: [count("carries", "Carries"), count("rushing_yards", "Rush yds"), count("rushing_tds", "Rush TD"), count("receptions", "Rec"), count("receiving_yards", "Rec yds")],
+    WR: [],
+    TE: [],
+  };
+  const receiving: Col[] = [
+    count("targets", "Targets", true),
+    { key: "target_share", label: "Target share", numeric: true, optional: true, value: (p) => p.target_share, render: (p) => share(p.target_share) },
+    count("receptions", "Rec"), count("receiving_yards", "Rec yds"), count("receiving_tds", "Rec TD"),
+  ];
+  byPosition.WR = receiving;
+  byPosition.TE = receiving;
+  return [
+    player,
+    count("games", "G"),
+    ...byPosition[position],
+    { key: "epa", label: "EPA", numeric: true, tooltip: EPA_TIP[sport], value: (p) => p.epa_total, render: (p) => epa(p.epa_total) },
+    {
+      key: "proj", label: "Projected this week", numeric: true, tooltip: PROJ_TIP,
+      value: (p) => (p.prop ? keyYardage(p.prop) : null),
+      render: (p) => p.prop ? (
+        <span className="inline-flex items-baseline gap-2">
+          <span>{Math.round(keyYardage(p.prop))}</span>
+          <span className="text-xs text-pr-text-dim">TD {pct(p.prop.anytime_td_prob)}</span>
+        </span>
+      ) : "—",
+    },
+  ];
 }
 
-function TdBadge({ prob }: { prob: number }) {
+function Leaders({ position, leaders }: { position: SkillPosition; leaders: HubPlayer[] }) {
+  if (leaders.length === 0) return null;
   return (
-    <span className={`rounded px-1.5 py-0.5 font-mono text-xs font-semibold ${tdConfidenceTone(prob)}`}>
-      TD {Math.round(prob * 100)}%
-    </span>
-  );
-}
-
-/** PL-style per-position leaderboard card: the week's best at one position. */
-function SpotlightCard({ position, players, sport }: { position: SkillPosition; players: PlayerPropPrediction[]; sport: Sport }) {
-  const top = players.slice(0, 3);
-  if (top.length === 0) return null;
-  const [first, ...rest] = top;
-  return (
-    <section data-testid={`spotlight-${position}`} className="rounded-xl border border-sp-border bg-sp-850/40 p-4">
-      <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">
-        Top {POSITION_LABEL[position]}
+    <section className="mb-5 rounded-pr border border-pr-rule bg-pr-panel p-4">
+      <h3 id={`leaders-${position}`} className="font-pr-display text-sm font-semibold uppercase tracking-wide text-pr-text-dim">
+        {POSITION_LABEL[position]}: EPA leaders
       </h3>
-      <div data-testid={`spotlight-${position}-player-${first.player_id}`} className="mt-3 flex items-center gap-3">
-        <TeamLogo sport={sport} team={first.recent_team} size="md" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-display text-lg font-semibold uppercase leading-tight tracking-wide text-sp-text">
-            {first.player_name}
-          </p>
-          <p className="text-xs text-sp-text-faint">{first.recent_team}</p>
-        </div>
-        <div className="text-right">
-          <p className="font-mono text-2xl font-bold text-sp-gold">{Math.round(keyYardage(first))}</p>
-          <p className="text-[10px] uppercase tracking-wider text-sp-text-faint">proj {keyStatLabel(position).toLowerCase()}</p>
-        </div>
-      </div>
-      <div className="mt-2"><TdBadge prob={first.anytime_td_prob} /></div>
-      {rest.map((prop, i) => (
-        <div
-          key={prop.player_id}
-          data-testid={`spotlight-${position}-player-${prop.player_id}`}
-          className="mt-2 flex items-center gap-2 border-t border-sp-border/40 pt-2 text-sm"
-        >
-          <span className="w-4 shrink-0 font-mono text-xs text-sp-text-faint">{i + 2}</span>
-          <TeamLogo sport={sport} team={prop.recent_team} size="sm" />
-          <span className="min-w-0 flex-1 truncate font-medium text-sp-text">
-            {prop.player_name} <span className="text-xs font-normal text-sp-text-faint">({prop.recent_team})</span>
-          </span>
-          <span className="shrink-0 font-mono text-xs text-sp-text-dim">{Math.round(keyYardage(prop))}</span>
-        </div>
-      ))}
+      <ol aria-labelledby={`leaders-${position}`} className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2 lg:grid-cols-5">
+        {leaders.slice(0, 5).map((p, i) => (
+          <li key={p.player_id} className="flex items-baseline gap-2 text-sm">
+            <span className="w-4 shrink-0 font-mono text-xs text-pr-text-dim">{i + 1}</span>
+            <span className="min-w-0 flex-1 truncate text-pr-text">
+              {p.name} <span className="text-xs text-pr-text-dim">{p.team}</span>
+            </span>
+            <span className="font-mono tabular-nums text-pr-text">{epa(p.epa_total)}</span>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }
 
+/**
+ * Season player table by position at PL depth: volume, touchdowns,
+ * efficiency (EPA) and, where the model has one, this week's projection.
+ */
 export function PlayersPage() {
   const { api, sport } = useSport();
-  const [season, setSeason] = useState(FALLBACK_SEASON);
-  const [week, setWeek] = useState(1);
+  const [when, setWhen] = useState<{ season: number; week: number | null } | null>(null);
+  const [data, setData] = useState<HubPlayersResponse | null>(null);
   const [props, setProps] = useState<PlayerPropPrediction[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [position, setPosition] = useState<SkillPosition>("QB");
   const [search, setSearch] = useState("");
 
-  // Follow the sport's actual current week rather than a hardcoded
-  // season/week, matching GamesPage's own current-week lookup.
   useEffect(() => {
     let cancelled = false;
+    // Clear the previous sport's table so it never shows under this sport's logos.
+    setWhen(null); setData(null);
     api.currentWeek()
-      .then((cw) => { if (!cancelled) { setSeason(cw.season); setWeek(cw.week); } })
-      .catch(() => {});
+      .then((cw) => { if (!cancelled) setWhen({ season: cw.season, week: cw.week }); })
+      .catch(() => { if (!cancelled) setWhen({ season: FALLBACK_SEASON, week: null }); });
     return () => { cancelled = true; };
   }, [api, sport]);
 
   useEffect(() => {
+    if (!when) return;
     let cancelled = false;
-    setLoading(true); setError(null); setProps([]);
-    api.playerProps(season, week)
-      .then((fetched) => { if (!cancelled) setProps(fetched); })
-      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+    setData(null); setError(null); setProps([]);
+    api.hubPlayers(when.season)
+      .then((res) => { if (!cancelled) setData(res); })
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); });
+    // Projections are a bonus column: without them the table still stands.
+    if (when.week != null) {
+      api.playerProps(when.season, when.week)
+        .then((res) => { if (!cancelled) setProps(res); })
+        .catch(() => {});
+    }
     return () => { cancelled = true; };
-  }, [api, season, week]);
+  }, [api, when, attempt]);
 
-  const filtered = useMemo(() => {
-    const named = props.filter(isRealPlayer);
-    const query = search.trim().toLowerCase();
-    if (!query) return named;
-    return named.filter((p) => p.player_name.toLowerCase().includes(query) || p.recent_team.toLowerCase().includes(query));
-  }, [props, search]);
+  const rows = useMemo<Row[]>(() => {
+    const byId = new Map(props.map((p) => [p.player_id, p]));
+    const byName = new Map(props.map((p) => [`${p.player_name}|${p.recent_team}`, p]));
+    return (data?.players ?? [])
+      .filter((p) => isRealPlayer(p.name))
+      .map((p) => ({ ...p, prop: byId.get(p.player_id) ?? byName.get(`${p.name}|${p.team}`) ?? null }));
+  }, [data, props]);
 
-  const grouped = useMemo(() => groupByPosition(filtered), [filtered]);
-  const hasAny = POSITION_ORDER.some((position) => grouped[position].length > 0);
+  const atPosition = useMemo(() => rows.filter((p) => p.position === position), [rows, position]);
+  // A column the feed never fills (college targets, say) reads as a wall of
+  // zeros; drop it rather than imply every receiver saw no targets.
+  const cols = useMemo(
+    () => columns(position, sport).filter((c) => !c.optional || atPosition.some((p) => { const v = c.value(p); return v != null && v !== 0; })),
+    [position, sport, atPosition],
+  );
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? atPosition.filter((p) => p.name.toLowerCase().includes(q) || p.team.toLowerCase().includes(q)) : atPosition;
+  }, [atPosition, search]);
+
+  if (error) return <ErrorState message={`Couldn't load player stats: ${error}`} onRetry={() => setAttempt((n) => n + 1)} />;
+  if (!data) return <Skeleton label="Loading players…" />;
+  if (rows.length === 0) return <EmptyState message={`No player stats for ${when?.season ?? "this"} season yet.`} />;
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="font-display text-2xl font-semibold uppercase tracking-wide text-sp-text">Week {week} Top Players</h2>
-          <p className="text-xs text-sp-text-faint">The week's best players by position, ranked by projected yardage.</p>
+          <h2 className="font-pr-display text-2xl font-semibold uppercase tracking-wide text-pr-text">Players</h2>
+          <p className="text-xs text-pr-text-dim">
+            {data.season} season to date{when?.week != null ? `, with week ${when.week} projections` : ""}.
+          </p>
         </div>
         <input
-          type="text"
+          type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search player or team…"
-          className="rounded-lg border border-sp-border bg-sp-850/60 px-3 py-1.5 text-sm text-sp-text placeholder:text-sp-text-faint focus:outline-none focus:ring-1 focus:ring-sp-gold"
+          aria-label="Search players"
+          className="rounded-pr border border-pr-rule bg-pr-panel px-3 py-1.5 text-sm text-pr-text placeholder:text-pr-text-faint focus:border-pr-accent focus:outline-none"
         />
       </div>
-      {loading && <p className="text-sm text-sp-text-faint">Loading…</p>}
-      {error && <p role="alert" className="text-sm text-loss">{error}</p>}
-      {!loading && !error && !hasAny && (
-        <p className="text-sm text-sp-text-faint">No player predictions available for this week yet.</p>
-      )}
-      {!loading && !error && hasAny && (
-        <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {POSITION_ORDER.map((position) => (
-            <SpotlightCard key={position} position={position} players={grouped[position]} sport={sport} />
-          ))}
-        </div>
-      )}
-      <div className="flex flex-col gap-8">
-        {POSITION_ORDER.map((position) => {
-          const players = grouped[position];
-          if (players.length === 0) return null;
-          return (
-            <section key={position} aria-label={`${POSITION_LABEL[position]} rankings`}>
-              <h3 className="mb-3 flex items-baseline gap-2 font-display text-base font-semibold uppercase tracking-wider text-sp-text-faint">
-                {POSITION_LABEL[position]}
-                <span className="text-xs font-normal text-sp-text-dim">({players.length})</span>
-              </h3>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {players.map((prop, i) => (
-                  <div key={prop.player_id} className="flex items-center justify-between gap-3 rounded-lg border border-sp-border bg-sp-850/60 px-3 py-2 text-sm">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="w-4 shrink-0 text-right font-mono text-xs text-sp-text-faint">{i + 1}</span>
-                      <TeamLogo sport={sport} team={prop.recent_team} size="sm" />
-                      <span className="truncate text-sp-text font-medium">
-                        {prop.player_name}{" "}
-                        <span className="text-xs text-sp-text-faint font-normal">({prop.recent_team})</span>
-                      </span>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2 font-mono text-xs text-sp-text-dim">
-                      <span>{keyStatLabel(position)} {Math.round(keyYardage(prop))}</span>
-                      <TdBadge prob={prop.anytime_td_prob} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          );
-        })}
+      <div role="group" aria-label="Position" className="mb-4 flex w-fit gap-1 rounded-pr border border-pr-rule bg-pr-panel p-1">
+        {POSITION_ORDER.map((pos) => (
+          <button
+            key={pos}
+            type="button"
+            aria-pressed={pos === position}
+            onClick={() => setPosition(pos)}
+            className={`rounded-pr px-3 py-1 font-pr-display text-sm font-semibold uppercase tracking-wide ${pos === position ? "bg-pr-accent text-pr-accent-ink" : "text-pr-text-dim hover:text-pr-text"}`}
+          >
+            {pos}
+          </button>
+        ))}
       </div>
+      <Leaders position={position} leaders={data.leaderboards[position] ?? []} />
+      {visible.length === 0 ? (
+        <EmptyState
+          message={search ? "No players match." : `No ${POSITION_LABEL[position].toLowerCase()} with stats yet.`}
+          action={search ? { label: "Clear search", onClick: () => setSearch("") } : undefined}
+        />
+      ) : (
+        <StatTable
+          key={position}
+          rows={visible}
+          columns={cols}
+          rowKey={(p) => p.player_id}
+          initialSort={{ key: "epa", dir: "desc" }}
+          caption={`${data.season} ${POSITION_LABEL[position].toLowerCase()}`}
+        />
+      )}
     </div>
   );
 }

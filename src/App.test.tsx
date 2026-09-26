@@ -12,6 +12,8 @@ const api = {
   games: vi.fn(async () => []),
   predictionsBatch: vi.fn(async () => ({})),
   playerProps: vi.fn(async () => []),
+  hubTeams: vi.fn(async (season: number) => ({ season, teams: [] })),
+  hubPlayers: vi.fn(async (season: number) => ({ season, players: [], leaderboards: {} })),
   standings: vi.fn(async () => []),
   trackRecord: vi.fn(async () => ({
     games: { n_resolved: 0, pct_moneyline_correct: null, pct_ats_correct: null, pct_totals_correct: null, weekly_trend: [] },
@@ -23,7 +25,7 @@ const api = {
     },
   })),
   powerRankings: vi.fn(async () => ({ season: 2026, rankings: [] })),
-  gamePrediction: vi.fn(), gameVerdict: vi.fn(), predictionsForWeek: vi.fn(),
+  gamePrediction: vi.fn(), gameVerdict: vi.fn(), predictionsForWeek: vi.fn(async () => []),
   retrain: vi.fn(), teamForm: vi.fn(), headToHead: vi.fn(),
 } as unknown as SportApi;
 
@@ -32,14 +34,27 @@ vi.mock("./context/SportContext", async (importOriginal) => {
   return { ...actual, useSport: () => ({ sport: "nfl", setSport: () => {}, api }) };
 });
 
+describe("family frame", () => {
+  it("names the site, links every Predictor sport, and marks the current one", async () => {
+    render(<App />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("NFL Predictor");
+    const sports = screen.getByRole("navigation", { name: "Sports" });
+    expect([...sports.querySelectorAll("a")].map((a) => a.textContent)).toEqual(["PL", "F1", "NFL", "CFB", "NBA"]);
+    expect(screen.getByRole("link", { name: "NFL" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "CFB" })).toHaveAttribute("href", "?sport=cfb");
+    expect(screen.getByRole("link", { name: "NBA" }).getAttribute("href")).toMatch(/^https:\/\/nba\./);
+    expect(await screen.findByText("No games scheduled for this week.")).toBeInTheDocument();
+  });
+});
+
 describe("App tab shell", () => {
   it("keeps visited tabs mounted and hides inactive ones instead of unmounting", async () => {
     render(<App />);
     expect(await screen.findByText("No games scheduled for this week.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Hub" }));
-    // The Hub opens on its Player Hub sub-tab.
-    expect(await screen.findByText("No player predictions available for this week yet.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Team Hub" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Data Hub" }));
+    // The Hub opens on its Teams sub-tab.
+    expect(await screen.findByText("No team stats for 2026 yet.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Players" })).toBeInTheDocument();
     // Games tab content is still in the document, just hidden.
     expect(screen.getByText("No games scheduled for this week.")).toBeInTheDocument();
     expect(document.querySelector('[data-tab="games"]')).toHaveStyle("display: none");
@@ -62,8 +77,8 @@ describe("App tab shell", () => {
       // Let the preload's promise chain settle.
       for (let i = 0; i < 20; i++) await Promise.resolve();
       const urls = fetchMock.mock.calls.map((c) => String(c[0]));
-      expect(urls).toContain("http://localhost:8001/api/current-week");
-      expect(urls).toContain("http://localhost:8003/api/current-week");
+      expect(urls).toContain("/api/nfl/current-week");
+      expect(urls).toContain("/api/cfb/current-week");
     } finally {
       vi.useRealTimers();
     }
@@ -90,10 +105,10 @@ describe("App tab shell", () => {
       document.dispatchEvent(new Event("visibilitychange"));
       for (let i = 0; i < 50; i++) await Promise.resolve();
       const urls = fetchMock.mock.calls.map((c) => String(c[0]));
-      expect(urls).toContain("http://localhost:8001/api/current-week");
-      expect(urls).toContain("http://localhost:8003/api/current-week");
-      expect(urls).toContain("http://localhost:8001/api/predictions/2026/7/batch");
-      expect(urls).toContain("http://localhost:8003/api/predictions/2026/7/batch");
+      expect(urls).toContain("/api/nfl/current-week");
+      expect(urls).toContain("/api/cfb/current-week");
+      expect(urls).toContain("/api/nfl/predictions/2026/7/batch");
+      expect(urls).toContain("/api/cfb/predictions/2026/7/batch");
     } finally {
       if (visibilityDescriptor) Object.defineProperty(document, "visibilityState", visibilityDescriptor);
       vi.useRealTimers();

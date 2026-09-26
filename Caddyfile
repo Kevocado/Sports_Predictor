@@ -1,5 +1,19 @@
+# Serves the built site and proxies the two APIs on the same origin, so the
+# page never needs to know where they live. Set per deployment:
+#   NFL_API_UPSTREAM  host:port of the NFL API (default nfl-predictor:8001)
+#   CFB_API_UPSTREAM  host:port of the CFB API (default cfb-predictor:8003)
 :80 {
-    root * /usr/share/caddy
-    file_server
-    try_files {path} /index.html
+    handle_path /api/nfl/* {
+        rewrite * /api{uri}
+        reverse_proxy {$NFL_API_UPSTREAM:nfl-predictor:8001}
+    }
+    handle_path /api/cfb/* {
+        rewrite * /api{uri}
+        reverse_proxy {$CFB_API_UPSTREAM:cfb-predictor:8003}
+    }
+    handle {
+        root * /usr/share/caddy
+        try_files {path} /index.html
+        file_server
+    }
 }
