@@ -1,0 +1,243 @@
+/** The v2 panel as this site actually ships it: a real answer from the real
+ *  service, through the real modal, over the real game and prediction.
+ *
+ *  Every assertion is on the RENDERED result — the background colour the browser
+ *  would paint a segment, and the accessible name a screen reader would read —
+ *  and never on a prop having been passed.
+ *
+ *  **Why this file exists on a site whose call site needed no change.** The bar
+ *  joins the pick to a segment BY LABEL (`pickIndex` in `ProbabilityBar`, spec
+ *  §5b). So the accent lands only while the service's label and this site's
+ *  segment label are the same string, and nothing but a test notices when they
+ *  drift: a mismatch renders a bar with nothing accented, which is the panel's
+ *  *correct* rendering of a bundle with no pick and a completely wrong one for a
+ *  game that has one. It builds, it type-checks, and every other test here
+ *  passes. "No change was needed" is a claim, and this is what holds it up.
+ */
+import { describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+
+import { GameDetailModal } from "./GameDetailModal";
+import type { Explanation, PickRef } from "../predictor-ui";
+import type { GamePrediction, GameSummary, SportApi } from "../types";
+
+vi.mock("../context/SportContext", () => ({
+  useSport: () => ({ sport: "nfl", setSport: () => {}, api: {} }),
+}));
+
+const ACCENT = "var(--color-pr-accent)";
+
+/** What `ProbabilityBar` painted each segment, in order — the rendered
+ *  emphasis, read off the elements the browser would colour. */
+const fills = (container: HTMLElement) =>
+  [...container.querySelectorAll<HTMLElement>("[data-testid='pbar-fill']")].map(
+    (f) => f.style.backgroundColor,
+  );
+
+/** Which segment carries the accent, by index. -1 when none does. */
+const accentedAt = (container: HTMLElement) => fills(container).indexOf(ACCENT);
+
+/** The panel's own graphic, and its accessible name.
+ *
+ *  Scoped deliberately: this modal renders other `role="img"` elements (the team
+ *  logos), so `getByRole("img")` alone is ambiguous here. The bar is the graphic
+ *  inside the "In plain English" section, and it is found by that rather than by
+ *  its role, so a logo added to the modal later cannot make these assertions
+ *  quietly point at the wrong element. */
+const barName = (container: HTMLElement) => {
+  const panel = [...container.querySelectorAll("section")].find((s) =>
+    s.textContent?.includes("In plain English"),
+  );
+  expect(panel, "the plain-English panel is not on the page").toBeTruthy();
+  const bar = panel!.querySelector<HTMLElement>("[role='img']");
+  expect(bar, "the panel drew no bar").toBeTruthy();
+  return bar!.getAttribute("aria-label") ?? "";
+};
+
+const game: GameSummary = {
+  game_id: "2026_01_KC_BAL", season: 2026, week: 1, gameday: "2026-09-07T20:00:00Z",
+  home_team: "Ravens", away_team: "Chiefs",
+  home_score: null, away_score: null,
+};
+
+/** Home 62 / away 38, so the pick is the FAVOURITE and the bar is not lopsided. */
+const prediction = (over: Partial<GamePrediction> = {}): GamePrediction => ({
+  home_win_prob: 0.62, away_win_prob: 0.38,
+  home_cover_prob: null, away_cover_prob: null, over_prob: null, under_prob: null,
+  ...over,
+});
+
+function mockApi(over: Partial<SportApi> = {}): SportApi {
+  return {
+    games: vi.fn(),
+    gamePrediction: vi.fn().mockResolvedValue(prediction()),
+    playerProps: vi.fn().mockResolvedValue([]),
+    trackRecord: vi.fn(), retrain: vi.fn(),
+    gameVerdict: vi.fn().mockResolvedValue(null),
+    predictionsForWeek: vi.fn(), currentWeek: vi.fn(),
+    hubTeams: vi.fn(), hubPlayers: vi.fn(),
+    standings: vi.fn(), powerRankings: vi.fn(), predictionsBatch: vi.fn(),
+    teamForm: vi.fn().mockResolvedValue({ team: "", recent_form: [] }),
+    headToHead: vi.fn().mockResolvedValue({ game_id: "", meetings: [] }),
+    ...over,
+  };
+}
+
+/** A v2 answer in the shape the service sends. `pick` is spread in only when
+ *  there is one, because the service states "no pick" by OMITTING the key and
+ *  the panel acts on the absence. */
+const v2 = (pick?: PickRef): Explanation =>
+  ({
+    verdict: "Baltimore are the pick, but the line is thinner than the number.",
+    band: "moderate",
+    ...(pick ? { pick } : {}),
+    factors: [
+      {
+        key: "moneyline",
+        direction: "neutral",
+        headline: "The model likes Baltimore",
+        text: "It rates Baltimore better than Kansas City.",
+      },
+    ],
+    source: "template",
+    model: "",
+    generated_at: new Date().toISOString(),
+    sport: "nfl",
+    pick_timing: "pre_kickoff",
+  }) as Explanation;
+
+async function show(pick?: PickRef, over: Partial<GamePrediction> = {}) {
+  const explain = vi.fn().mockResolvedValue(v2(pick));
+  const out = render(
+    <GameDetailModal
+      game={game}
+      api={mockApi({ gamePrediction: vi.fn().mockResolvedValue(prediction(over)) })}
+      onClose={() => {}}
+      explain={explain}
+    />,
+  );
+  await screen.findByText(/Baltimore are the pick/);
+  return out;
+}
+
+describe("the accent follows the pick", () => {
+  it("accents the home side when the pick is the home team", async () => {
+    const { container } = await show({ label: game.home_team });
+    expect(fills(container)).toHaveLength(2);
+    expect(accentedAt(container)).toBe(0);
+    expect(barName(container)).toBe(
+      "Ravens 62%, Chiefs 38%, the pick is Ravens",
+    );
+  });
+
+  it("accents the AWAY side — the second segment — when the pick is the away team", async () => {
+    // The case the whole field exists for. The segments are home-first, so an
+    // accent driven by segment ORDER lands on Ravens and the panel tells the
+    // reader the model picked the side it rated LEAST likely: 38% accented, 62%
+    // grey. This is the same shape as the BAL/KC screenshot that started all of
+    // this, and it is invisible to any test that only ever picks the favourite.
+    const { container } = await show({ label: game.away_team }, { home_win_prob: 0.38, away_win_prob: 0.62 });
+    expect(accentedAt(container)).toBe(1);
+    expect(fills(container)[0]).not.toBe(ACCENT);
+    expect(barName(container)).toBe(
+      "Ravens 38%, Chiefs 62%, the pick is Chiefs",
+    );
+  });
+
+  it("joins on the service's own label, which is this site's team name", async () => {
+    // The join, pinned on both sides at once. The NFL and CFB `/facts` endpoints
+    // build the pick as `{"label": game["home_team"]}` — the full team name, not
+    // an abbreviation — and this site labels its segments with the same
+    // `GameSummary` strings. Both halves are asserted here, so abbreviating
+    // either one (a "KC" instead of a "Chiefs", which the harness fixture uses)
+    // fails this test instead of silently un-accenting the bar.
+    const { container } = await show({ label: game.away_team }, { home_win_prob: 0.38, away_win_prob: 0.62 });
+    const labels = [...container.querySelectorAll<HTMLElement>("[data-testid='pbar-label']")].map(
+      (l) => l.dataset.seg,
+    );
+    expect(labels).toEqual([game.home_team, game.away_team]);
+    expect(accentedAt(container)).toBe(labels.indexOf(game.away_team));
+  });
+
+  it("still accents nothing when the answer genuinely has no pick", async () => {
+    // The control, and the reason the tests above mean anything. A bar that
+    // emphasises something is claiming there is a pick; this is the exact shape a
+    // failed join impersonates, so it has to stay reachable and stay distinct.
+    const { container } = await show(undefined);
+    const tones = fills(container);
+    expect(tones).toHaveLength(2);
+    expect(tones).not.toContain(ACCENT);
+    expect(new Set(tones).size).toBe(2);
+    expect(barName(container)).toBe("Ravens 62%, Chiefs 38%");
+  });
+
+  it("says nothing about a pick on a no-pick answer, in words as well as in colour", async () => {
+    // §13's rule, from the other end: with no pick, no row may claim to be for or
+    // against one. The factors here are `neutral`, so they read "context" and
+    // draw no triangle.
+    const { container } = await show(undefined);
+    expect(container.textContent).not.toMatch(/for the pick|against it/i);
+    expect(container.textContent).toContain("context");
+    expect(container.querySelector("svg[data-direction]")).toBeNull();
+  });
+});
+
+describe("the market row, and why this site does not draw one", () => {
+  /** Measured, not assumed. The NFL moneyline's implied figures are NOT
+   *  reachable from this site:
+   *
+   *  - the NFL API's `/games` returns the schedule rows, which carry
+   *    `spread_line` and `total_line` and **no moneyline price for either side**;
+   *  - `/games/{season}/{week}/{id}/prediction` carries the model's own
+   *    probabilities and nothing from a book;
+   *  - the odds join DOES exist in the NFL API (`data/odds_api.py`, the h2h feed
+   *    from The Odds API, and `odds/value_bets.py`), but `value_bets` is
+   *    imported by `api/routes.py` and exposed by **no route**, so no endpoint
+   *    this site consumes returns an implied moneyline;
+   *  - and the explainer's own facts bundle carries the moneyline market with the
+   *    MODEL's numbers only — `{"market": "moneyline", "model": {...}}` — so even
+   *    the service has no second split to quote.
+   *
+   *  §13b says omit the row rather than draw a comparison the reader cannot make,
+   *  and there is nothing here to fill it honestly. So it is omitted, and this
+   *  test is what holds that omission honest: if implied moneyline data ever
+   *  reaches the site, it fails and the row becomes a decision rather than an
+   *  oversight.
+   */
+  it("draws no market row, because the site has no implied moneyline to fill one with", async () => {
+    const { container } = await show({ label: game.home_team });
+    expect(container.querySelector("[data-testid='pbar-legend']")).toBeNull();
+    expect(container.querySelector("[data-testid='pbar-market-figures']")).toBeNull();
+    expect(container.querySelector("[data-testid='pbar-market-fill']")).toBeNull();
+  });
+
+  it("does not synthesise a market row out of the model's own probabilities", async () => {
+    // The one way this row can be shipped wrong while looking right: a legend
+    // built from `home_win_prob`/`away_win_prob` renders the model compared with
+    // itself — two bars, the same numbers, the same widths, reading exactly like
+    // a working market comparison. A lopsided model is the case most likely to
+    // tempt it, so that is the case asserted.
+    const { container } = await show(
+      { label: game.home_team },
+      { home_win_prob: 0.91, away_win_prob: 0.09 },
+    );
+    expect(container.querySelector("[data-testid='pbar-legend']")).toBeNull();
+    // The model's own figures are on the bar and nowhere else.
+    expect(barName(container)).toBe(
+      "Ravens 91%, Chiefs 9%, the pick is Ravens",
+    );
+  });
+
+  it("still draws the bar's own figures at full size, since there is no row to collide with", async () => {
+    // `expandable` is the control that collapses the market row's labels on a
+    // narrow surface. This site passes no legend, so the control would never
+    // render and the prop is left at its default of off — opting in would be
+    // opting in to a viewport this modal does not have (`max-w-3xl`, and the
+    // measured collision is at 260px). Pinned so a future opt-in is a decision
+    // someone makes rather than a leftover.
+    const { container } = await show({ label: game.home_team });
+    expect(container.querySelector("[data-testid='pbar-market-toggle']")).toBeNull();
+    expect(container.querySelectorAll("[data-testid='pbar-label']")).toHaveLength(2);
+    await waitFor(() => expect(container.querySelector("[data-testid='pbar-fill']")).not.toBeNull());
+  });
+});
