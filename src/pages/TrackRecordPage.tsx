@@ -11,7 +11,7 @@ function StatCard({ label, value, sublabel }: { label: string; value: string; su
     <div className="flex flex-col gap-1 rounded-xl border border-sp-border bg-sp-850/70 p-4">
       <span className="text-xs text-sp-text-faint">{label}</span>
       <span className="text-2xl font-bold text-sp-text">{value}</span>
-      {sublabel && <span className="text-[11px] text-sp-text-dim">{sublabel}</span>}
+      {sublabel && <span className="text-[12px] text-sp-text-dim">{sublabel}</span>}
     </div>
   );
 }
@@ -26,7 +26,7 @@ function AccuracyCard({ label, accuracy, sublabel }: { label: string; accuracy: 
         <span className="block h-full rounded-full bg-sp-gold" style={{ width: `${width}%` }} />
         <div className="absolute inset-y-0 left-1/2 w-px bg-sp-text-faint/60" />
       </div>
-      {sublabel && <span className="text-[11px] text-sp-text-dim">{sublabel}</span>}
+      {sublabel && <span className="text-[12px] text-sp-text-dim">{sublabel}</span>}
     </div>
   );
 }
@@ -94,7 +94,7 @@ export function TrackRecordPage() {
             </div>
             {games.weekly_trend.length > 0 && (
               <div className="mt-4 flex flex-col gap-1.5 rounded-xl border border-sp-border bg-sp-850/40 p-4">
-                <span className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-sp-text-faint">Moneyline accuracy by week</span>
+                <span className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-sp-text-faint">Moneyline accuracy by week</span>
                 {games.weekly_trend.map((w) => (
                   <div key={w.week} className="flex items-center gap-3 text-xs">
                     <span className="w-14 shrink-0 text-sp-text-dim">Week {w.week}</span>
@@ -135,7 +135,7 @@ export function TrackRecordPage() {
             </div>
             {player_props.anytime_td.confidence_buckets && player_props.anytime_td.confidence_buckets.some((b) => b.n > 0) && (
               <div className="mt-4 flex flex-col gap-1.5 rounded-xl border border-sp-border bg-sp-850/40 p-4">
-                <span className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-sp-text-faint">Anytime-TD hit rate by confidence</span>
+                <span className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-sp-text-faint">Anytime-TD hit rate by confidence</span>
                 {player_props.anytime_td.confidence_buckets.map((bucket) => (
                   <div key={bucket.label} className="flex items-center gap-3 text-xs">
                     <span className="w-16 shrink-0 text-sp-text-dim">{bucket.label}</span>
