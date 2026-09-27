@@ -62,6 +62,17 @@ describe("yardageBreakdown", () => {
     const broken = { ...qb("Lamar", 280), passing_yards: undefined } as PlayerPropPrediction;
     expect(yardageBreakdown([broken])).toEqual([]);
   });
+
+  it("ignores a NaN yardage rather than poisoning the market sum", () => {
+    // `typeof NaN === "number"`, so a type check alone lets it through. It then
+    // renders as `NaN` and makes the whole market total NaN, so one bad row
+    // destroys every other player's figure in the panel.
+    const nan = { ...qb("Lamar", 280), passing_yards: NaN } as PlayerPropPrediction;
+    expect(yardageBreakdown([nan])).toEqual([]);
+    const mixed = yardageBreakdown([nan, qb("Tua", 250)]);
+    expect(mixed).toHaveLength(1);
+    expect(mixed[0].yards).toBe(250);
+  });
 });
 
 describe("GameDetailModal yardage panel", () => {
@@ -79,6 +90,26 @@ describe("GameDetailModal yardage panel", () => {
     expect(screen.getByText("Pass yds")).toBeInTheDocument();
     expect(screen.getByText("Rush yds")).toBeInTheDocument();
     expect(screen.getByText("Rec yds")).toBeInTheDocument();
+  });
+
+  it("renders the actual projected yardage, not just the labels", async () => {
+    // The label-only version of this test passed with the render mutated to
+    // `Math.round(market.yards * 2)` -- all 139 tests green against a number that
+    // was wrong by 100%. Asserting the values is what makes the panel honest.
+    const api = mockApi([qb("Lamar", 280), rb("Mark", 90), wr("Zay", 110)]);
+    render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
+    await waitFor(() => expect(screen.getByText("Lamar")).toBeInTheDocument());
+    expect(screen.getByText("280")).toBeInTheDocument();
+    expect(screen.getByText("90")).toBeInTheDocument();
+    expect(screen.getByText("110")).toBeInTheDocument();
+  });
+
+  it("sums a market across players and shows how many contributed", async () => {
+    const api = mockApi([qb("Lamar", 280), rb("Mark", 60), rb("Gus", 30), wr("Zay", 110)]);
+    render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
+    await waitFor(() => expect(screen.getByText("Lamar")).toBeInTheDocument());
+    expect(screen.getByText("90")).toBeInTheDocument();
+    expect(screen.getByText("(2)")).toBeInTheDocument();
   });
 
   it("states both why these are not a team yardage total", async () => {
