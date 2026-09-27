@@ -10,6 +10,46 @@ import { POSITION_ORDER, keyStatLabel, keyYardage, tdConfidenceTone } from "../l
 
 type PositionFilter = "ALL" | (typeof POSITION_ORDER)[number];
 
+const MARKET_LABEL = {
+  passing_yards: "Pass yds",
+  rushing_yards: "Rush yds",
+  receiving_yards: "Rec yds",
+} as const;
+
+export interface YardageMarketBreakdown {
+  market: keyof typeof MARKET_LABEL;
+  yards: number;
+  n: number;
+}
+
+/** Yardage projected for one roster, grouped by the market it was projected in.
+ *
+ * Kept per market and never summed. The model projects exactly one yardage
+ * market per position (NFL/CFB `models/player_props.py::POSITION_MARKETS`), so
+ * summing the roster's single yardage field adds a QB's passing to an RB's
+ * rushing and a WR's receiving, and the total is not any real quantity: on a
+ * full roster it ran 800-1400 yards, against a real figure of roughly 300-450.
+ * Team total yards is `rushing + receiving` across every player, which needs a
+ * team-level model that does not exist yet -- so this reports what is actually
+ * projected and says so, rather than publishing a number nobody can reproduce.
+ */
+export function yardageBreakdown(props: PlayerPropPrediction[]): YardageMarketBreakdown[] {
+  const totals = new Map<string, { yards: number; n: number }>();
+  for (const prop of props) {
+    for (const market of Object.keys(MARKET_LABEL) as (keyof typeof MARKET_LABEL)[]) {
+      const value = prop[market];
+      if (typeof value !== "number" || !Number.isFinite(value)) continue;
+      const entry = totals.get(market) ?? { yards: 0, n: 0 };
+      entry.yards += value;
+      entry.n += 1;
+      totals.set(market, entry);
+    }
+  }
+  return (Object.keys(MARKET_LABEL) as (keyof typeof MARKET_LABEL)[])
+    .filter(market => totals.has(market))
+    .map(market => ({ market, yards: totals.get(market)!.yards, n: totals.get(market)!.n }));
+}
+
 export function filterPlayerPropsForGame(
   props: PlayerPropPrediction[],
   game: Pick<GameSummary, "home_team" | "away_team">,
@@ -131,6 +171,13 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
   const availablePositions = useMemo(
     () => POSITION_ORDER.filter((position) => (gameProps ?? []).some((p) => p.position === position)),
     [gameProps],
+  );
+  const yardageByTeam = useMemo(
+    () => [
+      { team: game.home_team, markets: yardageBreakdown((gameProps ?? []).filter(p => p.recent_team === game.home_team)) },
+      { team: game.away_team, markets: yardageBreakdown((gameProps ?? []).filter(p => p.recent_team === game.away_team)) },
+    ],
+    [gameProps, game.home_team, game.away_team],
   );
   const visibleProps = useMemo(() => {
     if (!gameProps) return null;
@@ -259,30 +306,37 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
               {prediction.under_prob != null && <MarketBar label="Under total points" prob={prediction.under_prob} />}
             </div>}
 
-            {/* Team Yardage Predictions */}
-            {gameProps && gameProps.length > 0 && (
+            {/* Projected yardage, by market. Deliberately NOT a team total. */}
+            {yardageByTeam.some(row => row.markets.length > 0) && (
               <div className="flex flex-col gap-1.5">
-                <div className="text-xs text-sp-text-faint font-semibold uppercase tracking-wide">Team Yardage Predictions</div>
-                {(() => {
-                  const homeYards = gameProps
-                    .filter(p => p.recent_team === game.home_team)
-                    .reduce((sum, p) => sum + (keyYardage(p) || 0), 0);
-                  const awayYards = gameProps
-                    .filter(p => p.recent_team === game.away_team)
-                    .reduce((sum, p) => sum + (keyYardage(p) || 0), 0);
-                  return (
-                    <div className="grid grid-cols-2 gap-4 mt-2">
-                      <div className="rounded-lg bg-sp-850/60 p-3">
-                        <div className="font-semibold text-sm">{game.home_team}</div>
-                        <div className="text-sm text-sp-text-dim">Total: {Math.round(homeYards)}</div>
-                      </div>
-                      <div className="rounded-lg bg-sp-850/60 p-3">
-                        <div className="font-semibold text-sm">{game.away_team}</div>
-                        <div className="text-sm text-sp-text-dim">Total: {Math.round(awayYards)}</div>
-                      </div>
+                <div className="text-xs text-sp-text-faint font-semibold uppercase tracking-wide">Projected Yardage by Market</div>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  {yardageByTeam.map(row => (
+                    <div key={row.team} className="rounded-lg bg-sp-850/60 p-3">
+                      <div className="font-semibold text-sm">{row.team}</div>
+                      {row.markets.length > 0 ? (
+                        <dl className="mt-1 flex flex-col gap-0.5 text-sm">
+                          {row.markets.map(market => (
+                            <div key={market.market} className="flex items-baseline justify-between gap-2">
+                              <dt className="text-sp-text-dim">
+                                {MARKET_LABEL[market.market]} <span className="text-sp-text-faint">({market.n})</span>
+                              </dt>
+                              <dd className="font-mono">{Math.round(market.yards)}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      ) : (
+                        <div className="text-sm text-sp-text-faint">No yardage projection</div>
+                      )}
                     </div>
-                  );
-                })()}
+                  ))}
+                </div>
+                <p className="mt-1 text-xs leading-snug text-sp-text-faint">
+                  Position-market projections, not team total yards. These cover the whole
+                  roster rather than the expected on-field lineup, and the model projects one
+                  yardage market per position, so QB rushing and RB receiving are missing.
+                  A team yardage total needs a team-level model that does not exist yet.
+                </p>
               </div>
             )}
           </section>
