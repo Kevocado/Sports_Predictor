@@ -1,5 +1,6 @@
 import { ExplainerPanel, pct, spread } from "../predictor-ui";
-import type { Explanation } from "../api/client";
+import type { Explanation } from "../predictor-ui";
+import { panelFacts } from "../lib/panelFacts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GamePrediction, GameSummary, GameVerdict, HeadToHead as HeadToHeadData, PlayerPropPrediction, SportApi, TeamForm, WeekPrediction } from "../types";
 import { TeamName } from "./TeamName";
@@ -52,6 +53,11 @@ function PregamePick({ game, week }: { game: GameSummary; week?: WeekPrediction 
 
 export function GameDetailModal({ game, api, weekPrediction, onClose, explain, sport = "nfl" }: Props) {
   const [prediction, setPrediction] = useState<GamePrediction | null>(null);
+  // The panel's figures, derived rather than fetched. Memoised because
+  // `panelFacts` allocates a new array on every call and the panel takes those
+  // arrays as props — without this the tiles and segments are a fresh identity on
+  // every render, which re-renders the whole panel whenever anything else moves.
+  const panel = useMemo(() => panelFacts(game, prediction), [game, prediction]);
   const [predictionError, setPredictionError] = useState<string | null>(null);
   const [allProps, setAllProps] = useState<PlayerPropPrediction[] | null>(null);
   const [propsLoading, setPropsLoading] = useState(true);
@@ -157,6 +163,13 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
               loading={summaryLoading}
               error={summaryError}
               onRetry={() => loadSummary()}
+              // The figures the panel draws, from this site's OWN prediction
+              // response rather than from the explanation. The panel is handed
+              // numbers and renders them; it must never be the thing that
+              // decides what the numbers are, or the explanation and the
+              // prediction could disagree on screen.
+              tiles={panel.tiles}
+              segments={panel.segments}
             />
           )}
 

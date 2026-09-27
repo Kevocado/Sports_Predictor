@@ -118,15 +118,16 @@ export const CFB_BASE_URL: string = import.meta.env.VITE_CFB_API_BASE_URL ?? "/a
 export const NFL_EXPLAIN_BASE_URL: string = import.meta.env.VITE_NFL_EXPLAIN_BASE_URL ?? "/api/explain/nfl";
 export const CFB_EXPLAIN_BASE_URL: string = import.meta.env.VITE_CFB_EXPLAIN_BASE_URL ?? "/api/explain/cfb";
 
-export type Explanation = {
-  headline: string;
-  sections: { market: string; title: string; text: string }[];
-  source: "llm" | "template";
-  model: string;
-  generated_at: string;
-  sport: string;
-  pick_timing: "pre_kickoff" | "rebuilt" | "none";
-};
+/** The summary's type belongs to the panel, not to this client.
+ *
+ *  It was declared here as a copy, which is how this site ended up with a v1
+ *  shape the panel had moved past — the same mistake as the duplicate
+ *  `contract.py` in predictor-hub, and the same fix: one owner, re-exported. A
+ *  local copy of a type that another component consumes is a promise nobody has
+ *  to keep, and this one was already broken.
+ */
+import type { Explanation } from "../predictor-ui";
+export type { Explanation };
 
 /**
  * The plain-English summary for one game. Same-origin like every other call
