@@ -17,9 +17,33 @@
     # and the rewrite puts back the /explain the service actually serves.
     # With no key configured the service answers from its template, and the
     # panel's footer says so rather than claiming a model wrote it.
+    #
+    # The one proxy here that does NOT pass the upstream body through. A bare
+    # reverse_proxy forwards a response verbatim, error body included, and the
+    # explainer is a separate service whose error vocabulary nobody on this site
+    # has audited -- it can carry an internal path, or an upstream's message.
+    # Every FastAPI proxy in this family deliberately does the opposite, and PL's
+    # says why: "an explainer error can carry key material or an internal path".
+    # The site's own error state and the panel's retry are written against that
+    # 502, so the message here is the same fixed string and the same status.
     handle_path /api/explain/* {
         rewrite * /explain{uri}
-        reverse_proxy {$EXPLAINER_UPSTREAM:predictor-explainer:8090}
+        reverse_proxy {$EXPLAINER_UPSTREAM:predictor-explainer:8090} {
+            # Two ranges because Caddy takes exactly one status pattern per
+            # matcher and will not accept "4xx5xx" or ">= 400" (checked against
+            # v2.11.4, not guessed). 5xx is the range that matters most: it is
+            # the one that came from inside the explainer and is the likeliest to
+            # carry an internal path. Handling only 4xx would look like this
+            # guard and still publish every 500.
+            @explainer_client_error status 4xx
+            handle_response @explainer_client_error {
+                respond "The summary service is not available." 502
+            }
+            @explainer_server_error status 5xx
+            handle_response @explainer_server_error {
+                respond "The summary service is not available." 502
+            }
+        }
     }
     handle {
         root * /usr/share/caddy
