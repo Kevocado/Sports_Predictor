@@ -21,7 +21,7 @@ function VerdictBadge({ label, hit }: { label: string; hit: boolean }) {
   return (
     <span className="flex items-center gap-1.5 rounded-lg bg-sp-850/60 px-2.5 py-1 text-xs">
       <span className="text-sp-text-dim">{label}</span>
-      <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${hit ? "bg-win/20 text-win" : "bg-loss/20 text-loss"}`}>
+      <span className={`rounded px-1.5 py-0.5 text-[12px] font-bold ${hit ? "bg-win/20 text-win" : "bg-loss/20 text-loss"}`}>
         {hit ? "HIT" : "MISS"}
       </span>
     </span>
@@ -208,7 +208,7 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
             <section>
               <div className="mb-2">
                 <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Recent form &amp; head-to-head</h3>
-                <p className="text-[11px] text-sp-text-dim">Last five results for each team, plus recent meetings between them.</p>
+                <p className="text-[12px] text-sp-text-dim">Last five results for each team, plus recent meetings between them.</p>
               </div>
               <div className="flex flex-col gap-3">
                 {homeForm && homeForm.recent_form.length > 0 && (
