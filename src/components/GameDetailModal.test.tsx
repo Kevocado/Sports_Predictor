@@ -51,7 +51,11 @@ describe("GameDetailModal", () => {
   it("restates the spread/total line near the match markets", async () => {
     const api = mockApi();
     render(<GameDetailModal game={{ ...game, spread_line: -2.5, total_line: 46.5 }} api={api} onClose={() => {}} />);
-    // nflverse spread_line −2.5 means the away side is favoured, so the home team is +2.5.
+    // `spread_line` is the HOME team's line in nflverse's convention (NFL_Predictor's
+    // `game_outcome.py`: "the home team's expected margin"), so −2.5 is the home
+    // team RECEIVING 2.5 and the rendering is `spread(home, -spread_line)`. It is
+    // not "the away side is favoured, therefore flip it" — the field is defined in
+    // the home frame from the start, and the away side is favoured as a consequence.
     await waitFor(() => expect(screen.getByText("Ravens +2.5 · Total 46.5")).toBeInTheDocument());
   });
 

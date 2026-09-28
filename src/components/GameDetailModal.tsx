@@ -1,5 +1,6 @@
 import { ExplainerPanel, pct, spread } from "../predictor-ui";
-import type { Explanation } from "../api/client";
+import type { Explanation } from "../predictor-ui";
+import { barPick, panelFacts } from "../lib/panelFacts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GamePrediction, GameSummary, GameVerdict, HeadToHead as HeadToHeadData, PlayerPropPrediction, SportApi, TeamForm, WeekPrediction } from "../types";
 import { TeamName } from "./TeamName";
@@ -92,6 +93,11 @@ function PregamePick({ game, week }: { game: GameSummary; week?: WeekPrediction 
 
 export function GameDetailModal({ game, api, weekPrediction, onClose, explain, sport = "nfl" }: Props) {
   const [prediction, setPrediction] = useState<GamePrediction | null>(null);
+  // The panel's figures, derived rather than fetched. Memoised because
+  // `panelFacts` allocates a new array on every call and the panel takes those
+  // arrays as props — without this the tiles and segments are a fresh identity on
+  // every render, which re-renders the whole panel whenever anything else moves.
+  const panel = useMemo(() => panelFacts(game, prediction), [game, prediction]);
   const [predictionError, setPredictionError] = useState<string | null>(null);
   const [allProps, setAllProps] = useState<PlayerPropPrediction[] | null>(null);
   const [propsLoading, setPropsLoading] = useState(true);
@@ -121,6 +127,21 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
   }, [explain, sport, game.game_id]);
 
   useEffect(() => loadSummary(), [loadSummary]);
+
+  // The answer's pick, restated in the vocabulary the bar above is drawn in.
+  //
+  // The bar joins the pick to a segment BY LABEL, and the service's wording and
+  // this site's segment labels are two independent call sites that happen to
+  // agree today: NFL and CFB both build the pick from the same `game["home_team"]`
+  // string this site labels segments with. Nothing in the type system connects
+  // them, so a reword on the service's side ("Ravens win", the shape PL ships)
+  // un-accents every bar in the app while the verdict sentence above still names
+  // a pick. `barPick` is the guard, and it fails closed. Derived, not fetched,
+  // and memoised so the panel is not re-rendered by an identity change here.
+  const wired = useMemo(() => {
+    if (!summary || !("factors" in summary) || !summary.pick) return summary;
+    return { ...summary, pick: barPick(summary.pick, panel.segments) };
+  }, [summary, panel.segments]);
 
   useEffect(() => {
     let cancelled = false;
@@ -200,10 +221,17 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
               empty. */}
           {explain && (
             <ExplainerPanel
-              data={summary}
+              data={wired}
               loading={summaryLoading}
               error={summaryError}
               onRetry={() => loadSummary()}
+              // The figures the panel draws, from this site's OWN prediction
+              // response rather than from the explanation. The panel is handed
+              // numbers and renders them; it must never be the thing that
+              // decides what the numbers are, or the explanation and the
+              // prediction could disagree on screen.
+              tiles={panel.tiles}
+              segments={panel.segments}
             />
           )}
 
