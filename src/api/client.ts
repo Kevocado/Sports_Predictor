@@ -1,3 +1,11 @@
+// The summary's type belongs to the panel. It is imported here because this
+// module fetches one and has to say what it returns, and it is deliberately NOT
+// re-exported: the modal, the explain call sites and the tests all import
+// `Explanation` from `../predictor-ui` directly. This module used to re-export
+// it as a second door onto the same type, and nothing consumed that door — two
+// doors onto one type is the same "local copy" mistake the declaration here was
+// originally deleted for.
+import type { Explanation } from "../predictor-ui";
 import type {
   CurrentWeek,
   GamePrediction,
@@ -117,17 +125,6 @@ export const CFB_BASE_URL: string = import.meta.env.VITE_CFB_API_BASE_URL ?? "/a
 
 export const NFL_EXPLAIN_BASE_URL: string = import.meta.env.VITE_NFL_EXPLAIN_BASE_URL ?? "/api/explain/nfl";
 export const CFB_EXPLAIN_BASE_URL: string = import.meta.env.VITE_CFB_EXPLAIN_BASE_URL ?? "/api/explain/cfb";
-
-/** The summary's type belongs to the panel, not to this client.
- *
- *  It was declared here as a copy, which is how this site ended up with a v1
- *  shape the panel had moved past — the same mistake as the duplicate
- *  `contract.py` in predictor-hub, and the same fix: one owner, re-exported. A
- *  local copy of a type that another component consumes is a promise nobody has
- *  to keep, and this one was already broken.
- */
-import type { Explanation } from "../predictor-ui";
-export type { Explanation };
 
 /**
  * The plain-English summary for one game. Same-origin like every other call

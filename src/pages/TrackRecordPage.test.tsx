@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { TrackRecordPage } from "./TrackRecordPage";
-import type { SportApi } from "../types";
+import type { SportApi, TrackRecord } from "../types";
 
-const trackRecord = vi.fn(async () => ({
+/** Typed against `TrackRecord` so the NULLABLE fields are in the mock's
+ *  signature. Inferred from the first implementation, this mock's return type
+ *  had `pct_moneyline_correct: number`, so the empty-season case below — which
+ *  the API really does return, and which `types.ts` declares as `number | null` —
+ *  did not type-check. Casting the payload would have hidden that; declaring the
+ *  mock's own type puts the nullability where the test can use it. */
+const trackRecord = vi.fn<() => Promise<TrackRecord>>(async () => ({
   games: {
     n_resolved: 12, n_rebuilt: 3, pct_moneyline_correct: 0.667, pct_ats_correct: 0.5, pct_totals_correct: 0.417,
     weekly_trend: [{ week: 7, pct_moneyline_correct: 0.667, n_games: 12 }],

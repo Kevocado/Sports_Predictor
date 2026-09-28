@@ -5,7 +5,15 @@
  *  would paint a segment, and the accessible name a screen reader would read —
  *  and never on a prop having been passed.
  *
- *  **Why this file exists on a site whose call site needed no change.** The bar
+ *  **On what these tests can and cannot know.** The pick's wording is supplied by
+ *  this file, so no assertion here is evidence about the wording the NFL or CFB
+ *  `/facts` endpoints actually use. What is asserted is this repo's half — the
+ *  segment labels, and that the accent follows the pick's label through
+ *  `barPick` whatever vocabulary it arrives in. The vocabulary itself is guarded
+ *  in `src/lib/panelFacts.test.ts`, where both the service's current shape and
+ *  the unplaceable case are covered.
+ *
+ *  **Why this file exists on a site whose call site needed only a guard.** The bar
  *  joins the pick to a segment BY LABEL (`pickIndex` in `ProbabilityBar`, spec
  *  §5b). So the accent lands only while the service's label and this site's
  *  segment label are the same string, and nothing but a test notices when they
@@ -144,19 +152,54 @@ describe("the accent follows the pick", () => {
     );
   });
 
-  it("joins on the service's own label, which is this site's team name", async () => {
-    // The join, pinned on both sides at once. The NFL and CFB `/facts` endpoints
-    // build the pick as `{"label": game["home_team"]}` — the full team name, not
-    // an abbreviation — and this site labels its segments with the same
-    // `GameSummary` strings. Both halves are asserted here, so abbreviating
-    // either one (a "KC" instead of a "Chiefs", which the harness fixture uses)
-    // fails this test instead of silently un-accenting the bar.
+  it("joins on this site's own segment labels, and the accent is the segment, not the index", async () => {
+    // WHAT IS ASSERTED HERE, PRECISELY: the labels on the bar are this site's
+    // `GameSummary` team names, and the accent lands on the segment carrying the
+    // pick's label. That is the half this repo owns and can be wrong about.
+    //
+    // WHAT IS *NOT* EVIDENCE OF ANYTHING: the service's own pick wording. It is
+    // supplied by this test — `{ label: game.away_team }` is written here, by
+    // the same author as the segments it is expected to match, so a passing
+    // assertion cannot tell you the NFL or CFB `/facts` endpoint words its pick
+    // this way. It is an assumption, not a measurement, and the previous version
+    // of this test claimed otherwise.
+    //
+    // The real guard against divergence is `barPick` (`src/lib/panelFacts.ts`),
+    // wired into the modal: it re-joins the service's wording onto a segment
+    // this site can name, and returns anything it cannot place UNCHANGED so the
+    // bar fails closed. Its own tests cover the two vocabularies and the
+    // unplaceable case; this test covers the wiring that applies it. The case
+    // below is the one that motivates all of it.
     const { container } = await show({ label: game.away_team }, { home_win_prob: 0.38, away_win_prob: 0.62 });
     const labels = [...container.querySelectorAll<HTMLElement>("[data-testid='pbar-label']")].map(
       (l) => l.dataset.seg,
     );
     expect(labels).toEqual([game.home_team, game.away_team]);
     expect(accentedAt(container)).toBe(labels.indexOf(game.away_team));
+  });
+
+  it("still accents the right segment when the service words its pick '<team> win'", async () => {
+    // The regression PL shipped, in the exact shape it took there: a pick whose
+    // label is not a segment label matches nothing, and a bar with nothing
+    // accented is the panel's correct rendering of a bundle with NO pick — printed
+    // under a verdict that names one. Green build, green tests, wrong panel.
+    // `barPick` re-joins "Chiefs win" onto the "Chiefs" segment; without it this
+    // renders `accentedAt() === -1` and every other test in this file still passes.
+    const { container } = await show({ label: `${game.away_team} win` }, { home_win_prob: 0.38, away_win_prob: 0.62 });
+    expect(accentedAt(container)).toBe(1);
+    expect(barName(container)).toBe("Ravens 38%, Chiefs 62%, the pick is Chiefs");
+  });
+
+  it("accents nothing, rather than the wrong segment, when the pick names a team this game does not feature", async () => {
+    // The fail-closed half, which is the only safe half. An unplaceable label is
+    // returned unchanged by `barPick`, so the bar renders its genuine no-pick
+    // state — indistinguishable from a real no-pick answer, which is the point.
+    // Accenting the nearest segment instead would put a claim on screen that the
+    // service never made, which is worse than showing none.
+    const { container } = await show({ label: "BUF win" }, { home_win_prob: 0.38, away_win_prob: 0.62 });
+    expect(accentedAt(container)).toBe(-1);
+    // And no factor claims to be for or against a pick, either.
+    expect(container.textContent).not.toMatch(/for the pick|against it/i);
   });
 
   it("still accents nothing when the answer genuinely has no pick", async () => {
