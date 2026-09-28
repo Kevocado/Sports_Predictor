@@ -68,7 +68,7 @@ export function TrackRecordPage() {
   if (!record) return <p className="text-sm text-sp-text-faint">Loading…</p>;
 
   const { games, player_props } = record;
-  const maxTrendGames = Math.max(1, ...games.weekly_trend.map((w) => w.n_games));
+  const weekly = games.weekly ?? [];
 
   return (
     <div className="flex flex-col gap-10">
@@ -92,14 +92,20 @@ export function TrackRecordPage() {
               <AccuracyCard label="Total (O/U) accuracy" accuracy={games.pct_totals_correct} />
               <StatCard label="Games resolved" value={String(games.n_resolved)} />
             </div>
-            {games.weekly_trend.length > 0 && (
+            {weekly.length > 0 && (
               <div className="mt-4 flex flex-col gap-1.5 rounded-xl border border-sp-border bg-sp-850/40 p-4">
                 <span className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-sp-text-faint">Moneyline accuracy by week</span>
-                {games.weekly_trend.map((w) => (
+                {weekly.map((w) => (
                   <div key={w.week} className="flex items-center gap-3 text-xs">
                     <span className="w-14 shrink-0 text-sp-text-dim">Week {w.week}</span>
                     <div className="h-2 flex-1 overflow-hidden rounded-full bg-sp-850">
-                      <div className="h-full rounded-full bg-sp-gold" style={{ width: `${Math.max(4, (w.n_games / maxTrendGames) * w.pct_moneyline_correct * 100)}%` }} />
+                      {/* The fill is the accuracy and only the accuracy (B2). It
+                          used to be `(n_games / max_games) * pct * 100`, which
+                          multiplied a volume share into an accuracy and so drew
+                          a 1-game perfect week at a quarter of a 4-game 50% week.
+                          Volume is `n_games`, printed as text beside the bar, and
+                          the two are never fused into one number again. */}
+                      <div className="h-full rounded-full bg-sp-gold" style={{ width: `${w.pct_moneyline_correct == null ? 0 : w.pct_moneyline_correct * 100}%` }} />
                     </div>
                     <span className="w-20 shrink-0 text-right font-mono text-sp-text-dim">{pct(w.pct_moneyline_correct)} ({w.n_games})</span>
                   </div>

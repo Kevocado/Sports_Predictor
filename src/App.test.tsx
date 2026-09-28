@@ -16,7 +16,7 @@ const api = {
   hubPlayers: vi.fn(async (season: number) => ({ season, players: [], leaderboards: {} })),
   standings: vi.fn(async () => []),
   trackRecord: vi.fn(async () => ({
-    games: { n_resolved: 0, pct_moneyline_correct: null, pct_ats_correct: null, pct_totals_correct: null, weekly_trend: [] },
+    games: { n_resolved: 0, pct_moneyline_correct: null, pct_ats_correct: null, pct_totals_correct: null, weekly: [] },
     player_props: {
       anytime_td: { n_resolved: 0, hit_rate_when_called: null, brier_score: null },
       passing_yards: { n_resolved: 0, mean_absolute_error: null },
