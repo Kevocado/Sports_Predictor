@@ -23,10 +23,10 @@
  *  passes. "No change was needed" is a claim, and this is what holds it up.
  */
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { GameDetailModal } from "./GameDetailModal";
-import type { Explanation, PickRef } from "../predictor-ui";
+import type { Explanation, Factor, PickRef } from "../predictor-ui";
 import type { GamePrediction, GameSummary, SportApi } from "../types";
 
 vi.mock("../context/SportContext", () => ({
@@ -44,6 +44,19 @@ const fills = (container: HTMLElement) =>
 
 /** Which segment carries the accent, by index. -1 when none does. */
 const accentedAt = (container: HTMLElement) => fills(container).indexOf(ACCENT);
+
+/** The DE-EMPHASIS, which is a different mechanism from the accent and fails
+ *  independently of it. `dim` in `ProbabilityBar` writes an opacity onto both
+ *  the segment fills and the figures, and it is driven by the selected factor
+ *  rather than by the pick — so a bar can be correctly un-accented and wrongly
+ *  dimmed, and only reading the opacity says which happened. */
+const opacityOf =
+  (selector: string) =>
+  (container: HTMLElement): string[] =>
+    [...container.querySelectorAll<HTMLElement>(selector)].map((e) => e.style.opacity);
+
+const fillOpacity = opacityOf("[data-testid='pbar-fill']");
+const labelOpacity = opacityOf("[data-testid='pbar-label']");
 
 /** The panel's own graphic, and its accessible name.
  *
@@ -93,13 +106,14 @@ function mockApi(over: Partial<SportApi> = {}): SportApi {
 
 /** A v2 answer in the shape the service sends. `pick` is spread in only when
  *  there is one, because the service states "no pick" by OMITTING the key and
- *  the panel acts on the absence. */
-const v2 = (pick?: PickRef): Explanation =>
+ *  the panel acts on the absence. `factors` is overridable so a test can name a
+ *  factor the panel draws no figure for. */
+const v2 = (pick?: PickRef, factors?: Factor[]): Explanation =>
   ({
     verdict: "Baltimore are the pick, but the line is thinner than the number.",
     band: "moderate",
     ...(pick ? { pick } : {}),
-    factors: [
+    factors: factors ?? [
       {
         key: "moneyline",
         direction: "neutral",
@@ -114,11 +128,16 @@ const v2 = (pick?: PickRef): Explanation =>
     pick_timing: "pre_kickoff",
   }) as Explanation;
 
-async function show(pick?: PickRef, over: Partial<GamePrediction> = {}) {
-  const explain = vi.fn().mockResolvedValue(v2(pick));
+async function show(
+  pick?: PickRef,
+  over: Partial<GamePrediction> = {},
+  factors?: Factor[],
+  thisGame: GameSummary = game,
+) {
+  const explain = vi.fn().mockResolvedValue(v2(pick, factors));
   const out = render(
     <GameDetailModal
-      game={game}
+      game={thisGame}
       api={mockApi({ gamePrediction: vi.fn().mockResolvedValue(prediction(over)) })}
       onClose={() => {}}
       explain={explain}
@@ -282,5 +301,94 @@ describe("the market row, and why this site does not draw one", () => {
     expect(container.querySelector("[data-testid='pbar-market-toggle']")).toBeNull();
     expect(container.querySelectorAll("[data-testid='pbar-label']")).toHaveLength(2);
     await waitFor(() => expect(container.querySelector("[data-testid='pbar-fill']")).not.toBeNull());
+  });
+});
+
+describe("an unplaceable pick fails closed, in the de-emphasis as well as the accent", () => {
+  it("dims no figure when the pick names a team this game does not feature", async () => {
+    // The de-emphasis half of the fail-closed guarantee. The accent half is
+    // already pinned above ("accents nothing, rather than the wrong segment…"),
+    // but it is a DIFFERENT mechanism: `dim` is driven by the selected factor,
+    // not by the pick, so a bar can be correctly un-accented and wrongly dimmed
+    // at the same time and no assertion on `backgroundColor` can see it.
+    //
+    // "BUF win" is the same unplaceable label that test uses, so the two agree
+    // on what one looks like rather than each inventing a shape.
+    const { container } = await show({ label: "BUF win" }, { home_win_prob: 0.38, away_win_prob: 0.62 });
+
+    // The accent half, restated because the two are asserted together here.
+    expect(accentedAt(container)).toBe(-1);
+
+    // The dim half: every figure at full opacity, and the whole list asserted so
+    // a figure that stopped rendering an opacity fails rather than passing as
+    // "not dimmed".
+    expect(fillOpacity(container)).toEqual(["1", "1"]);
+    expect(labelOpacity(container)).toEqual(["1", "1"]);
+  });
+
+  it("dims the bar's figures once a factor IS selected, so the assertion above is not vacuous", async () => {
+    // The control, and the reason the test above means anything. A `dim` that
+    // had stopped working entirely would ALSO render `["1","1"]` for an
+    // unplaceable pick — the same class of silent breakage, in the opposite
+    // direction, and equally invisible to a green suite.
+    //
+    // `spread` is the key that makes it work. Both segments carry the
+    // `moneyline` market, so a factor naming `moneyline` dims nothing (the
+    // de-emphasis is per MARKET, not per segment) — which is why this needs a
+    // SECOND tile: a spread tile is linkable, and no segment is about the
+    // spread, so `dim` fades both. The tile needs the market's line and the
+    // model's margin together, so the game carries `spread_line` and the
+    // prediction carries `predicted_margin`.
+    const withLine: GameSummary = { ...game, spread_line: -2.5 };
+    const { container } = await show(
+      { label: game.home_team },
+      { predicted_margin: 3.1 },
+      [{ key: "spread", direction: "up", headline: "The line is out of line", text: "Model and market disagree." }],
+      withLine,
+    );
+    fireEvent.click(screen.getByTestId("factor-spread"));
+
+    expect(fillOpacity(container)).toEqual(["0.4", "0.4"]);
+    expect(labelOpacity(container)).toEqual(["0.4", "0.4"]);
+
+    // The row that asked for the light is the row that is pressed, and the
+    // highlight is announced as well as painted.
+    expect(screen.getByTestId("factor-spread")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("factor-spread")).toHaveAttribute("data-highlighted", "true");
+  });
+
+  it("dims nothing at all when the selected factor names a figure the panel does not draw", async () => {
+    // The other half of the linkage, and the one that was a defect until the
+    // library made a key with no figure behind it CLEAR the highlight instead of
+    // setting one. A factor is a reference to a figure; a key that resolves to
+    // nothing used to be forwarded as though it did, and `dim` then faded every
+    // figure in the panel with none lit — the worst of the three outcomes,
+    // because the reader is left with less than before they pressed anything.
+    //
+    // This is not a rare shape: `template.py` always emits a `record` row and
+    // pads with `context`, and neither is a market, so on a no-pick panel every
+    // row is unlinkable. `linkable()` in `ExplainerPanel` now turns such a press
+    // into a light that goes off, which is a change the reader can see and undo.
+    const unlinkable: Factor[] = [
+      { key: "record", direction: "neutral", headline: "Model record", text: "It has been good." },
+      {
+        key: "moneyline",
+        direction: "up",
+        headline: "The model likes Baltimore",
+        text: "It rates Baltimore better than Kansas City.",
+      },
+    ];
+    const { container } = await show({ label: game.home_team }, {}, unlinkable);
+
+    fireEvent.click(screen.getByTestId("factor-record"));
+    expect(fillOpacity(container)).toEqual(["1", "1"]);
+    expect(labelOpacity(container)).toEqual(["1", "1"]);
+    expect(screen.getByTestId("factor-record")).toHaveAttribute("aria-pressed", "false");
+    expect(container.querySelector("[data-highlighted='true']")).toBeNull();
+
+    // And the row that DOES name a drawn figure still lights it, so the test
+    // above is about the key resolving rather than about selection being inert.
+    fireEvent.click(screen.getByTestId("factor-moneyline"));
+    expect(screen.getByTestId("factor-moneyline")).toHaveAttribute("aria-pressed", "true");
   });
 });
