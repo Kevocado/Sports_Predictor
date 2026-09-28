@@ -1,5 +1,13 @@
-import { ExplainerPanel, pct, spread } from "../predictor-ui";
+// `Explanation` comes from `../predictor-ui`, and only from there. `../api/client`
+// used to re-export it as a second door onto the same type and no longer does --
+// its own header says so, and it now carries a deliberate comment explaining
+// that the modal and the explain call sites import the type from the panel that
+// declares it. So ours' import line is not a preference, it is a door that is no
+// longer there; theirs' is the only one that resolves.
+import { BoxScore, ExplainerPanel, pct, spread } from "../predictor-ui";
 import type { Explanation } from "../predictor-ui";
+// The v2 panel's figures, derived rather than fetched. Kept from
+// origin/v2-wire: A4 replaced the player-props area and never touched this.
 import { barPick, panelFacts } from "../lib/panelFacts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GamePrediction, GameSummary, GameVerdict, HeadToHead as HeadToHeadData, PlayerPropPrediction, SportApi, TeamForm, WeekPrediction } from "../types";
@@ -7,9 +15,7 @@ import { TeamName } from "./TeamName";
 import { MarketBar } from "./MarketBar";
 import { FormStrip } from "./FormStrip";
 import { HeadToHead } from "./HeadToHead";
-import { POSITION_ORDER, keyStatLabel, keyYardage, tdConfidenceTone } from "../lib/playerRank";
-
-type PositionFilter = "ALL" | (typeof POSITION_ORDER)[number];
+import { boxScoreColumnsFor, buildBoxScoreGroups } from "../lib/boxScoreRows";
 
 export const MARKET_LABEL = {
   passing_yards: "Pass yds",
@@ -113,7 +119,6 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
   const [allProps, setAllProps] = useState<PlayerPropPrediction[] | null>(null);
   const [propsLoading, setPropsLoading] = useState(true);
   const [verdict, setVerdict] = useState<GameVerdict | null>(null);
-  const [positionFilter, setPositionFilter] = useState<PositionFilter>("ALL");
   const [homeForm, setHomeForm] = useState<TeamForm | null>(null);
   const [awayForm, setAwayForm] = useState<TeamForm | null>(null);
   const [h2h, setH2h] = useState<HeadToHeadData | null>(null);
@@ -200,10 +205,18 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
   }, [onClose]);
 
   const gameProps = allProps ? filterPlayerPropsForGame(allProps, game) : null;
-  const availablePositions = useMemo(
-    () => POSITION_ORDER.filter((position) => (gameProps ?? []).some((p) => p.position === position)),
-    [gameProps],
+  // One group per position, each already ordered starters-then-bench, with the
+  // totals rows ordered away-then-home so they read like the scoreline above.
+  const boxScoreGroups = useMemo(
+    () => (gameProps ? buildBoxScoreGroups(gameProps, [game.away_team, game.home_team]) : []),
+    [gameProps, game.away_team, game.home_team],
   );
+  // Kept from origin/v2-wire, not from A4. Theirs' `visibleProps` memo is NOT
+  // carried over: it filtered by the `positionFilter` state and sorted by
+  // `keyYardage`, and A4 deleted the filter buttons (the box score groups by
+  // position instead) along with the `playerRank` import, so the memo has
+  // nothing left to read. `keyYardage` still exists -- `lib/boxScoreRows.ts`
+  // uses it for the box score's row order -- but not as a modal-level sort.
   const yardageByTeam = useMemo(
     () => [
       { team: game.home_team, markets: yardageBreakdown((gameProps ?? []).filter(p => p.recent_team === game.home_team)) },
@@ -211,11 +224,6 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
     ],
     [gameProps, game.home_team, game.away_team],
   );
-  const visibleProps = useMemo(() => {
-    if (!gameProps) return null;
-    const filtered = positionFilter === "ALL" ? gameProps : gameProps.filter((p) => p.position === positionFilter);
-    return [...filtered].sort((a, b) => keyYardage(b) - keyYardage(a) || b.anytime_td_prob - a.anytime_td_prob);
-  }, [gameProps, positionFilter]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -345,9 +353,19 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
               {prediction.under_prob != null && <MarketBar label="Under total points" prob={prediction.under_prob} />}
             </div>}
 
-            {/* Projected yardage, by market. Deliberately NOT a team total. */}
+            {/* Projected yardage, by market. Deliberately NOT a team total.
+                Kept from origin/v2-wire (#8) even though A4 deleted the block's
+                predecessor, and the reason it is not redundant is written down
+                in the report: the box score's totals rows are per POSITION
+                group, not per team, and they claim nothing at all when a single
+                player in the group has no projection for that market. This block
+                is per team, per market, carries the count it summed, and is the
+                only place on the page that says out loud why there is no team
+                yardage total. `data-testid` because the box score below prints
+                the same three market labels as its column headers, so a bare
+                getByText("Pass yds") can no longer say which of the two it meant. */}
             {yardageByTeam.some(row => row.markets.length > 0) && (
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5" data-testid="yardage-by-market">
                 <div className="text-xs text-sp-text-faint font-semibold uppercase tracking-wide">Projected Yardage by Market</div>
                 <div className="grid grid-cols-2 gap-4 mt-2">
                   {yardageByTeam.map(row => (
@@ -380,48 +398,52 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
             )}
           </section>
 
-          {/* Player Props Section */}
+          {/* Predicted box score — the model's own markets, grouped by
+              position. This replaces the old per-player projection list and its
+              position filter buttons: the grouping does the filtering.
+
+              It does NOT replace the yardage block above, which A4's plan
+              believed it did. A box score's totals row is per POSITION group
+              (`teamSubtotals` in lib/boxScoreRows.ts), so a team's yardage is
+              spread across four tables and a reader has to add the WR and TE
+              receiving rows to reach "Rec yds"; the row also refuses to print at
+              all when a single player in the group has no projection for that
+              market, where the block reports the partial sum and the count it
+              was summed from. Neither carries a team yardage total, because the
+              model computes one only as `rushing + receiving` across every
+              player and has no team-level yardage model. The block above keeps
+              #8's figure and its explanation; this keeps A4's. */}
           <section>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Model Player Projections</h3>
-                <p className="text-xs text-sp-text-dim">Each player's chance to score a touchdown and projected yards for this game.</p>
-              </div>
-              {availablePositions.length > 1 && (
-                <div className="flex gap-1 rounded-lg border border-sp-border bg-sp-850/60 p-1">
-                  {(["ALL", ...availablePositions] as PositionFilter[]).map((position) => (
-                    <button
-                      key={position}
-                      onClick={() => setPositionFilter(position)}
-                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${positionFilter === position ? "bg-sp-gold text-sp-950" : "text-sp-text-dim hover:text-sp-text"}`}
-                    >
-                      {position}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
             {propsLoading && <p className="text-xs text-sp-text-faint">Loading player projections…</p>}
-            {!propsLoading && visibleProps && visibleProps.length === 0 && (
+            {/* Two different gaps, two different sentences, because the game
+                either has no props at all or has props the model does not
+                project. A4 deleted the position filter buttons, and with them
+                the filter this branch's sentence used to name: it read "No
+                players at this position for this game", and there has been no
+                position left to read that against since. The branch is now
+                reachable only when `gameProps` is non-empty and every one of
+                them plays K / OL / DL / P — positions with no market, so
+                `buildBoxScoreGroups` has no group to render. So the sentence
+                names the thing that is actually missing. */}
+            {!propsLoading && boxScoreGroups.length === 0 && (
               <p className="text-xs text-sp-text-faint rounded-lg bg-sp-850/40 p-3 border border-sp-border/40">
                 {gameProps && gameProps.length > 0
-                  ? "No players at this position for this game."
+                  ? "No modelled positions for this game. Every player the feed returned is at a position the model does not project (kicker, offensive or defensive line), and the box score only covers QB, RB, WR and TE."
                   : "No player projection props available for this specific game yet. (Ensure your backend player-props route catches external API timeouts gracefully)."}
               </p>
             )}
-            {visibleProps && visibleProps.length > 0 && <div className="flex flex-col gap-1.5">
-              {visibleProps.map((prop) => (
-                <div key={prop.player_id} className="flex items-center justify-between rounded-lg bg-sp-850/60 px-3 py-2 text-sm">
-                  <span className="text-sp-text font-medium">{prop.player_name} <span className="text-xs text-sp-text-faint font-normal">({prop.position} · {prop.recent_team})</span></span>
-                  <div className="flex items-center gap-2 font-mono text-xs text-sp-text-dim">
-                    <span>{keyStatLabel(prop.position)} {Math.round(keyYardage(prop))}</span>
-                    <span className={`rounded px-1.5 py-0.5 font-semibold ${tdConfidenceTone(prop.anytime_td_prob)}`}>
-                      TD {Math.round(prop.anytime_td_prob * 100)}%
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>}
+            {/* A table per position, because each position has its own markets.
+                The title goes on the first one only: it is the section heading,
+                and it carries the "Projected order" note the vendored BoxScore
+                renders when no row has a real starter flag. */}
+            {boxScoreGroups.map((group, i) => (
+              <BoxScore
+                key={group.position}
+                columns={boxScoreColumnsFor(group.position)}
+                groups={[group]}
+                title={i === 0 ? "Predicted box score" : undefined}
+              />
+            ))}
           </section>
 
         </div>

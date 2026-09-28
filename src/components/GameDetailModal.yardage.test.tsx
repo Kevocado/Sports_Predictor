@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { yardageBreakdown, GameDetailModal, MARKET_LABEL } from "./GameDetailModal";
 import type { GameSummary, PlayerPropPrediction, SportApi } from "../types";
 
@@ -76,6 +76,24 @@ describe("yardageBreakdown", () => {
 });
 
 describe("GameDetailModal yardage panel", () => {
+  /**
+   * The block itself, not the modal.
+   *
+   * Since A4 the modal also carries a predicted box score, whose QB column
+   * header is also "Pass yds" and whose per-position totals row is also the sum
+   * of that market for the roster. So on one screen the same label and the same
+   * number legitimately appear twice, and a bare `getByText("Pass yds")` no
+   * longer says which of the two it meant -- it threw "Found multiple
+   * elements". Scoping the query to this block is what keeps the assertion
+   * about the block, which is what the test names. Every string asserted here
+   * is unchanged; what changed is that the query can no longer be satisfied by
+   * the box score. The mutation these tests exist to catch
+   * (`Math.round(market.yards * 2)`) still fails all of them.
+   */
+  function panel() {
+    return within(screen.getByTestId("yardage-by-market"));
+  }
+
   it("does not present a single number labelled as the team's total", async () => {
     const api = mockApi([qb("Lamar", 280), rb("Mark", 90), wr("Zay", 110)]);
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
@@ -87,9 +105,9 @@ describe("GameDetailModal yardage panel", () => {
     const api = mockApi([qb("Lamar", 280), rb("Mark", 90), wr("Zay", 110)]);
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
     await waitFor(() => expect(screen.getByText("Lamar")).toBeInTheDocument());
-    expect(screen.getByText("Pass yds")).toBeInTheDocument();
-    expect(screen.getByText("Rush yds")).toBeInTheDocument();
-    expect(screen.getByText("Rec yds")).toBeInTheDocument();
+    expect(panel().getByText("Pass yds")).toBeInTheDocument();
+    expect(panel().getByText("Rush yds")).toBeInTheDocument();
+    expect(panel().getByText("Rec yds")).toBeInTheDocument();
   });
 
   it("renders the actual projected yardage, not just the labels", async () => {
@@ -99,17 +117,19 @@ describe("GameDetailModal yardage panel", () => {
     const api = mockApi([qb("Lamar", 280), rb("Mark", 90), wr("Zay", 110)]);
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
     await waitFor(() => expect(screen.getByText("Lamar")).toBeInTheDocument());
-    expect(screen.getByText("280")).toBeInTheDocument();
-    expect(screen.getByText("90")).toBeInTheDocument();
-    expect(screen.getByText("110")).toBeInTheDocument();
+    expect(panel().getByText("280")).toBeInTheDocument();
+    expect(panel().getByText("90")).toBeInTheDocument();
+    expect(panel().getByText("110")).toBeInTheDocument();
   });
 
   it("sums a market across players and shows how many contributed", async () => {
     const api = mockApi([qb("Lamar", 280), rb("Mark", 60), rb("Gus", 30), wr("Zay", 110)]);
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
     await waitFor(() => expect(screen.getByText("Lamar")).toBeInTheDocument());
-    expect(screen.getByText("90")).toBeInTheDocument();
-    expect(screen.getByText("(2)")).toBeInTheDocument();
+    // 60 + 30, and the box score's own RB totals row says 90 too. The count is
+    // the block's alone: the box score prints a sum, never how many went into it.
+    expect(panel().getByText("90")).toBeInTheDocument();
+    expect(panel().getByText("(2)")).toBeInTheDocument();
   });
 
   it("states both why these are not a team yardage total", async () => {
@@ -124,9 +144,19 @@ describe("GameDetailModal yardage panel", () => {
   });
 
   it("hides the panel entirely when a team has no yardage projection", async () => {
+    // A kicker: no yardage market, and no position group in the box score
+    // either, so nothing about this player renders a name anywhere. Since A4
+    // removed the flat "Model Player Projections" list, there is no longer a
+    // player name on the page to wait for -- the modal prints its no-modelled-
+    // positions state instead, and that is what the wait below is for. The
+    // assertion this test exists for is unchanged. The wording is matched
+    // loosely on purpose: it is A4's, it is not this test's subject, and a
+    // reword should not fail a test about the yardage block. (The first
+    // alternative was "No players at this position", a sentence naming the
+    // position filter A4 deleted; it was reworded, not the branch.)
     const api = mockApi([{ player_id: "p", player_name: "p", recent_team: "Ravens", position: "K", anytime_td_prob: 0.1 }]);
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByText("p")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/No modelled positions for this game|No player projection props available/)).toBeInTheDocument());
     expect(screen.queryByText(/Projected Yardage/i)).not.toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GamePrediction, GameSummary, WeekPrediction } from "../types";
 import { useSport } from "../context/SportContext";
 import { sortByConfidence } from "../lib/confidenceSort";
@@ -47,6 +47,18 @@ export function GamesPage() {
   const [sortMode, setSortMode] = useState<SortMode>("chronological");
   const [conferenceFilter, setConferenceFilter] = useState<string | null>(null);
   const [selectedGame, setSelectedGame] = useState<GameSummary | null>(null);
+  // A deep link (?game=<id>, alongside the ?sport= this site already reads)
+  // names one game. Read once on arrival, then matched against the games a
+  // week load brings in: only an id this page actually shows is "known", so
+  // an unknown or absent identifier opens nothing and the visitor gets the
+  // normal list — never an error, never a blank screen. A ref, not state, on
+  // purpose: clearing it must not re-run the load effect (that would refetch
+  // and blank the list the moment the detail opened). Cleared on a match, so
+  // closing the detail does not reopen it on the next week navigation; a
+  // failed load leaves it set, so Try again still honours it.
+  const deepLinkedGameId = useRef<string | null>(
+    new URLSearchParams(window.location.search).get("game"),
+  );
 
   // On sport switch, jump straight to that sport's current week rather than
   // always restarting at week 1 (which for CFB/NFL is usually long over by
@@ -78,6 +90,18 @@ export function GamesPage() {
     api.games(season, week).then(async (fetchedGames) => {
       if (cancelled) return;
       setGames(fetchedGames);
+      // Honour ?game= against the week that just landed. The identifier is
+      // only ever matched, never fetched blind: an id this week does not
+      // contain stays pending (and opens nothing), so the page behind the
+      // link is always the normal list.
+      const wanted = deepLinkedGameId.current;
+      if (wanted) {
+        const match = fetchedGames.find((g) => g.game_id === wanted);
+        if (match) {
+          setSelectedGame(match);
+          deepLinkedGameId.current = null;
+        }
+      }
       // One batch round trip covers the week; only game_ids missing from
       // the batch fall back to per-game fetches.
       const merged: Record<string, GamePrediction> = {};
