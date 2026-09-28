@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { BOX_SCORE_COLUMNS, boxScoreColumnsFor, buildBoxScoreGroups, TD_COLUMN_KEY } from "./boxScoreRows";
 import type { PlayerPropPrediction } from "../types";
+import type { BoxScoreColumn } from "../predictor-ui";
+import type { SkillPosition } from "./playerRank";
 
 function prop(over: Partial<PlayerPropPrediction> & { player_id: string }): PlayerPropPrediction {
   return {
@@ -10,6 +12,11 @@ function prop(over: Partial<PlayerPropPrediction> & { player_id: string }): Play
     anytime_td_prob: 0.1,
     ...over,
   } as PlayerPropPrediction;
+}
+
+/** A prop with NO markets at all, so "the model produced nothing" is reachable. */
+function bareProp(player_id: string, over: Partial<PlayerPropPrediction> = {}): PlayerPropPrediction {
+  return prop({ player_id, anytime_td_prob: undefined as unknown as number, ...over });
 }
 
 const labels = (position: keyof typeof BOX_SCORE_COLUMNS) => BOX_SCORE_COLUMNS[position].map((c) => c.label);
@@ -23,8 +30,15 @@ describe("the box score's columns — the model's own markets and nothing else",
     expect(labels("QB")).toEqual(["Pass yds", "TD %"]);
   });
 
-  it("gives an RB the rushing, carries, receiving and TD columns", () => {
-    expect(labels("RB")).toEqual(["Rush yds", "Carries", "Rec yds", "Rec", "TD %"]);
+  it("gives an RB only the markets the model produces for a running back", () => {
+    // POSITION_MARKETS on the NFL API is RB: ["rushing_yards", "carries"] with
+    // no receiving key, so `Rec yds` and `Rec` could only ever be a dash here.
+    // The plan asked for them and then, two lines later, said the columns are
+    // "exactly the model's markets" -- the first instruction wins, and a column
+    // that is permanently blank is not shipped.
+    expect(labels("RB")).toEqual(["Rush yds", "Carries", "TD %"]);
+    expect(labels("RB")).not.toContain("Rec yds");
+    expect(labels("RB")).not.toContain("Rec");
   });
 
   it("gives a WR and a TE the receiving and TD columns", () => {
@@ -168,14 +182,25 @@ describe("cell values", () => {
     const [row] = buildBoxScoreGroups([
       prop({ player_id: "rb", position: "RB", rushing_yards: 84.2, carries: 19.4, receiving_yards: 12.5, receptions: 2.1, anytime_td_prob: 0.307 }),
     ])[0].rows;
-    expect(row.values).toEqual([84.2, 19.4, 12.5, 2.1, 30.7]);
+    expect(row.values).toEqual([84.2, 19.4, 30.7]); // no Rec yds / Rec: RB has no receiving market
   });
 
   it("is null for a market the model did not produce, and never zero", () => {
-    const [row] = buildBoxScoreGroups([prop({ player_id: "rb", position: "RB", rushing_yards: 84.2 })])[0].rows;
-    // carries / rec yds / rec are absent from this payload. 0 would claim the
-    // model predicted no carries and no catches.
-    expect(row.values).toEqual([84.2, null, null, null, 10]);
+    // A WR, because a WR genuinely has receiving columns -- this is a real
+    // absent value rather than a column the position never carries. (The RB
+    // equivalent stopped existing when RB lost its never-populated receiving
+    // columns; keeping the test here keeps the principle covered.)
+    const [row] = buildBoxScoreGroups([bareProp("wr", { position: "WR", receiving_yards: 62.0 })])[0].rows;
+    // receptions and the TD chance are absent from this payload. 0 would claim
+    // the model predicted no catches and no touchdowns.
+    expect(row.values).toEqual([62.0, null, null]);
+    expect(row.values).not.toContain(0);
+  });
+
+  it("is null for a market the model did not produce on an RB too", () => {
+    const [row] = buildBoxScoreGroups([bareProp("rb", { position: "RB", rushing_yards: 84.2 })])[0].rows;
+    // carries and the TD chance are absent. 0 would claim no carries.
+    expect(row.values).toEqual([84.2, null, null]);
     expect(row.values).not.toContain(0);
   });
 
@@ -202,15 +227,24 @@ describe("per-team subtotals", () => {
     const [group] = buildBoxScoreGroups(both);
     const mia = group.subtotals!.find((t) => t.label === "MIA total")!;
     const kc = group.subtotals!.find((t) => t.label === "KC total")!;
-    expect(mia.values).toEqual([105, 24, null, null, null]);
-    expect(kc.values).toEqual([100, 20, null, null, null]);
+    expect(mia.values).toEqual([105, 24, null]); // RB: 3 columns, no receiving market
+    expect(kc.values).toEqual([100, 20, null]);
   });
 
   it("leaves the TD% total empty, because a rate has no total", () => {
     // 0.3 + 0.1 is 0.4 -- forty percent of the team scoring, which is not a
     // number any column headed "TD %" can honestly carry.
     const [group] = buildBoxScoreGroups(both);
-    for (const total of group.subtotals!) expect(total.values[4]).toBeNull();
+    // Look the column up rather than hard-coding an index. RB used to be five
+    // columns wide, so the TD column sat at [4]; when its never-populated
+    // receiving columns went it moved to [2] and this test was reading off the
+    // end of the array -- passing on `undefined` in some runs and failing in
+    // others depending on the row count.
+    const tdIndex = BOX_SCORE_COLUMNS[group.position as SkillPosition].findIndex(
+      (c: BoxScoreColumn) => c.key === TD_COLUMN_KEY,
+    );
+    expect(tdIndex).toBeGreaterThan(-1);
+    for (const total of group.subtotals!) expect(total.values[tdIndex]).toBeNull();
   });
 
   it("leaves a total empty when any of that team's rows is missing the market", () => {
@@ -251,6 +285,6 @@ describe("per-team subtotals", () => {
     ]);
     expect(groups[0].position).toBe("QB");
     expect(groups[0].subtotals![0].values).toEqual([260, null]);
-    expect(groups[1].subtotals![0].values).toEqual([80, null, null, null, null]);
+    expect(groups[1].subtotals![0].values).toEqual([80, null, null]);
   });
 });

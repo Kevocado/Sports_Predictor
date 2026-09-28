@@ -67,7 +67,9 @@ describe("GameDetailModal's predicted box score", () => {
     // One table per position, in QB -> RB -> WR -> TE order.
     expect(tables.map(headers)).toEqual([
       ["Player", "Pass yds", "TD %"],
-      ["Player", "Rush yds", "Carries", "Rec yds", "Rec", "TD %"],
+      // RB has no receiving market, so no Rec yds / Rec columns: see
+      // boxScoreRows.ts. A column that can only ever be a dash is not shipped.
+      ["Player", "Rush yds", "Carries", "TD %"],
       ["Player", "Rec yds", "Rec", "TD %"],
       ["Player", "Rec yds", "Rec", "TD %"],
     ]);
@@ -125,9 +127,10 @@ describe("GameDetailModal's predicted box score", () => {
   it("renders a market the model did not produce as an em-dash, never a 0", async () => {
     const [table] = await renderModal([prop("rb", "Ravens", "RB", { rushing_yards: 84.2 })]);
     const cells = within(table).getAllByTestId("box-score-row")[0].querySelectorAll("td");
-    // Carries / Rec yds / Rec are absent from this payload. 0 would claim the
-    // model predicted no carries and no catches.
-    expect([...cells].map((c) => c.textContent)).toEqual(["84.2", "—", "—", "—", "30"]);
+    // Carries and the TD chance are absent from this payload. 0 would claim the
+    // model predicted no carries. RB is three columns wide -- it has no
+    // receiving market, so no Rec yds / Rec cells to be blank here.
+    expect([...cells].map((c) => c.textContent)).toEqual(["84.2", "—", "30"]);
   });
 
   it("replaces the Team Yardage cards with one totals row per team, away then home", async () => {

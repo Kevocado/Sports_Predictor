@@ -58,13 +58,21 @@ const TD_COLUMN: BoxScoreColumn = {
 
 export const BOX_SCORE_COLUMNS: Record<SkillPosition, BoxScoreColumn[]> = {
   QB: [marketColumn("passing_yards"), TD_COLUMN],
-  RB: [
-    marketColumn("rushing_yards"),
-    marketColumn("carries"),
-    marketColumn("receiving_yards"),
-    marketColumn("receptions"),
-    TD_COLUMN,
-  ],
+  // RB carries RUSHING markets only, and that is not a shortcut — it is what
+  // the model produces. `POSITION_MARKETS` on the NFL API is
+  //   RB: ["rushing_yards", "carries"]
+  // with no receiving key, so a `Rec yds` / `Rec` column on this row could
+  // only ever render a dash. The earlier plan asked for them anyway, which
+  // contradicts its own rule ("columns exactly the model's markets") and the
+  // standing instruction that a column which can only ever be a dash is a
+  // promise the backend cannot keep. Three columns that carry a number beat
+  // five where two are always blank.
+  //
+  // This also removes the 40px horizontal overflow the six-column RB group
+  // caused at a 390px viewport. The fix belonged here, not in `BoxScore`: the
+  // shared component should not have to know that football running backs
+  // receive fewer projections than receivers do.
+  RB: [marketColumn("rushing_yards"), marketColumn("carries"), TD_COLUMN],
   WR: [marketColumn("receiving_yards"), marketColumn("receptions"), TD_COLUMN],
   TE: [marketColumn("receiving_yards"), marketColumn("receptions"), TD_COLUMN],
 };
@@ -78,7 +86,16 @@ function cellValue(prop: PlayerPropPrediction, column: BoxScoreColumn): number |
   if (column.key === TD_COLUMN_KEY) {
     // Rounded to one decimal because the column is a percentage read to the
     // point, and 0.3 * 100 is 30.000000000000004 in binary floating point.
-    return Math.round(prop.anytime_td_prob * 1000) / 10;
+    //
+    // The finite check is load-bearing, not defensive padding. `undefined` and
+    // `null` both reach here for a prop with no TD chance, and
+    // `undefined * 1000` is NaN -- which rendered as the literal text "NaN" in
+    // the cell. The market branch below has always had this guard; the TD
+    // branch did not, so a missing TD chance produced garbage rather than a
+    // dash. A test now pins it.
+    const prob = prop.anytime_td_prob;
+    if (typeof prob !== "number" || !Number.isFinite(prob)) return null;
+    return Math.round(prob * 1000) / 10;
   }
   const value = (prop as unknown as Record<string, unknown>)[column.key];
   // null, not 0: the market is either predicted or it is absent, and an absent
@@ -118,7 +135,12 @@ function compareRows(a: PlayerPropPrediction, b: PlayerPropPrediction): number {
   // in the same order, rather than shuffling between reloads.
   return (
     keyYardage(b) - keyYardage(a) ||
-    b.anytime_td_prob - a.anytime_td_prob ||
+    // Same guard as the cell: a prop with no TD chance would otherwise
+    // compare as NaN, and every comparison against NaN is false, so such a
+    // row would sort as "equal" to everything and the order would silently
+    // depend on the input order rather than on the data.
+    (Number.isFinite(b.anytime_td_prob) ? b.anytime_td_prob : -1) -
+      (Number.isFinite(a.anytime_td_prob) ? a.anytime_td_prob : -1) ||
     a.player_name.localeCompare(b.player_name)
   );
 }
