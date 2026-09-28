@@ -1,5 +1,20 @@
 # Rebuild & Deploy Plan — Sports Predictor (CONTINUED)
 
+> **SUPERSEDED — Steps 4 onward describe a deployment that is no longer live.**
+> See the banner in `rebuild_plan.md` for the full correction. In short: deploy is
+> `deploy.yml`'s `vps` job (`ssh deploy@$VPS_HOST deploy sports <sha>`), the
+> `deploy-azure` job is legacy and gated on an unset `DEPLOY_AZURE`, and every
+> service is a Compose service with `restart: unless-stopped`.
+>
+> The Azure hostnames (`nfl-predictor.<env>.azurecontainerapps.io:8001`,
+> `cfb-predictor.<env>.azurecontainerapps.io:8003`) are dead. The service *ports*
+> below are still right — 8001 and 8003 are the backend container ports, reached
+> internally over the compose network rather than by public FQDN. So the
+> routing intent in Step 6 is reusable; the deploy commands in Step 4 are not.
+>
+> **The scale-to-zero check in Step 4 cannot fail** and should be deleted rather
+> than run: nothing in this stack scales to zero.
+
 
 ## Completed (local)
 - Step 1: Caddyfile fixed (public FQDNs + 30s timeout)
