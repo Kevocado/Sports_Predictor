@@ -30,7 +30,12 @@ export interface GameSummary {
   div_game?: boolean | null;
 }
 export interface GamePrediction { home_win_prob: number; away_win_prob: number; home_cover_prob: number | null; away_cover_prob: number | null; over_prob: number | null; under_prob: number | null; predicted_margin?: number; predicted_total?: number; sigma?: number; total_sigma?: number; }
-export interface PlayerPropPrediction { player_id: string; player_name: string; recent_team: string; position: string; anytime_td_prob: number; passing_yards?: number; rushing_yards?: number; receiving_yards?: number; carries?: number; receptions?: number; }
+// The yardage/count markets are whatever POSITION_MARKETS has for that
+// position, so they are optional and a missing one stays missing (an em-dash),
+// never 0. `is_starter` is true/false from NFL's depth chart and null where no
+// depth chart exists -- CFB has none, and NFL's live payload does not carry
+// the field yet. Absent is "unknown", not "not a starter".
+export interface PlayerPropPrediction { player_id: string; player_name: string; recent_team: string; position: string; anytime_td_prob: number; passing_yards?: number; rushing_yards?: number; receiving_yards?: number; carries?: number; receptions?: number; is_starter?: boolean | null; depth_slot?: number | null; }
 export interface WeeklyTrendEntry { week: number; pct_moneyline_correct: number; n_games: number; }
 export interface GamesTrackRecord {
   n_resolved: number;

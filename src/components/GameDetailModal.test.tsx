@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { filterPlayerPropsForGame, GameDetailModal } from "./GameDetailModal";
 import type { GamePrediction, GameSummary, GameVerdict, PlayerPropPrediction, SportApi } from "../types";
 
@@ -8,7 +8,21 @@ vi.mock("../context/SportContext", () => ({
 }));
 
 const game: GameSummary = { game_id: "2026_01_KC_BAL", season: 2026, week: 1, gameday: "2026-09-07T20:00:00Z", home_team: "Ravens", away_team: "Chiefs", home_score: null, away_score: null };
-function prop(id: string, team: string): PlayerPropPrediction { return { player_id: id, player_name: id, recent_team: team, position: "WR", anytime_td_prob: 0.3 }; }
+function prop(id: string, team: string, position = "WR", over: Partial<PlayerPropPrediction> = {}): PlayerPropPrediction { return { player_id: id, player_name: id, recent_team: team, position, anytime_td_prob: 0.3, ...over }; }
+
+// The box score is a table per position, so the column headers are read off
+// the one table rather than off the whole modal. The position label is a
+// colgroup header in the body, not a column, so read the thead.
+async function renderModal(props: PlayerPropPrediction[], api = mockApi({ playerProps: vi.fn().mockResolvedValue(props) })) {
+  render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
+  return screen.findAllByRole("table");
+}
+function headers(table: HTMLElement) {
+  return [...table.querySelectorAll("thead th")].map((h) => h.textContent);
+}
+function rowNames(table: HTMLElement) {
+  return within(table).getAllByTestId("box-score-row").map((r) => r.querySelector("th span")?.textContent);
+}
 
 function mockApi(overrides: Partial<SportApi> = {}): SportApi {
   return {
@@ -37,6 +51,105 @@ describe("filterPlayerPropsForGame", () => {
   });
   it("returns empty list when no prop matches", () => {
     expect(filterPlayerPropsForGame([prop("a","Bengals")], game)).toEqual([]);
+  });
+});
+
+describe("GameDetailModal's predicted box score", () => {
+  const roster = [
+    prop("qb", "Chiefs", "QB", { passing_yards: 254.2 }),
+    prop("rb", "Ravens", "RB", { rushing_yards: 84.2, carries: 18 }),
+    prop("wr", "Ravens", "WR", { receiving_yards: 61.4, receptions: 4.2 }),
+    prop("te", "Chiefs", "TE", { receiving_yards: 33.1, receptions: 3 }),
+  ];
+
+  it("gives each position its own columns, the model's own markets and nothing more", async () => {
+    const tables = await renderModal(roster);
+    // One table per position, in QB -> RB -> WR -> TE order.
+    expect(tables.map(headers)).toEqual([
+      ["Player", "Pass yds", "TD %"],
+      ["Player", "Rush yds", "Carries", "Rec yds", "Rec", "TD %"],
+      ["Player", "Rec yds", "Rec", "TD %"],
+      ["Player", "Rec yds", "Rec", "TD %"],
+    ]);
+  });
+
+  it("has no FanDuel column, not even an empty or dashed-out one", async () => {
+    const tables = await renderModal(roster);
+    expect(tables.flatMap(headers).join(" ")).not.toMatch(/fan\s*duel|\bFD\b/i);
+    // Every row is exactly as wide as its header, so nothing is being rendered
+    // as a permanently-empty column.
+    for (const table of tables) {
+      const width = headers(table).length - 1; // minus the Player column
+      for (const row of within(table).getAllByTestId("box-score-row")) {
+        expect(row.querySelectorAll("td")).toHaveLength(width);
+      }
+    }
+  });
+
+  it("drops the position filter buttons — the grouping replaces them", async () => {
+    await renderModal([prop("a", "Ravens", "QB"), prop("b", "Chiefs", "WR")]);
+    expect(screen.queryByRole("button", { name: "QB" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "ALL" })).not.toBeInTheDocument();
+    // Close is the only button the modal has left.
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+  });
+
+  it("lists starters before bench, in depth-chart order, when the feed has one", async () => {
+    const [table] = await renderModal([
+      prop("backup", "Ravens", "WR", { is_starter: false, depth_slot: 41, receiving_yards: 90 }),
+      prop("first", "Ravens", "WR", { is_starter: true, depth_slot: 0, receiving_yards: 40 }),
+      prop("second", "Ravens", "WR", { is_starter: true, depth_slot: 1, receiving_yards: 60 }),
+    ]);
+    const rows = within(table).getAllByTestId("box-score-row");
+    expect(rows.map((r) => r.dataset.starter)).toEqual(["starter", "starter", "bench"]);
+    expect(rowNames(table)).toEqual(["first", "second", "backup"]);
+  });
+
+  it("says the order is projected and invents no starter flag when there is no depth chart", async () => {
+    // CFB: CFBD's athlete object has no starter field, so every prop is
+    // is_starter: null. The table has to say so rather than guess from yardage.
+    const tables = await renderModal([
+      prop("low", "Ravens", "WR", { is_starter: null, depth_slot: null, receiving_yards: 12 }),
+      prop("high", "Ravens", "WR", { is_starter: null, depth_slot: null, receiving_yards: 69.5 }),
+      prop("qb", "Chiefs", "QB", { is_starter: null, depth_slot: null, passing_yards: 240 }),
+    ]);
+    // Once, on the section heading — not repeated on every position's table.
+    const notes = screen.getAllByTestId("box-score-projected-note");
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toHaveTextContent("Projected order");
+    const rows = within(tables[0]).getAllByTestId("box-score-row");
+    expect(rows.every((r) => r.dataset.starter === "projected")).toBe(true);
+    expect(rowNames(tables[1])).toEqual(["high", "low"]);
+  });
+
+  it("renders a market the model did not produce as an em-dash, never a 0", async () => {
+    const [table] = await renderModal([prop("rb", "Ravens", "RB", { rushing_yards: 84.2 })]);
+    const cells = within(table).getAllByTestId("box-score-row")[0].querySelectorAll("td");
+    // Carries / Rec yds / Rec are absent from this payload. 0 would claim the
+    // model predicted no carries and no catches.
+    expect([...cells].map((c) => c.textContent)).toEqual(["84.2", "—", "—", "—", "30"]);
+  });
+
+  it("replaces the Team Yardage cards with one totals row per team, away then home", async () => {
+    await renderModal([
+      prop("r1", "Ravens", "WR", { receiving_yards: 60 }),
+      prop("r2", "Ravens", "WR", { receiving_yards: 40 }),
+      prop("k1", "Chiefs", "WR", { receiving_yards: 30 }),
+    ]);
+    expect(screen.queryByText("Team Yardage Predictions")).not.toBeInTheDocument();
+    const totals = screen.getAllByTestId("box-score-subtotal");
+    expect(totals).toHaveLength(2);
+    expect(totals[0]).toHaveTextContent("Chiefs total30");
+    expect(totals[1]).toHaveTextContent("Ravens total100");
+  });
+
+  it("renders no table at all when the game has no props, and says so", async () => {
+    // NFL 2026 week 3 has no props in the snapshot. That is a data gap, not a
+    // reason to invent a placeholder box score.
+    render(<GameDetailModal game={game} api={mockApi({ playerProps: vi.fn().mockResolvedValue([]) })} onClose={() => {}} />);
+    expect(await screen.findByText(/No player projection props available for this specific game yet/)).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("box-score")).not.toBeInTheDocument();
   });
 });
 
