@@ -1,0 +1,170 @@
+name: Deploy Sports Predictor
+
+on:
+# A merge to main deploys. The paths filter is what makes that safe: it lists
+# what goes INTO the image, and nothing else.
+#
+# The Dockerfile is `COPY . .`, so the filter is the build inputs rather than one
+# source directory: the app, the entry HTML, the manifests, the tsconfig set,
+# vite.config.ts, the Caddyfile and the Dockerfile. A frontend change that did
+# not match would build nothing and deploy nothing — the same silent failure
+# as having no workflow at all.
+#
+# There is no data to exclude, because this is the one site with no scheduled
+# job that commits to main. That is asserted rather than assumed:
+# src/deployWorkflow.test.ts walks the other workflows in the repo, finds what
+# they `git add`, and fails on any overlap with the filter that has not been
+# classified — so a refresh job added later cannot start redeploying on every
+# run while the named entries here sit there doing nothing. It also fails on a
+# bare `**`, which matches every commit.
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'tsconfig.json'
+      - 'tsconfig.app.json'
+      - 'tsconfig.node.json'
+      - 'Caddyfile'
+      - 'Dockerfile'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  # Required to push to GHCR at all. It is NOT sufficient here: the package is
+  # not linked to this repository, so the push is authenticated as the PAT
+  # below, not as this token. See the `build` job.
+  packages: write
+  # Only the Azure job uses this, and only when DEPLOY_AZURE is set.
+  id-token: write
+
+jobs:
+  build:
+    name: Build and push the image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          # GHCR_PAT, not GITHUB_TOKEN, and that is not a preference.
+          # ghcr.io/kevocado/sports-predictor is USER-scoped, not linked to this
+          # repository, and GITHUB_TOKEN may only write to packages linked to its
+          # own repo -- so the push dies with
+          # `denied: permission_denied: write_package` AFTER the image has already
+          # built and tagged correctly. That looks exactly like a permissions
+          # problem and is not one: `packages: write` is declared above and is
+          # correct. NFL and CFB both lost their first deploy this way.
+          #
+          # Checked, not assumed:
+          #
+          #   gh api /user/packages/container/sports-predictor \
+          #     --jq '.repository.full_name'
+          #   -> null
+          #
+          # Linking the package is a one-time "Connect repository" in its package
+          # settings and has NO API, so neither a workflow nor CI can do it. Until
+          # someone does it by hand, GITHUB_TOKEN cannot push here at all.
+          #
+          # The PAT is already a secret on this repo and is what these images have
+          # always been pushed with, so this is not a new long-lived credential --
+          # it is the one already in use. If that command starts returning
+          # "Kevocado/Sports_Predictor", switch back to secrets.GITHUB_TOKEN,
+          # delete this comment, and change src/deployWorkflow.test.ts to match.
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      - name: Build and push Sports Predictor frontend image
+        run: |
+          docker build -t ghcr.io/kevocado/sports-predictor:${{ github.sha }} -t ghcr.io/kevocado/sports-predictor:latest .
+          docker push ghcr.io/kevocado/sports-predictor:${{ github.sha }}
+          docker push ghcr.io/kevocado/sports-predictor:latest
+
+
+  # Legacy. Azure is being cut over to the VPS, so this stays off unless the
+  # repo sets DEPLOY_AZURE=true. Gated on `== 'true'` and not `!= 'false'`:
+  # the failing-open form turns Azure back on for every repo that has not
+  # explicitly set the variable, which is the opposite of the intent.
+  deploy-azure:
+    name: Deploy to Azure (legacy)
+    needs: build
+    if: vars.DEPLOY_AZURE == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create / Update Sports Predictor Container App
+        env:
+          AZURE_RG: predictor-hub-rg
+          AZURE_ENV: proudbay-f56b8dfa.eastus2
+          APP_NAME: sports-predictor
+          IMAGE: ghcr.io/kevocado/sports-predictor:${{ github.sha }}
+        run: |
+          # Create if doesn't exist (ports 80 for Caddy static serving)
+          az containerapp create \
+            --name $APP_NAME \
+            --resource-group $AZURE_RG \
+            --environment $AZURE_ENV \
+            --image $IMAGE \
+            --target-port 80 \
+            --ingress external \
+            --min-replicas 0 \
+            --max-replicas 3 \
+            --cpu 0.25 \
+            --memory 0.5Gi \
+            --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true
+
+          # Update to latest image
+          az containerapp update \
+            --name $APP_NAME \
+            --resource-group $AZURE_RG \
+            --image $IMAGE \
+            --min-replicas 0 \
+            --max-replicas 3 || true
+          az containerapp ingress enable --name $APP_NAME --resource-group $AZURE_RG --type external --target-port 80 || true
+
+      - name: Verify backend endpoints
+        run: |
+          echo "Verifying NFL and CFB predictor backends are running..."
+          echo "NFL: https://nfl-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api"
+          echo "CFB: https://cfb-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api"
+          # The frontend auto-detects these URLs at runtime (see src/api/client.ts)
+          # No Caddy reverse proxy needed - client connects directly to backends
+
+  # Pulls the image pushed above on the VPS stack at /opt/stack. `bin/deploy` is
+  # the only thing the CI key can ask for -- a forced command in the deploy
+  # user's authorized_keys -- and it pins the sha in .env, restarts,
+  # health-checks, and rolls back to the previous tag if the new one is unhealthy.
+  vps:
+    name: Deploy to the VPS
+    needs: build
+    if: vars.VPS_HOST != ''
+    runs-on: ubuntu-latest
+    # One deploy at a time per service: two repos pushing at once race on
+    # /opt/stack/.env. bin/deploy takes its own lock too; this keeps the queue
+    # off the box.
+    concurrency: vps-deploy-sports
+    steps:
+      - name: Deploy to VPS
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          # Written before the first connection, or ssh prompts to confirm the
+          # host key and the job hangs until it times out.
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh deploy@${{ vars.VPS_HOST }} deploy sports ${{ github.sha }}
