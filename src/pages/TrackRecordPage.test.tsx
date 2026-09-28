@@ -483,6 +483,65 @@ describe("player props", () => {
     expect(screen.getAllByText("call count not reported")).toHaveLength(2);
     expect(screen.queryByText(/0 calls of/)).not.toBeInTheDocument();
   });
+
+  // The two below are the B1 calibration render tests, carried in from
+  // origin/v2-wire and kept rather than dropped. They are PORTED, not
+  // transcribed: that side wrote them against the pre-B6 page, so they named
+  // that page's strings -- the heading "Anytime-TD hit rate by confidence" and a
+  // `weekly_trend` key this contract no longer declares. The B6 rewrite
+  // renders the same calibration section as a `StatTable` captioned "Anytime-TD
+  // hit rate by predicted-probability band", so the assertions below name that
+  // table instead. Both keep their original subject: the section appears when
+  // the buckets have calls, and it does not appear when they do not. The
+  // fixture is theirs' -- one band with a call and two without -- because a
+  // payload in which two of three bands are empty is the one that can tell the
+  // two states apart.
+  it("renders the Anytime-TD calibration section when confidence buckets have calls", async () => {
+    trackRecord.mockResolvedValue({
+      ...NFL_RECORD,
+      player_props: {
+        ...NFL_RECORD.player_props,
+        anytime_td: {
+          n_resolved: 30, hit_rate_when_called: 0.6, brier_score: 0.18, n_called: 20,
+          confidence_buckets: [
+            { label: "50-60%", n: 1, hit_rate: 1.0 },
+            { label: "60-70%", n: 0, hit_rate: null },
+            { label: "70%+", n: 0, hit_rate: null },
+          ],
+        },
+      },
+    });
+    await renderPage();
+    const table = screen.getByRole("table", { name: /anytime-td hit rate by predicted-probability band/i });
+    expect(within(table).getByText("50-60%")).toBeInTheDocument();
+    // The band that carries the call states its rate, and the two empty bands
+    // say so rather than rating 0% for nobody.
+    expect(within(rowAt(table, 0)).getByText(wholeText("100% (1)"))).toBeInTheDocument();
+    expect(within(rowAt(table, 1)).getByText("no calls")).toBeInTheDocument();
+    expect(within(rowAt(table, 2)).getByText("no calls")).toBeInTheDocument();
+  });
+
+  it("does not render the Anytime-TD calibration section when confidence buckets are empty", async () => {
+    // `weekly_trend` is gone from this side's fixture on purpose: B3 removed the
+    // key from the API and `types.ts` no longer declares it, so a fixture that
+    // carried it would put the removed shape back into the type layer. The CFB
+    // fixture above still carries it -- dumped rather than typed -- precisely so
+    // the page can be shown NOT reading it.
+    trackRecord.mockResolvedValue({
+      games: { n_resolved: 0, n_rebuilt: 0, pct_moneyline_correct: null, pct_ats_correct: null, pct_totals_correct: null },
+      player_props: {
+        anytime_td: { n_resolved: 0, hit_rate_when_called: null, brier_score: null, n_called: 0, confidence_buckets: [] },
+        passing_yards: { n_resolved: 0, mean_absolute_error: null, mean_signed_error: null },
+        rushing_yards: { n_resolved: 0, mean_absolute_error: null, mean_signed_error: null },
+        receiving_yards: { n_resolved: 0, mean_absolute_error: null, mean_signed_error: null },
+      },
+    });
+    render(<TrackRecordPage />);
+    expect(await screen.findByText("No resolved player props yet — check back once this week's games are final.")).toBeInTheDocument();
+    // The subject of the test, stated outright: no calibration table, because
+    // there is nothing to calibrate against.
+    expect(screen.queryByRole("table", { name: /anytime-td hit rate by predicted-probability band/i })).not.toBeInTheDocument();
+  });
 });
 
 // --- 4. the yardage markets -------------------------------------------------

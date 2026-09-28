@@ -39,10 +39,16 @@ describe("family frame", () => {
     render(<App />);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("NFL Predictor");
     const sports = screen.getByRole("navigation", { name: "Sports" });
-    expect([...sports.querySelectorAll("a")].map((a) => a.textContent)).toEqual(["PL", "F1", "NFL", "CFB", "NBA"]);
+    // The nav is the rendered SITES array, in order. "Home" leads because it is
+    // the way out of any sport: a switcher that only offers other sports strands
+    // a reader who arrived here from the hub with no way back.
+    expect([...sports.querySelectorAll("a")].map((a) => a.textContent)).toEqual([
+      "Home", "PL", "F1", "NFL", "CFB", "NBA",
+    ]);
     expect(screen.getByRole("link", { name: "NFL" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "CFB" })).toHaveAttribute("href", "?sport=cfb");
     expect(screen.getByRole("link", { name: "NBA" }).getAttribute("href")).toMatch(/^https:\/\/nba\./);
+    expect(screen.getByRole("link", { name: "Home" }).getAttribute("href")).toMatch(/^https:\/\//);
     expect(await screen.findByText("No games scheduled for this week.")).toBeInTheDocument();
   });
 });

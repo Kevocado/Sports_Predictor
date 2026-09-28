@@ -1,3 +1,11 @@
+// The summary's type belongs to the panel. It is imported here because this
+// module fetches one and has to say what it returns, and it is deliberately NOT
+// re-exported: the modal, the explain call sites and the tests all import
+// `Explanation` from `../predictor-ui` directly. This module used to re-export
+// it as a second door onto the same type, and nothing consumed that door — two
+// doors onto one type is the same "local copy" mistake the declaration here was
+// originally deleted for.
+import type { Explanation } from "../predictor-ui";
 import type {
   CurrentWeek,
   GamePrediction,
@@ -117,16 +125,6 @@ export const CFB_BASE_URL: string = import.meta.env.VITE_CFB_API_BASE_URL ?? "/a
 
 export const NFL_EXPLAIN_BASE_URL: string = import.meta.env.VITE_NFL_EXPLAIN_BASE_URL ?? "/api/explain/nfl";
 export const CFB_EXPLAIN_BASE_URL: string = import.meta.env.VITE_CFB_EXPLAIN_BASE_URL ?? "/api/explain/cfb";
-
-export type Explanation = {
-  headline: string;
-  sections: { market: string; title: string; text: string }[];
-  source: "llm" | "template";
-  model: string;
-  generated_at: string;
-  sport: string;
-  pick_timing: "pre_kickoff" | "rebuilt" | "none";
-};
 
 /**
  * The plain-English summary for one game. Same-origin like every other call

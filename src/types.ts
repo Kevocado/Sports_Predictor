@@ -10,12 +10,6 @@ export interface GameSummary {
   away_score: number | null;
   spread_line?: number | null;
   total_line?: number | null;
-  home_total_yards?: number;
-  home_passing_yards?: number;
-  home_rushing_yards?: number;
-  away_total_yards?: number;
-  away_passing_yards?: number;
-  away_rushing_yards?: number;
   home_conference?: string | null;
   away_conference?: string | null;
   // NFL-only context the /games endpoint already returns (schedules.py
@@ -29,7 +23,13 @@ export interface GameSummary {
   wind?: number | null;
   div_game?: boolean | null;
 }
-export interface GamePrediction { home_win_prob: number; away_win_prob: number; home_cover_prob: number | null; away_cover_prob: number | null; over_prob: number | null; under_prob: number | null; predicted_margin?: number; predicted_total?: number; sigma?: number; total_sigma?: number; }
+// `predicted_margin` and `predicted_total` are `number | null`, not `number`:
+// the API sends `null` for an absent forecast, and pydantic 2.13.5 serialises
+// NaN to `null`, so a widening here is a fix and not a loosening -- a caller
+// that narrows it back would re-introduce the type error the wire format
+// already avoids. (Taken from origin/v2-wire; the B6 track-record contract
+// below is ours.)
+export interface GamePrediction { home_win_prob: number; away_win_prob: number; home_cover_prob: number | null; away_cover_prob: number | null; over_prob: number | null; under_prob: number | null; predicted_margin?: number | null; predicted_total?: number | null; sigma?: number; total_sigma?: number; }
 // The yardage/count markets are whatever POSITION_MARKETS has for that
 // position, so they are optional and a missing one stays missing (an em-dash),
 // never 0. `is_starter` is true/false from NFL's depth chart and null where no
@@ -193,6 +193,27 @@ export interface VsMarket {
   scope?: VsMarketScope;
 }
 
+// ---------------------------------------------------------------------------
+// What the other side of this merge contributed to this file, and why.
+//
+// origin/v2-wire declared `WeeklyTrendEntry` and changed nothing above it that
+// ours needed. `WeeklyTrendEntry` is NOT taken: B3 removed `weekly_trend` from
+// the API, and keeping the type is how a second shape for one fact survives in
+// the type layer after it has gone from the wire -- the same failure that had
+// this page read `{bucket, n_resolved}` against an emitter sending
+// `{label, n}` and render a calibration section that had never once appeared in
+// a deploy.
+//
+// What IS taken from origin/v2-wire: the `number | null` widening on
+// `GamePrediction` above (pydantic 2.13.5 serialises NaN to `null`, so the wire
+// already sends null for an absent forecast), and the removal of the
+// `home_total_yards` / `away_total_yards` family from `GameSummary` above,
+// which is #8 "stop publishing a team total yards the model cannot compute".
+// The CFB backend still emits `weekly_trend`; the CFB fixture in
+// TrackRecordPage.test.tsx is dumped rather than typed and asserts the page
+// does NOT read it, which is the honest way to carry a payload this contract no
+// longer describes.
+// ---------------------------------------------------------------------------
 export interface GamesTrackRecord {
   n_resolved: number;
   // Picks rebuilt after kickoff: reported, never counted. Absent from older API builds.
