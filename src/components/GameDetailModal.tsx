@@ -11,7 +11,7 @@ import { POSITION_ORDER, keyStatLabel, keyYardage, tdConfidenceTone } from "../l
 
 type PositionFilter = "ALL" | (typeof POSITION_ORDER)[number];
 
-const MARKET_LABEL = {
+export const MARKET_LABEL = {
   passing_yards: "Pass yds",
   rushing_yards: "Rush yds",
   receiving_yards: "Rec yds",
@@ -25,11 +25,22 @@ export interface YardageMarketBreakdown {
 
 /** Yardage projected for one roster, grouped by the market it was projected in.
  *
- * Kept per market and never summed. The model projects exactly one yardage
- * market per position (NFL/CFB `models/player_props.py::POSITION_MARKETS`), so
- * summing the roster's single yardage field adds a QB's passing to an RB's
- * rushing and a WR's receiving, and the total is not any real quantity: on a
- * full roster it ran 800-1400 yards, against a real figure of roughly 300-450.
+ * Kept per market and never summed. `POSITION_MARKETS` (NFL/CFB
+ * `models/player_props.py`) is a dict of *lists* -- its own comment says "each
+ * position can have multiple markets", RB gets both rushing_yards and carries --
+ * so the earlier claim that the model projects exactly one market per position was
+ * wrong, and it was wrong in a customer-visible sentence as well as in a comment.
+ *
+ * The arithmetic still holds, for a different and verified reason: summing the
+ * roster's yardage fields adds a QB's passing to an RB's rushing and a WR's
+ * receiving, and the total is not any real quantity. On a full roster it ran
+ * 800-1400 yards against a real figure of roughly 300-450.
+ *
+ * What is *not* safe is to rely on each player having at most one yardage field. If
+ * `POSITION_MARKETS` ever gives a position two yardage markets, the parts still do not
+ * sum to the old single-field total, and the correct rendering is one row per market
+ * with the player counted in both -- which is what this does, and which
+ * `test_binds_each_market_label_to_its_own_value` and its sibling now pin.
  * Team total yards is `rushing + receiving` across every player, which needs a
  * team-level model that does not exist yet -- so this reports what is actually
  * projected and says so, rather than publishing a number nobody can reproduce.
