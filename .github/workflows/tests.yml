@@ -1,0 +1,39 @@
+name: tests
+
+# Sports_Predictor had no test workflow at all: the only other workflow is
+# `deploy-azure.yml`, which fires on push to main and deploys. So nothing gated a
+# commit here -- a red suite could be merged and would only surface in the deploy
+# log. This is the same gap closed for NFL, CFB and PL.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vitest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
+      # `npm run build` runs `tsc -b`, so a type error fails here even if no test
+      # happens to touch the file. Vitest does not typecheck by default, and the
+      # six lying types this branch deletes were only visible to the compiler.
+      - name: Build (typechecks)
+        run: npm run build
+
+      - run: npm run test
+
+      - run: npm run lint
