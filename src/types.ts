@@ -10,12 +10,6 @@ export interface GameSummary {
   away_score: number | null;
   spread_line?: number | null;
   total_line?: number | null;
-  home_total_yards?: number;
-  home_passing_yards?: number;
-  home_rushing_yards?: number;
-  away_total_yards?: number;
-  away_passing_yards?: number;
-  away_rushing_yards?: number;
   home_conference?: string | null;
   away_conference?: string | null;
   // NFL-only context the /games endpoint already returns (schedules.py
