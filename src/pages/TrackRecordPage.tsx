@@ -587,14 +587,29 @@ function PointsSection({ games }: { games: GamesTrackRecord }) {
             />
             <p className="text-xs text-pr-text-dim">
               Overall over {plural(block.n, "game")} with a forecast: average error{" "}
-              {block.mae == null ? NO_VALUE : `±${points(block.mae)} pt`}, and it {biasWord(block.signed_error)} (
-              {signedPoints(block.signed_error)} pt).
+              {block.mae == null ? NO_VALUE : `±${points(block.mae)} pt`}, and {overallDirection(block.signed_error)}.
             </p>
           </div>
         );
       })}
     </Section>
   );
+}
+
+/**
+ * The overall line's direction clause, as a clause.
+ *
+ * `biasWord` returns a PREDICATE -- "under-forecast on average" -- and the
+ * sentence wants a noun phrase in front of it, so the verb has to be here and
+ * the absence of the measurement has to be handled before the predicate is
+ * asked for at all. Dropping "it" into the slot and letting `biasWord` return
+ * "not measured" produced "and it not measured (— pt)" on exactly the path the
+ * no-NaN constraint exists for: the reader gets a broken clause and a bare unit
+ * with no number in it.
+ */
+function overallDirection(signed: number | null | undefined): string {
+  if (missing(signed)) return "the direction is not measured";
+  return `it ${biasWord(signed)} (${signedPoints(signed)} pt)`;
 }
 
 /**
@@ -724,7 +739,15 @@ function MarketSection({ vs_market }: { vs_market: VsMarket | undefined }) {
         <StatTile
           label="Mean edge"
           value={vs_market.mean_edge_points == null ? NO_VALUE : `${signedPoints(vs_market.mean_edge_points)} pt`}
-          sub={edgeWord(vs_market.mean_edge_points)}
+          // Every number carries its own n. The other three tiles in this row
+          // say "over N games" and this one did not, so its denominator was
+          // three tiles to the left at 390px and nowhere else. Wrapped in a
+          // span so the words stay their own element for a screen reader.
+          sub={
+            <>
+              <span>{edgeWord(vs_market.mean_edge_points)}</span> · over {plural(vs_market.n, "game")}
+            </>
+          }
         />
       </div>
 

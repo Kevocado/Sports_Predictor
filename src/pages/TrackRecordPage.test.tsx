@@ -49,8 +49,12 @@ const NFL_RECORD: TrackRecord = {
     pct_ats_correct: 0.5,
     pct_totals_correct: 0.333,
     weekly: [
-      // B2's own arithmetic: four games at 50%, then one game, won.
-      { week: 1, tracked: true, n_games: 4, n_moneyline: 4, pct_moneyline_correct: 0.5, n_ats: 2, pct_ats_correct: 1.0, n_totals: 1, pct_totals_correct: 0.0 },
+      // B2's own arithmetic, and the two counts DELIBERATELY different. The
+      // "Games" column's only job is to keep volume apart from the moneyline
+      // denominator, and with `n_games === n_moneyline` in every week there
+      // was no data that could tell a page printing one for the other. Week 1
+      // is four games of which three had a moneyline to grade: 2 of 3.
+      { week: 1, tracked: true, n_games: 4, n_moneyline: 3, pct_moneyline_correct: 0.667, n_ats: 2, pct_ats_correct: 1.0, n_totals: 1, pct_totals_correct: 0.0 },
       { week: 2, tracked: true, n_games: 1, n_moneyline: 1, pct_moneyline_correct: 1.0, n_ats: 1, pct_ats_correct: 0.0, n_totals: 1, pct_totals_correct: 0.0 },
       { week: 3, tracked: false, n_games: 0, n_moneyline: 0, pct_moneyline_correct: null, n_ats: 0, pct_ats_correct: null, n_totals: 0, pct_totals_correct: null },
     ],
@@ -155,6 +159,24 @@ const NFL_RECORD: TrackRecord = {
  * per-market counts, no points forecasts, no `vs_market`, and a
  * `mae_by_position` map with no count beside it.
  *
+ * DUMPED, NOT TYPED. This is the output of CFB_Predictor's own
+ * `_summarize_games` / `_summarize_player_props`, run over frames with its real
+ * column names — 12 resolved games (7 moneyline hits, 4 ATS-graded, none
+ * totals-graded) and 150 resolved props. The previous version of this fixture
+ * was hand-written, and it was wrong in a way that hid a behaviour: it set
+ * `confidence_buckets: []` where `_td_confidence_buckets` ALWAYS returns three
+ * bands, so the test drew its conclusion from a payload CFB cannot send. Same
+ * lesson as the `method` block, one layer down: a hand-written stand-in for a
+ * payload is a payload that disagrees with the emitter, and nothing notices
+ * until the emitter moves.
+ *
+ * It also carries the `weekly_trend` the real payload has and the old fixture
+ * omitted, so the page can be shown NOT reading it.
+ *
+ * (The shipped `data/tracking.db` on this machine has zero resolved rows, so
+ * the live response is the degenerate all-null one. The shape is what matters
+ * here, and the shape of a populated response is what this is.)
+ *
  * This fixture is the reason the new keys in types.ts are optional. One site
  * serves both sports off `?sport=`, so a CFB payload that throws is not a
  * cosmetic problem — it is the same crash B6 was commissioned to end, on the
@@ -164,15 +186,34 @@ const CFB_RECORD = {
   games: {
     n_resolved: 12,
     n_rebuilt: 0,
-    pct_moneyline_correct: 0.583,
+    pct_moneyline_correct: 0.5833333333333334,
     pct_ats_correct: 0.5,
     pct_totals_correct: null,
+    weekly_trend: [
+      { week: 1, pct_moneyline_correct: 1.0, n_games: 5 },
+      { week: 2, pct_moneyline_correct: 0.5, n_games: 4 },
+      { week: 3, pct_moneyline_correct: 0.0, n_games: 3 },
+    ],
   },
   player_props: {
-    anytime_td: { n_resolved: 30, n_called: 20, hit_rate_when_called: 0.6, brier_score: 0.18, confidence_buckets: [] },
-    passing_yards: { n_resolved: 40, mean_absolute_error: 32.4, mean_signed_error: 4.1, mae_by_position: { QB: 32.4 } },
-    rushing_yards: { n_resolved: 40, mean_absolute_error: 18.1, mean_signed_error: -2.2, mae_by_position: { RB: 18.1 } },
-    receiving_yards: { n_resolved: 40, mean_absolute_error: 21.7, mean_signed_error: 1.1, mae_by_position: { WR: 21.7 } },
+    anytime_td: {
+      n_resolved: 30,
+      n_called: 20,
+      hit_rate_when_called: 0.55,
+      brier_score: 0.21794000000000002,
+      // Three bands, always -- the emitter enumerates them, it does not filter.
+      confidence_buckets: [
+        { label: "50-60%", n: 4, hit_rate: 0.5 },
+        { label: "60-70%", n: 6, hit_rate: 0.5 },
+        { label: "70%+", n: 10, hit_rate: 0.6 },
+      ],
+    },
+    passing_yards: { n_resolved: 40, mean_absolute_error: 25.5, mean_signed_error: 4.25, mae_by_position: { QB: 29.0, WR: 15.0 } },
+    rushing_yards: { n_resolved: 40, mean_absolute_error: 15.0, mean_signed_error: -7.0, mae_by_position: { RB: 15.0 } },
+    receiving_yards: { n_resolved: 40, mean_absolute_error: 18.0, mean_signed_error: 5.65, mae_by_position: { WR: 18.0 } },
+    // Never resolved, and never rendered as a zero -- as emitted.
+    receptions: { n_resolved: 0, mean_absolute_error: null, mean_signed_error: null, mae_by_position: {} },
+    carries: { n_resolved: 0, mean_absolute_error: null, mean_signed_error: null, mae_by_position: {} },
   },
 } as unknown as TrackRecord;
 
@@ -202,6 +243,21 @@ function barWidths(container: HTMLElement, testId: string): string[] {
 }
 
 /**
+ * Every element wearing a STATUS colour -- win, loss, lean -- whatever the
+ * property. Read off the rendered tree rather than off the source, because a
+ * token ban in the source is the guard that let `text-loss` through: the regex
+ * named `pr-loss` and the page writes `loss`, because `index.css` aliases
+ * `--color-loss: var(--color-pr-loss)`. Both spellings, both the `pr-` form
+ * and the bare one, and `text-` / `bg-` / `border-` / `stroke-` prefixes.
+ */
+const STATUS_COLOUR = /(?:^|\s)(?:text|bg|border|stroke|fill|from|to|via)-(?:pr-)?(?:win|loss|lean)\b/;
+function statusColoured(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>("*")].filter((el) =>
+    STATUS_COLOUR.test(el.getAttribute("class") ?? ""),
+  );
+}
+
+/**
  * `getByText` on an element's WHOLE text, for text split across child nodes —
  * "50% (4)" is a rate, a space and a count in two elements, and the default
  * matcher only reads an element's direct text nodes. Restricted to leaf-ish
@@ -220,6 +276,27 @@ function rowAt(table: HTMLElement, index: number): HTMLElement {
   const rows = table.querySelectorAll<HTMLElement>("tbody tr");
   expect(rows.length, "the table has no rows at all").toBeGreaterThan(index);
   return rows[index];
+}
+
+/**
+ * One cell of a body row, by column position. Cell-indexed rather than
+ * text-matched because a row carries the same digits in several columns, and an
+ * assertion like `getByText("4")` passes for the wrong reason often enough to
+ * be worth the extra two lines.
+ */
+function cellAt(row: HTMLElement, index: number): HTMLElement {
+  const cells = row.querySelectorAll<HTMLElement>("td");
+  expect(cells.length, "the row has no cells at all").toBeGreaterThan(index);
+  return cells[index];
+}
+
+/** The body row of a table whose first two cells read exactly this. */
+function rowWith(table: HTMLElement, ...wanted: string[]): HTMLElement {
+  const found = [...table.querySelectorAll<HTMLElement>("tbody tr")].find((r) =>
+    wanted.every((text, i) => cellAt(r, i).textContent?.trim() === text),
+  );
+  expect(found, `no row starting ${wanted.join(" / ")}`).toBeTruthy();
+  return found!;
 }
 
 async function renderPage() {
@@ -305,14 +382,24 @@ describe("by week", () => {
   it("shows the game count beside the rate as its own number", async () => {
     await renderPage();
     const table = screen.getByRole("table", { name: /accuracy by week/i });
-    expect(within(rowAt(table, 0)).getByText(wholeText("50% (4)"))).toBeInTheDocument();
+    expect(within(rowAt(table, 0)).getByText(wholeText("67% (3)"))).toBeInTheDocument();
     expect(within(rowAt(table, 1)).getByText(wholeText("100% (1)"))).toBeInTheDocument();
+  });
+
+  it("keeps the Games column a VOLUME figure, not the moneyline's denominator", async () => {
+    await renderPage();
+    const table = screen.getByRole("table", { name: /accuracy by week/i });
+    // Week 1 is 4 games, of which 3 had a moneyline. A page that printed the
+    // graded count in the volume column would show 3 here, and the test fails
+    // on the cell rather than on a coincidence elsewhere in the row.
+    expect(cellAt(rowAt(table, 0), 1)).toHaveTextContent("4");
+    expect(cellAt(rowAt(table, 0), 1)).not.toHaveTextContent("3");
   });
 
   // The bar fix. Reverting this makes the width 25% instead of 100%.
   it("draws a week bar on the accuracy scale alone, and the game count as text", async () => {
     const { container } = await renderPage();
-    expect(barWidths(container, "week-bar")).toEqual(["50%", "100%"]);
+    expect(barWidths(container, "week-bar")).toEqual(["66.7%", "100%"]);
     // The one-game perfect week is the whole point: a volume share multiplied
     // back in would draw it at 25%, a quarter of the track.
     const table = screen.getByRole("table", { name: /accuracy by week/i });
@@ -359,6 +446,42 @@ describe("player props", () => {
     expect(within(empty).getByText("no calls")).toBeInTheDocument();
     expect(within(empty).queryByText("0%")).not.toBeInTheDocument();
     expect(within(rowAt(table, 2)).getByText(wholeText("100% (2)"))).toBeInTheDocument();
+  });
+
+  it("lists CFB's three bands too, because the emitter always sends three", async () => {
+    // The hand-written CFB fixture used to say `confidence_buckets: []`, and
+    // `_td_confidence_buckets` has never once returned an empty list -- it
+    // enumerates the bands. The page reading a real payload is what this is
+    // for, so the fixture is dumped now and this asserts the consequence.
+    trackRecord.mockResolvedValue(CFB_RECORD);
+    await renderPage();
+    const table = screen.getByRole("table", { name: /anytime-td hit rate by predicted-probability band/i });
+    expect(table.querySelectorAll("tbody tr")).toHaveLength(3);
+    expect(within(rowAt(table, 0)).getByText(wholeText("50% (4)"))).toBeInTheDocument();
+    expect(within(rowAt(table, 2)).getByText(wholeText("60% (10)"))).toBeInTheDocument();
+    // And the empty-band state is NOT reached from a real payload, because a
+    // band CFB sends always has its own row, hit rate or not.
+    expect(within(table).queryByText("no calls")).not.toBeInTheDocument();
+  });
+
+  it("says the call count was not reported when the emitter sent no `n_called`", async () => {
+    // `_summarize_player_props` omits `n_called` exactly when the anytime-TD
+    // market resolved nothing. That is NOT the same as the section being
+    // empty -- `anyProps` is true when a YARDAGE market has props -- so the
+    // branch is reachable, and reachable from a payload the backend really
+    // emits. A payload that drops the key must not read as zero calls.
+    trackRecord.mockResolvedValue({
+      ...NFL_RECORD,
+      player_props: {
+        ...NFL_RECORD.player_props,
+        anytime_td: { n_resolved: 0, hit_rate_when_called: null, brier_score: null, confidence_buckets: [] },
+      },
+    });
+    await renderPage();
+    // The section still renders, because the yardage markets do have props.
+    expect(screen.getByText("Anytime-TD hit rate")).toBeInTheDocument();
+    expect(screen.getAllByText("call count not reported")).toHaveLength(2);
+    expect(screen.queryByText(/0 calls of/)).not.toBeInTheDocument();
   });
 });
 
@@ -415,8 +538,13 @@ describe("by position", () => {
     trackRecord.mockResolvedValue(CFB_RECORD);
     await renderPage();
     const table = screen.getByRole("table", { name: /average error by prop market and position/i });
-    const qb = within(table).getByText("QB").closest("tr")!;
-    expect(within(qb).getByText("±32.4 yd")).toBeInTheDocument();
+    // The real CFB map has a second key in it, so a reader of one entry per
+    // market -- the shape the hand-written fixture had -- fails here. Found by
+    // market AND position, because two of CFB's rows are WR.
+    const qb = rowWith(table, "Passing yards", "QB");
+    expect(within(qb).getByText("±29.0 yd")).toBeInTheDocument();
+    const receiving = rowWith(table, "Receiving yards", "WR");
+    expect(within(receiving).getByText("±18.0 yd")).toBeInTheDocument();
     // CFB's map carries no count, so the cell says so instead of guessing one.
     expect(within(qb).getByText("—")).toBeInTheDocument();
     // And the page does NOT claim those 120 props carry no position, which is
@@ -459,6 +587,32 @@ describe("points", () => {
       screen.getByText(/Overall over 2 games with a forecast: average error ±6.7 pt, and it under-forecast on average/),
     ).toBeInTheDocument();
   });
+
+  it("keeps the overall line a sentence when the signed error was never measured", async () => {
+    // The path the no-NaN constraint exists for, and the one the populated
+    // fixture never reaches: `biasWord` hands back a PREDICATE, so a null
+    // signed error used to render "and it not measured (— pt)" -- a broken
+    // clause and a bare unit with no number in it.
+    trackRecord.mockResolvedValue({
+      ...NFL_RECORD,
+      games: {
+        ...NFL_RECORD.games,
+        totals: {
+          n: 0,
+          mae: null,
+          signed_error: null,
+          weekly: [{ week: 1, tracked: false, n: 0, mae: null, signed_error: null }],
+        },
+      },
+    });
+    await renderPage();
+    expect(
+      screen.getByText(/Overall over 0 games with a forecast: average error —, and the direction is not measured\./),
+    ).toBeInTheDocument();
+    // The predicate is never dropped into a slot that wants a noun phrase.
+    expect(screen.queryByText(/and it not measured/)).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/— pt\)/);
+  });
 });
 
 // --- 7. vs the market -------------------------------------------------------
@@ -472,6 +626,17 @@ describe("vs the market", () => {
     const edge = screen.getAllByText("Mean edge")[0].parentElement!;
     expect(within(edge).getByText("−4.0 pt")).toBeInTheDocument();
     expect(within(edge).getByText("the model's probability sits below the line's")).toBeInTheDocument();
+  });
+
+  it("gives the mean edge its own n, not a reference to a tile three across", async () => {
+    await renderPage();
+    // Every number on this page carries the count behind it. This tile's
+    // denominator is the "Games compared" tile, which at 390px is three tiles
+    // to the left -- so the count is repeated here in words.
+    const edge = screen.getAllByText("Mean edge")[0].parentElement!;
+    expect(edge).toHaveTextContent("over 4 games");
+    const compared = screen.getByText("Games compared").parentElement!;
+    expect(compared).toHaveTextContent("4");
   });
 
   it("leads with the disagreement cohort, over the games in it", async () => {
@@ -622,11 +787,21 @@ describe("a backend that has not shipped the newer blocks", () => {
     const ats = screen.getByText("Spread (ATS) accuracy").closest("div")!;
     expect(within(ats).getByText("grade count not reported")).toBeInTheDocument();
     // And each absent block says so, instead of rendering nothing at all.
+    // EXACTLY three: the week list, the points forecasts and the whole
+    // vs-market block. The position table is NOT one of them -- CFB sends a
+    // `mae_by_position` map, so there are four rows to render.
+    expect(screen.getAllByTestId("not-recorded")).toHaveLength(3);
+    expect(screen.getByText("No week-by-week record in this response.")).toBeInTheDocument();
+    expect(screen.getByText("No points forecast in this response.")).toBeInTheDocument();
+    expect(screen.getByText("No model-versus-market comparison in this response.")).toBeInTheDocument();
+    // CFB's payload DOES carry `weekly_trend`, three rows of it, and the page
+    // still says the record is not in this response. The old key is not read as
+    // the new one, which is only provable because the fixture now has it.
+    expect((CFB_RECORD.games as unknown as { weekly_trend: unknown[] }).weekly_trend).toHaveLength(3);
+    expect(screen.queryByRole("table", { name: /accuracy by week/i })).not.toBeInTheDocument();
     // The copy is about the RESPONSE and not about the backend: a missing key
     // is all this page can see, and a page defect that read the wrong key would
     // otherwise print a false claim about what CFB can do.
-    expect(screen.getAllByTestId("not-recorded").length).toBeGreaterThanOrEqual(3);
-    expect(screen.getByText("No week-by-week record in this response.")).toBeInTheDocument();
     expect(screen.queryByText(/This backend does not/)).not.toBeInTheDocument();
   });
 });
@@ -668,7 +843,8 @@ describe("the section nav", () => {
 
   // The layout contract jsdom cannot measure. These are the declarations the
   // report's browser numbers rest on; a rename or a deletion fails here.
-  it("is sticky, opaque, and sized so an anchor jump clears it", () => {
+  it("is sticky, opaque, and sized so an anchor jump clears it", async () => {
+    await renderPage();
     const css = readFileSync(CSS, "utf8");
     const nav = /\.tr-nav\s*\{([^}]*)\}/.exec(css)![1];
     expect(nav).toMatch(/position:\s*sticky/);
@@ -692,9 +868,40 @@ describe("the section nav", () => {
     // than inherited from a class that might change.
     const link = /\.tr-nav a\s*\{([^}]*)\}/.exec(css)![1];
     expect(link).toMatch(/font-size:\s*12px/);
+
+    // ...and the page still APPLIES those classes. Every assertion above reads
+    // a stylesheet, which is a promise about a file; this is the promise about
+    // the page, and without it a `className="tr-nav"` rename to a Tailwind
+    // utility would leave the whole block green while the page lost every
+    // one of these guarantees at once.
+    const navEl = screen.getByRole("navigation", { name: /track record sections/i });
+    expect(navEl.className).toContain("tr-nav");
+    expect(navEl.firstElementChild!.className).toContain("tr-nav-scroll");
+    expect(document.getElementById("tr-headline")!.className).toContain("tr-section");
   });
 
-  it("puts the 50% reference at the middle of the bar, always", () => {
+  it("says the rail scrolls, without a gradient and without moving the anchor offset", async () => {
+    const css = readFileSync(CSS, "utf8");
+    const scroll = /\.tr-nav-scroll\s*\{([^}]*)\}/.exec(css)![1];
+    // The affordance: a rule drawn exactly where the content is cut, and a
+    // snap so a flick lands on a whole label. `proximity`, never `mandatory` --
+    // mandatory would fight a reader trying to reach the last entry.
+    expect(scroll).toMatch(/border-right:\s*1px\s+solid\s+var\(--color-pr-rule\)/);
+    expect(scroll).toMatch(/scroll-snap-type:\s*x\s+proximity/);
+    expect(/\.tr-nav-scroll\s*>\s*ul\s*>\s*li\s*\{[^}]*scroll-snap-align:\s*start/.test(css)).toBe(true);
+    // No gradient of any kind: the affordance is a rule and a snap, and a
+    // future session should not reach for a fade here by default.
+    expect(scroll).not.toMatch(/gradient|mask-image/);
+    // The coupling the review held this fix to: the 1px rule is WIDTH, so the
+    // nav stays 3rem and the sections still clear it by 4rem.
+    expect(/\.tr-nav\s*\{[^}]*height:\s*3rem/.test(css)).toBe(true);
+    expect(/\.tr-section\s*\{[^}]*scroll-margin-top:\s*4rem/.test(css)).toBe(true);
+    // And the class is applied, so the rule is attached to something.
+    const { container } = await renderPage();
+    expect(container.querySelector(".tr-nav-scroll")).not.toBeNull();
+  });
+
+  it("puts the 50% reference at the middle of the bar, always", async () => {
     const css = readFileSync(CSS, "utf8");
     const marker = /\.tr-bar-marker\s*\{([^}]*)\}/.exec(css)![1];
     // Half the TRACK, not half the fill: this is a property of the scale.
@@ -702,6 +909,17 @@ describe("the section nav", () => {
     const track = /\.tr-bar\s*\{([^}]*)\}/.exec(css)![1];
     expect(track).toMatch(/position:\s*relative/);
     expect(track).toMatch(/background:\s*var\(--color-pr-panel-2\)/);
+
+    // The stylesheet says the marker is positioned against the track; that is
+    // only true if the page puts a marker inside every bar it draws. Counting
+    // the rendered classes catches the other half of the coupling -- a
+    // `className="tr-bar"` renamed to a utility would leave the two CSS
+    // assertions above green and every 50% line off the page.
+    const { container } = await renderPage();
+    expect(container.querySelectorAll(".tr-bar").length).toBeGreaterThan(0);
+    expect(container.querySelectorAll(".tr-bar-marker").length).toBe(
+      container.querySelectorAll(".tr-bar").length,
+    );
   });
 });
 
@@ -709,20 +927,48 @@ describe("the section nav", () => {
 
 describe("the constraints that are not about data", () => {
   it("sets no font size below 12px anywhere on the page", () => {
-    // The floor is a floor: no utility may buy a smaller number back.
-    for (const [, px] of source.matchAll(/text-\[(\d+(?:\.\d+)?)px\]/g)) {
-      expect(Number(px), `text-[${px}px] is under the 12px floor`).toBeGreaterThanOrEqual(12);
+    // The floor is a floor: no utility may buy a smaller number back. BOTH
+    // units, because the old guard matched `text-[Npx]` only and a
+    // `text-[0.7rem]` -- 11.2px, under the floor -- walked straight past it.
+    // Anything the guard cannot parse fails rather than passing quietly.
+    for (const [, value, unit] of source.matchAll(/text-\[(\d+(?:\.\d+)?)(px|rem|em)\]/g)) {
+      const px = unit === "px" ? Number(value) : Number(value) * 16;
+      expect(px, `text-[${value}${unit}] is ${px}px, under the 12px floor`).toBeGreaterThanOrEqual(12);
+    }
+    // 0.75rem is exactly 12px, so anything under it is a violation and the
+    // assertion above would say so; this one is the same floor in its own
+    // unit, spelled out so the intent survives a reader who never converts.
+    for (const [, value] of source.matchAll(/text-\[(\d+(?:\.\d+)?)rem\]/g)) {
+      expect(Number(value), `text-[${value}rem] is under 0.75rem`).toBeGreaterThanOrEqual(0.75);
     }
   });
 
-  it("never lets colour alone carry a meaning", () => {
+  it("never lets colour alone carry a meaning", async () => {
     // Every direction this page shows is also a word, so nothing is encoded
     // only in a sign or a hue. The three words are asserted by name.
     expect(source).toMatch(/biasWord/);
     expect(source).toMatch(/edgeWord/);
-    // And the status tokens are never used on this page, which is the one
-    // place a colour would be doing the work.
-    expect(source).not.toMatch(/pr-win|pr-loss|pr-lean/);
+    // And on a page that DID render, no status colour is doing the work: the
+    // one that is allowed is checked by the next test, on the error path,
+    // where it has a role and words with it. Asserting a token ban here
+    // instead would have been the weaker claim -- the old guard
+    // (`/pr-win|pr-loss|pr-lean/`) did not even match `text-loss`, the token
+    // this page actually uses, so it was green for a reason that had nothing
+    // to do with the constraint.
+    const { container } = await renderPage();
+    expect(statusColoured(container)).toEqual([]);
+  });
+
+  it("lets the load-failure line wear a status colour, because it has words and a role", async () => {
+    trackRecord.mockRejectedValue(new Error("the tracker did not answer"));
+    const { container } = render(<TrackRecordPage />);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("the tracker did not answer");
+    // The colour is a REDUNDANT cue on a sentence a screen reader announces
+    // anyway. It is not the carrier, and the assertion is that the page still
+    // says the same thing with the colour stripped.
+    expect(statusColoured(container).map((el) => el.getAttribute("role"))).toEqual(["alert"]);
+    expect(alert.textContent?.trim()).toBe("the tracker did not answer");
   });
 
   it("keeps every text colour it uses at 4.5:1 on every surface it sits on", () => {

@@ -41,11 +41,35 @@
  * never scrolls sideways. `min-width: 0` so this flex child is allowed to
  * shrink below its content, which is what makes the overflow happen here
  * rather than on `body`.
+ *
+ * The rail is genuinely wider than the box it lives in -- 7 entries, 2.5 of
+ * them visible -- and until now nothing said so: the last visible label was
+ * simply sliced off by the viewport edge, which reads as "that is all of
+ * them". Two declarations fix it, and neither is a gradient:
+ *
+ *  - `border-right` is a full-height hairline drawn exactly where the content
+ *    is cut, so there is something to scroll PAST. On a flex child stretched
+ *    to the nav's content box it costs 1px of WIDTH, not height, so the
+ *    `height: 3rem` above and the `scroll-margin-top: 4rem` below are
+ *    untouched -- that pairing is the thing the geometry test pins.
+ *  - `scroll-snap-type: x proximity` makes the rail stop at a label rather
+ *    than between two of them, so a trackpad flick lands on something
+ *    readable. `proximity`, not `mandatory`: mandatory would hijack a reader
+ *    who is trying to reach the last entry.
  */
 .tr-nav-scroll {
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
+  border-right: 1px solid var(--color-pr-rule);
+  scroll-snap-type: x proximity;
+}
+
+/* The snap targets are the list items, not the links: the item is the flex
+ * box that gets a scroll position, and snapping its start edge puts a whole
+ * label against the box's edge instead of half of one. */
+.tr-nav-scroll > ul > li {
+  scroll-snap-align: start;
 }
 
 /*
