@@ -1,17 +1,22 @@
 name: Deploy Sports Predictor
 
 on:
-# A merge to main deploys. The paths filter is the whole reason this is safe to
-# run automatically: it lists what goes INTO the image, and the output of the
-# scheduled refresh jobs is deliberately absent, so a data refresh (on a timer,
-# several times a day) does not redeploy the service. Those files are polled
-# from raw.githubusercontent.com at runtime, so a new snapshot never needs a new
-# image.
+# A merge to main deploys. The paths filter is what makes that safe: it lists
+# what goes INTO the image, and nothing else.
 #
-# The filter is a whitelist, so an exclusion cannot be expressed in it: add
-# `data/**` and every refresh becomes a deploy. tests/test_deploy_workflow.py
-# asserts both halves — that the app's own files are watched, and that the
-# refresh jobs' output is not.
+# The Dockerfile is `COPY . .`, so the filter is the build inputs rather than one
+# source directory: the app, the entry HTML, the manifests, the tsconfig set,
+# vite.config.ts, the Caddyfile and the Dockerfile. A frontend change that did
+# not match would build nothing and deploy nothing — the same silent failure
+# as having no workflow at all.
+#
+# There is no data to exclude, because this is the one site with no scheduled
+# job that commits to main. That is asserted rather than assumed:
+# src/deployWorkflow.test.ts walks the other workflows in the repo, finds what
+# they `git add`, and fails on any overlap with the filter that has not been
+# classified — so a refresh job added later cannot start redeploying on every
+# run while the named entries here sit there doing nothing. It also fails on a
+# bare `**`, which matches every commit.
   push:
     branches: [main]
     paths:
@@ -30,9 +35,9 @@ on:
 
 permissions:
   contents: read
-  # To push the image to GHCR as the repo's own actor, using GITHUB_TOKEN. A
-  # personal access token would be a credential that outlives the repo and has
-  # to be rotated by hand.
+  # Required to push to GHCR at all. It is NOT sufficient here: the package is
+  # not linked to this repository, so the push is authenticated as the PAT
+  # below, not as this token. See the `build` job.
   packages: write
   # Only the Azure job uses this, and only when DEPLOY_AZURE is set.
   id-token: write
@@ -48,8 +53,32 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
+          # GHCR_PAT, not GITHUB_TOKEN, and that is not a preference.
+          # ghcr.io/kevocado/sports-predictor is USER-scoped, not linked to this
+          # repository, and GITHUB_TOKEN may only write to packages linked to its
+          # own repo -- so the push dies with
+          # `denied: permission_denied: write_package` AFTER the image has already
+          # built and tagged correctly. That looks exactly like a permissions
+          # problem and is not one: `packages: write` is declared above and is
+          # correct. NFL and CFB both lost their first deploy this way.
+          #
+          # Checked, not assumed:
+          #
+          #   gh api /user/packages/container/sports-predictor \
+          #     --jq '.repository.full_name'
+          #   -> null
+          #
+          # Linking the package is a one-time "Connect repository" in its package
+          # settings and has NO API, so neither a workflow nor CI can do it. Until
+          # someone does it by hand, GITHUB_TOKEN cannot push here at all.
+          #
+          # The PAT is already a secret on this repo and is what these images have
+          # always been pushed with, so this is not a new long-lived credential --
+          # it is the one already in use. If that command starts returning
+          # "Kevocado/Sports_Predictor", switch back to secrets.GITHUB_TOKEN,
+          # delete this comment, and change src/deployWorkflow.test.ts to match.
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_PAT }}
 
       - name: Build and push Sports Predictor frontend image
         run: |

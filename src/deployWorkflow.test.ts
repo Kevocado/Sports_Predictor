@@ -16,6 +16,14 @@
  * exclude by name. `checkNoCatchAll` is the invariant that still bites here:
  * a bare `**` in the filter would match every commit, so any refresh job added
  * later would redeploy the service on every run.
+ *
+ * The one check here that is not a copy from a sibling is the credential.
+ * `checkCredential` asserts `secrets.GHCR_PAT`, and it exists because the
+ * original version asserted the opposite. Requiring `secrets.GITHUB_TOKEN` here
+ * would have failed on the first merge with
+ * `denied: permission_denied: write_package` *after* a clean build, because
+ * ghcr.io/kevocado/sports-predictor is user-scoped and not linked to this
+ * repository. That is indistinguishable from a permissions bug and is not one.
  */
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -117,15 +125,58 @@ const checkNoCatchAll = (src: string): void => {
   }
 };
 
+/**
+ * The GHCR login must use a credential this repository can actually push with.
+ *
+ * `GITHUB_TOKEN` would be the target state — a PAT is a credential that outlives
+ * the repo and has to be rotated by hand — but it may only write to packages
+ * LINKED to its own repository, and ghcr.io/kevocado/sports-predictor is not:
+ *
+ *     gh api /user/packages/container/sports-predictor --jq '.repository.full_name'
+ *     -> null
+ *
+ * So the push dies with `denied: permission_denied: write_package` after the
+ * image has already built and tagged correctly, which looks exactly like a
+ * permissions problem: `packages: write` is declared, and it is correct. NFL and
+ * CFB both lost their first deploy this way. Linking a package is a one-time
+ * action in package settings with no API, so nothing in CI can notice.
+ *
+ * The PAT is already a secret on this repo and is what these images have always
+ * been pushed with. If that `gh api` ever returns
+ * "Kevocado/Sports_Predictor", switch the workflow back to
+ * `secrets.GITHUB_TOKEN` and change this check in the same commit.
+ *
+ * Matched on the `password:` field rather than the name appearing anywhere, so
+ * the workflow's own comment can say what the alternative would be. Exactly one,
+ * so a second login step cannot smuggle in a second credential.
+ */
+const checkCredential = (src: string): void => {
+  const body = jobs(src).build;
+  const passwords = [...body.matchAll(/password:[ \t]*\$\{\{[ \t]*secrets\.([A-Z0-9_]+)[ \t]*\}\}/g)].map(
+    (m) => m[1],
+  );
+  // `toEqual` already rejects every case the removed raw-body `not.toMatch` was
+  // there for: `["GITHUB_TOKEN"]` (GITHUB_TOKEN cannot write to an unlinked
+  // package -- it fails with `denied: permission_denied: write_package` after a
+  // clean build, which reads like a permissions problem and is not one) and
+  // `["GHCR_PAT", "GITHUB_TOKEN"]` (two logins). What it cannot do is read the
+  // workflow's own comment, which has to be able to name the alternative.
+  expect(
+    passwords,
+    `GHCR login must use secrets.GHCR_PAT, and only it, while the package is not linked to ` +
+      `this repo; found ${JSON.stringify(passwords)}. GITHUB_TOKEN cannot write to an unlinked ` +
+      `package: it fails with \`denied: permission_denied: write_package\` after a clean build, ` +
+      `which reads like a permissions problem and is not one. Re-check with \`gh api ` +
+      `/user/packages/container/sports-predictor --jq '.repository.full_name'\`: if it returns a ` +
+      `repository, this workflow and this check should both move to GITHUB_TOKEN.`,
+  ).toEqual(["GHCR_PAT"]);
+};
+
 const checkImage = (src: string): void => {
   const j = jobs(src);
   expect(Object.keys(j), "no `build` job to produce the image").toContain("build");
   const body = j.build;
   expect(body, "the build job never logs in to a registry").toContain("docker/login-action");
-  expect(
-    body,
-    "GHCR login must use secrets.GITHUB_TOKEN, not a personal access token",
-  ).toMatch(/password:[ \t]*\$\{\{[ \t]*secrets\.GITHUB_TOKEN[ \t]*\}\}/);
   expect(body, "the registry is not ghcr.io").toMatch(/registry:[ \t]*ghcr\.io/);
   expect(body, `the build must push ${IMAGE}:\${{ github.sha }}`).toContain(`${IMAGE}:\${{ github.sha }}`);
   expect(body, `the build must also push ${IMAGE}:latest`).toContain(`${IMAGE}:latest`);
@@ -213,6 +264,7 @@ const checkNoSecretMaterial = (src: string): void => {
 const CHECKS: Record<string, (s: string) => void> = {
   triggers: checkTriggers,
   catchall: checkNoCatchAll,
+  credential: checkCredential,
   image: checkImage,
   vps: checkVps,
   azure: checkAzureFailsClosed,
@@ -233,11 +285,20 @@ describe("the VPS auto-deploy workflow", () => {
     const mutations: Record<string, [string, string]> = {
       triggers: ["workflow_dispatch:", "workflow_DISABLED:"],
       catchall: [`'${MUST_DEPLOY[0]}'`, "'**'"],
-      image: ["secrets.GITHUB_TOKEN", "secrets.GHCR_PAT"],
+      // A third credential, neither of the two the linkage allows. This is the
+      // mutation the `image` check used to carry, back when the credential
+      // assertion lived inside it.
+      credential: ["secrets.GHCR_PAT", "secrets.REGISTRY_TOKEN"],
+      // The registry, which appears exactly once. The image name cannot be used
+      // as the anchor (it is on four lines) and neither tag can: the sha tag is
+      // on the build line and the push line, and `:latest` likewise, so
+      // mutating one leaves `checkImage`'s substring assertion satisfied by the
+      // other occurrence.
+      image: ["registry: ghcr.io", "registry: quay.io"],
       vps: [`deploy ${SERVICE} \${{ github.sha }}`, `deploy ${SERVICE}`],
       azure: [GATE_AZURE, "vars.DEPLOY_AZURE != 'false'"],
       shape: [`concurrency: vps-deploy-${SERVICE}`, ` concurrency: vps-deploy-${SERVICE}`],
-      secrets: ["secrets.GITHUB_TOKEN", "secrets.github_token"],
+      secrets: ["secrets.GHCR_PAT", "secrets.ghcr_pat"],
     };
     for (const [name, check] of Object.entries(CHECKS)) {
       expect(() => check(good), `the real workflow fails the ${name} check`).not.toThrow();
@@ -252,6 +313,7 @@ describe("the VPS auto-deploy workflow", () => {
 
   it("deploys on a merge to main", () => checkTriggers(text()));
   it("has no catch-all in the paths filter", () => checkNoCatchAll(text()));
+  it("pushes with a credential this repo can use", () => checkCredential(text()));
   it("builds and pushes the image the stack pulls", () => checkImage(text()));
   it("reaches the VPS and asks for this service", () => checkVps(text()));
   it("leaves Azure off unless asked", () => checkAzureFailsClosed(text()));
