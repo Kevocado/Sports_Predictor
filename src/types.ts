@@ -107,7 +107,22 @@ export interface PointForecast {
   weekly: PointForecastWeek[];
 }
 
-/** The words B5 ships with the numbers, so the page cannot forget to print them. */
+/**
+ * The words B5 ships with the numbers, so the page cannot forget to print them.
+ *
+ * The index signature is load-bearing, not laziness. The tracker ADDS keys to
+ * this block — `population` arrived after the other six — and the page renders
+ * it by enumerating whatever it is sent. A type that closed the set would let
+ * the next key compile while the page quietly stopped printing it, which is
+ * exactly what happened: the page had a hand-written five-entry list, the
+ * tracker added a sixth, and the sixth reached nobody. The declared keys below
+ * are the ones the page gives a written heading to; anything else renders
+ * under a heading derived from its own name rather than being dropped.
+ *
+ * `sigma_league_points` is the one NUMERIC value in the block. σ is a width and
+ * "13.5" explains nothing on its own, so the page prints it as a number and
+ * prints the sentence beside it.
+ */
 export interface VsMarketMethod {
   sigma_league_points: number;
   sigma_league_meaning: string;
@@ -115,6 +130,34 @@ export interface VsMarketMethod {
   edge: string;
   disagreement: string;
   not_a_profit_claim: string;
+  population: string;
+  [key: string]: string | number | undefined;
+}
+
+/**
+ * Which games the `vs_market` headline covers, and which its week chart does.
+ *
+ * The two are computed over DIFFERENT populations on purpose: the headline is
+ * the whole record (so that it agrees with `n_resolved` and the ATS count two
+ * keys above it), and the chart is one season's elapsed weeks. The tracker
+ * computes the split rather than leaving it to be discovered, and the identity
+ * `n_games_total == n_games_in_weekly + n_games_outside_weekly` is what makes
+ * the block auditable.
+ *
+ * Optional only because the deployed backend can be older than this branch —
+ * a missing block must degrade to no note, never to a throw. It is not
+ * optional in the emitter.
+ */
+export interface VsMarketScope {
+  /** The population label the headline is over, e.g. "all_seasons". */
+  population: string;
+  /** The season the week chart is scoped to; null when nothing names one. */
+  weekly_season: number | null;
+  /** The last week the chart covers; null when the calendar does not say. */
+  weekly_last_week: number | null;
+  n_games_total: number;
+  n_games_in_weekly: number;
+  n_games_outside_weekly: number;
 }
 
 /** One week of the model-against-the-line comparison. */
@@ -146,6 +189,8 @@ export interface VsMarket {
   disagreement: { n: number; hit_rate: number | null; games: string[] };
   weekly: VsMarketWeek[];
   method: VsMarketMethod;
+  /** Absent from a backend older than B5's scope block. See VsMarketScope. */
+  scope?: VsMarketScope;
 }
 
 export interface GamesTrackRecord {

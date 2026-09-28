@@ -1,7 +1,7 @@
 // The track record page: everything the tracker records, every number with its n.
 //
-// WHAT THIS PAGE IS NOT ALLOWED TO DO (all four are PRODUCT.md or a plan
-// constraint, and all four have been true of this file at some point):
+// WHAT THIS PAGE IS NOT ALLOWED TO DO (each is a PRODUCT.md or a plan
+// constraint, and each has been true of this file at some point):
 //
 //  1. Fuse volume into an accuracy. The bar width used to be
 //     `(n_games / max_games) * pct_moneyline_correct * 100`, which draws a
@@ -17,6 +17,14 @@
 //     verbatim rather than trusting a future session to remember it.
 //  4. Carry meaning in colour or a sign alone. Every direction is also a
 //     word: "over-forecast on average", "level with the line".
+//  5. Enumerate the payload, never a list of the keys it used to have. This
+//     file had a hand-written five-entry array of `vs_market.method` keys and
+//     the backend added a sixth -- `population` -- which the page then dropped
+//     without a word, while the test named "prints every method sentence from
+//     the payload, verbatim" iterated the FIXTURE's own object and so could
+//     only ever fail on a key the page already knew. The name claimed the
+//     opposite of what the test could do. A block whose keys grow is rendered
+//     by `Object.entries`; a label map chooses the wording and nothing else.
 //
 // The shapes are in ../types.ts, which is transcribed from the tracker rather
 // than from the design spec, and the two do not fully agree. Read that comment
@@ -32,6 +40,7 @@ import type {
   PointForecast,
   TrackRecord,
   VsMarket,
+  VsMarketScope,
   WeeklyRow,
   YardageTrackRecord,
 } from "../types";
@@ -271,7 +280,7 @@ function WeekSection({ games }: { games: GamesTrackRecord }) {
       blurb="Every elapsed week of the season, including the ones with nothing in them. Each market carries its own count, because a week can grade five games for the moneyline, three for the spread and two for the total."
     >
       {weekly.length === 0 ? (
-        <NotRecorded why="This backend does not report a week-by-week record yet." />
+        <NotRecorded why="No week-by-week record in this response." />
       ) : (
         <>
           <StatTable rows={weekly} columns={columns} rowKey={(r) => String(r.week)} caption="Accuracy by week, per market" />
@@ -526,7 +535,7 @@ function PointsSection({ games }: { games: GamesTrackRecord }) {
         title="Points"
         blurb="What the model predicted in points, against what the game actually produced."
       >
-        <NotRecorded why="This backend does not report a points forecast yet." />
+        <NotRecorded why="No points forecast in this response." />
       </Section>
     );
   }
@@ -588,6 +597,98 @@ function PointsSection({ games }: { games: GamesTrackRecord }) {
   );
 }
 
+/**
+ * The heading for each method key the tracker sends.
+ *
+ * A LABEL MAP, not a list of keys to render. A list of keys to render was the
+ * bug: the backend added a sixth key and the page dropped it silently, while
+ * the test that claimed to cover the block iterated the fixture's own object
+ * and so could only fail on a key the page already knew. Enumerating the
+ * payload is the fix; this map only chooses the WORDING of a heading.
+ */
+const METHOD_LABELS: Record<string, string | undefined> = {
+  sigma_league_points: "League margin σ",
+  sigma_league_meaning: "League margin σ, what it means",
+  implied_probability: "What the line implies",
+  edge: "What edge means",
+  disagreement: "The disagreement cohort",
+  not_a_profit_claim: "What this is not",
+  population: "Who is in this number",
+};
+
+/** The one method value that is a number rather than a sentence. */
+const SIGMA_KEY = "sigma_league_points";
+
+/** An unlabelled key still gets a heading. "hits_the_line" reads as a heading;
+ *  rendering nothing at all is what left a backend key reaching nobody. */
+function methodLabel(key: string): string {
+  return METHOD_LABELS[key] ?? key.replace(/_/g, " ");
+}
+
+/** One method value, printed. A σ is a width, so it prints as a number with a
+ *  unit rather than as a sentence. */
+function methodValue(key: string, value: string | number | undefined): string {
+  if (value == null) return "not in this response";
+  return key === SIGMA_KEY ? `${points(value as number)} points` : String(value);
+}
+
+function MethodBlock({ method }: { method: VsMarket["method"] | undefined }) {
+  // ONE ROW PER KEY IN THE PAYLOAD. The count is the payload's, not this file's,
+  // and the test asserts that against the fixture rather than against a list.
+  const entries = Object.entries(method ?? {});
+  if (entries.length === 0) {
+    return <NotRecorded why="This response does not describe how the comparison is made." />;
+  }
+  return (
+    <dl data-testid="method-block" className="flex flex-col gap-2 rounded-pr border border-pr-rule bg-pr-panel p-4">
+      {entries.map(([key, value]) => (
+        <div key={key} data-testid="method-row">
+          <dt className="text-xs font-semibold uppercase tracking-wide text-pr-text-faint">{methodLabel(key)}</dt>
+          <dd className="mt-0.5 max-w-3xl text-xs leading-relaxed text-pr-text-dim">
+            {methodValue(key, value)}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/**
+ * The reconciliation the backend ships, printed between the chart and the
+ * headline it does not sum to.
+ *
+ * The headline is the whole record and the week table is one season's elapsed
+ * weeks. Without this note the page puts "Games compared: 412" directly above a
+ * table that adds up to 180 and says nothing about it, so the reader has to
+ * discover the gap and guess which number is wrong. The backend computed the
+ * split — and computed `n_games_in_weekly` as the sum of the chart's own rows
+ * rather than as a second count, which is why it cannot drift. The page prints
+ * what it is sent and recomputes nothing: a second count of the same games is
+ * exactly the number that stops agreeing with the thing it describes.
+ */
+function ScopeNote({ scope }: { scope: VsMarketScope }) {
+  const { population, weekly_season, weekly_last_week, n_games_total, n_games_in_weekly, n_games_outside_weekly } = scope;
+  // `weekly_season` is null when nothing in the frame names a season, and the
+  // emitter then groups the window unfiltered — so the table is over every week
+  // number in the record, across seasons. Saying "the current season" there
+  // would be a claim the payload does not make.
+  const window =
+    weekly_season == null
+      ? "every week number in the record, across seasons and not scoped to one"
+      : `the ${weekly_season} season's elapsed weeks`;
+  return (
+    <p data-testid="scope-note" className="max-w-3xl text-xs leading-relaxed text-pr-text-dim">
+      The figures above cover <span className="tr-num">{n_games_total.toLocaleString("en-US")}</span> games — the{" "}
+      <span className="tr-num">{population}</span> population. The week table below accounts for{" "}
+      <span className="tr-num">{n_games_in_weekly.toLocaleString("en-US")}</span> of them, over {window}
+      {weekly_last_week == null ? "" : `, through week ${weekly_last_week}`}.{" "}
+      {n_games_outside_weekly === 0
+        ? "Every game in the headline is in the table."
+        : `${plural(n_games_outside_weekly, "game")} in the headline ${n_games_outside_weekly === 1 ? "falls" : "fall"} outside that window, which is why the table does not add up to the count above.`}
+    </p>
+  );
+}
+
 function MarketSection({ vs_market }: { vs_market: VsMarket | undefined }) {
   if (!vs_market) {
     return (
@@ -596,18 +697,11 @@ function MarketSection({ vs_market }: { vs_market: VsMarket | undefined }) {
         title="Vs the market"
         blurb="The model's probability next to the probability a closing line asserts."
       >
-        <NotRecorded why="This backend does not compare the model against a price yet." />
+        <NotRecorded why="No model-versus-market comparison in this response." />
       </Section>
     );
   }
   const method = vs_market.method;
-  const words: [string, string | undefined][] = [
-    ["League margin σ", method?.sigma_league_meaning],
-    ["What the line implies", method?.implied_probability],
-    ["What edge means", method?.edge],
-    ["The disagreement cohort", method?.disagreement],
-    ["What this is not", method?.not_a_profit_claim],
-  ];
 
   return (
     <Section
@@ -660,55 +754,42 @@ function MarketSection({ vs_market }: { vs_market: VsMarket | undefined }) {
       </div>
 
       {vs_market.weekly?.length > 0 && (
-        <StatTable
-          rows={vs_market.weekly}
-          rowKey={(r) => String(r.week)}
-          caption="Model against the closing line, by week"
-          columns={[
-            { key: "week", label: "Week", value: (r) => r.week },
-            {
-              key: "n",
-              label: "Games",
-              numeric: true,
-              value: (r) => r.n,
-              render: (r) => (r.n > 0 ? <span className="tr-num">{r.n}</span> : <span data-testid="not-compared">Not compared</span>),
-            },
-            { key: "implied", label: "Line implies", numeric: true, value: (r) => r.mean_implied_home_cover_prob, render: (r) => <RateCell value={r.mean_implied_home_cover_prob} n={r.n} /> },
-            { key: "model", label: "Model says", numeric: true, value: (r) => r.mean_model_home_cover_prob, render: (r) => <RateCell value={r.mean_model_home_cover_prob} n={r.n} /> },
-            {
-              key: "edge",
-              label: "Mean edge",
-              numeric: true,
-              firstDir: "asc",
-              value: (r) => r.mean_edge_points,
-              render: (r) => <span className="tr-num">{r.mean_edge_points == null ? NO_VALUE : `${signedPoints(r.mean_edge_points)} pt`}</span>,
-            },
-            { key: "cohort", label: "Cohort", numeric: true, value: (r) => r.disagreement_n, render: (r) => <RateCell value={r.disagreement_hit_rate} n={r.disagreement_n} /> },
-          ]}
-        />
+        <>
+          {vs_market.scope && <ScopeNote scope={vs_market.scope} />}
+          <StatTable
+            rows={vs_market.weekly}
+            rowKey={(r) => String(r.week)}
+            caption="Model against the closing line, by week"
+            columns={[
+              { key: "week", label: "Week", value: (r) => r.week },
+              {
+                key: "n",
+                label: "Games",
+                numeric: true,
+                value: (r) => r.n,
+                render: (r) => (r.n > 0 ? <span className="tr-num">{r.n}</span> : <span data-testid="not-compared">Not compared</span>),
+              },
+              { key: "implied", label: "Line implies", numeric: true, value: (r) => r.mean_implied_home_cover_prob, render: (r) => <RateCell value={r.mean_implied_home_cover_prob} n={r.n} /> },
+              { key: "model", label: "Model says", numeric: true, value: (r) => r.mean_model_home_cover_prob, render: (r) => <RateCell value={r.mean_model_home_cover_prob} n={r.n} /> },
+              {
+                key: "edge",
+                label: "Mean edge",
+                numeric: true,
+                firstDir: "asc",
+                value: (r) => r.mean_edge_points,
+                render: (r) => <span className="tr-num">{r.mean_edge_points == null ? NO_VALUE : `${signedPoints(r.mean_edge_points)} pt`}</span>,
+              },
+              { key: "cohort", label: "Cohort", numeric: true, value: (r) => r.disagreement_n, render: (r) => <RateCell value={r.disagreement_hit_rate} n={r.disagreement_n} /> },
+            ]}
+          />
+        </>
       )}
 
-      {/* Printed from the payload, verbatim. A number nobody can interpret is
-          not a decision aid, and a disclaimer nobody reads is not one either
-          -- so the backend sends the sentences and this page does not get to
-          paraphrase them away. */}
-      <dl className="flex flex-col gap-2 rounded-pr border border-pr-rule bg-pr-panel p-4">
-        {words.map(([label, text]) => (
-          <div key={label}>
-            <dt className="text-xs font-semibold uppercase tracking-wide text-pr-text-faint">
-              {label}
-              {label === "League margin σ" && method?.sigma_league_points != null && (
-                <span className="tr-num ml-1.5 font-normal normal-case text-pr-text-dim">
-                  {points(method.sigma_league_points)} points
-                </span>
-              )}
-            </dt>
-            <dd className="mt-0.5 max-w-3xl text-xs leading-relaxed text-pr-text-dim">
-              {text ?? "This backend does not describe it."}
-            </dd>
-          </div>
-        ))}
-      </dl>
+      {/* Printed from the payload, verbatim, once per key it sent. A number
+          nobody can interpret is not a decision aid, and a disclaimer nobody
+          reads is not one either -- so the backend sends the sentences and this
+          page does not get to paraphrase them away. */}
+      <MethodBlock method={method} />
     </Section>
   );
 }

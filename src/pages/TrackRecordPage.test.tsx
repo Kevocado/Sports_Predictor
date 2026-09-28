@@ -87,6 +87,17 @@ const NFL_RECORD: TrackRecord = {
         { week: 2, tracked: true, n: 1, mean_implied_home_cover_prob: 0.5, mean_model_home_cover_prob: 0.5, mean_edge_points: 0.0, disagreement_n: 0, disagreement_hit_rate: null, games: [] },
         { week: 3, tracked: false, n: 0, mean_implied_home_cover_prob: null, mean_model_home_cover_prob: null, mean_edge_points: null, disagreement_n: 0, disagreement_hit_rate: null, games: [] },
       ],
+      // `_vs_market_scope`. The headline is the whole record; the chart above
+      // is three weeks of it. 2 of the 4 compared games are not in any weekly
+      // row, which is the gap the note has to state.
+      scope: {
+        population: "all_seasons",
+        weekly_season: 2025,
+        weekly_last_week: 3,
+        n_games_total: 4,
+        n_games_in_weekly: 3,
+        n_games_outside_weekly: 1,
+      },
       method: {
         sigma_league_points: 13.5,
         sigma_league_meaning: "NFL final margin is treated as roughly Normal with a standard deviation of 13.5 points.",
@@ -94,6 +105,9 @@ const NFL_RECORD: TrackRecord = {
         edge: "Edge is the model's cover probability minus the probability the closing line implies, in percentage points.",
         disagreement: "The disagreement cohort is the games where the model backed the side the line did not favour.",
         not_a_profit_claim: "This is agreement with a price, not a profit claim. No figure here is a return, a yield, a stake or a cent.",
+        // The sixth key. Added to `_VS_MARKET_METHOD` after this page was
+        // written, and the reason the block is now rendered generically.
+        population: "The headline figure covers every game the tracker holds a line for, in every season. The chart below covers one season's elapsed weeks only, so the two are over different populations on purpose.",
       },
     },
   },
@@ -468,11 +482,80 @@ describe("vs the market", () => {
 
   it("prints every method sentence from the payload, verbatim", async () => {
     await renderPage();
-    for (const sentence of Object.values(NFL_RECORD.games.vs_market!.method).filter((v) => typeof v === "string")) {
+    const method = NFL_RECORD.games.vs_market!.method;
+    const entries = Object.entries(method);
+
+    // ONE ROW PER KEY, and the count is the PAYLOAD's. This is the assertion
+    // with teeth in the direction that matters: a page that renders a
+    // hand-written list of the keys it knows passes while the tracker sends a
+    // key it does not, which is not hypothetical — `population` is the sixth
+    // key and the five-entry array this replaced dropped it without a word.
+    // The old version of this test iterated the fixture's own object, so it
+    // could only fail on a key the page already knew.
+    expect(screen.getAllByTestId("method-row")).toHaveLength(entries.length);
+
+    // σ is the one value that is a number rather than a sentence: it prints as
+    // a width with a unit, and it prints AT ALL.
+    const sentences = entries.filter(([key]) => key !== "sigma_league_points");
+    expect(sentences).toHaveLength(entries.length - 1);
+    for (const [, sentence] of sentences) {
       expect(screen.getByText(sentence as string)).toBeInTheDocument();
     }
-    // σ_league as a number, next to what it means.
-    expect(screen.getByText("13.5 points")).toBeInTheDocument();
+    expect(screen.getByText(`${method.sigma_league_points} points`)).toBeInTheDocument();
+  });
+
+  it("renders a method key it has no label for, rather than dropping it", async () => {
+    // The failure mode of the hard-coded list, reached directly. A key this
+    // file has never heard of gets a heading derived from its own name and its
+    // sentence verbatim, and the row count moves with the payload.
+    trackRecord.mockResolvedValue({
+      ...NFL_RECORD,
+      games: {
+        ...NFL_RECORD.games,
+        vs_market: {
+          ...NFL_RECORD.games.vs_market!,
+          method: {
+            ...NFL_RECORD.games.vs_market!.method,
+            calibration_drift: "Mean error of the implied probability against what happened.",
+          },
+        },
+      },
+    });
+    await renderPage();
+    const method = NFL_RECORD.games.vs_market!.method;
+    expect(screen.getAllByTestId("method-row")).toHaveLength(Object.keys(method).length + 1);
+    expect(screen.getByText("calibration drift")).toBeInTheDocument();
+    expect(screen.getByText("Mean error of the implied probability against what happened.")).toBeInTheDocument();
+  });
+
+  it("says which games the headline covers and which the week table does", async () => {
+    await renderPage();
+    const scope = NFL_RECORD.games.vs_market!.scope!;
+    const note = screen.getByTestId("scope-note");
+    expect(note).toHaveTextContent(`${scope.n_games_total} games`);
+    expect(note).toHaveTextContent(scope.population);
+    expect(note).toHaveTextContent(`accounts for ${scope.n_games_in_weekly} of them`);
+    expect(note).toHaveTextContent("the 2025 season's elapsed weeks, through week 3");
+    expect(note).toHaveTextContent("1 game in the headline falls outside that window");
+    // The audit identity the block exists to be auditable by, on the fixture
+    // the page is rendering: the note is not a second opinion, it is the sum.
+    expect(scope.n_games_total).toBe(scope.n_games_in_weekly + scope.n_games_outside_weekly);
+    // The count the note reconciles is the count on the tile, not a new number.
+    const tile = screen.getByText("Games compared").parentElement!;
+    expect(within(tile).getByText(String(scope.n_games_total))).toBeInTheDocument();
+  });
+
+  it("renders the comparison when the response carries no scope block at all", async () => {
+    // A backend older than the scope block. The note goes; the section does
+    // not, because a missing optional block must never be a thrown page.
+    const vs_market = { ...NFL_RECORD.games.vs_market! };
+    delete vs_market.scope;
+    trackRecord.mockResolvedValue({ ...NFL_RECORD, games: { ...NFL_RECORD.games, vs_market } });
+    await renderPage();
+    expect(screen.queryByTestId("scope-note")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("method-row")).toHaveLength(
+      Object.keys(NFL_RECORD.games.vs_market!.method).length,
+    );
   });
 
   it("carries the no-profit statement from the payload, not from a string in this file", async () => {
@@ -538,9 +621,13 @@ describe("a backend that has not shipped the newer blocks", () => {
     // the moneyline's.
     const ats = screen.getByText("Spread (ATS) accuracy").closest("div")!;
     expect(within(ats).getByText("grade count not reported")).toBeInTheDocument();
-    // And each absent block says why, instead of rendering nothing at all.
+    // And each absent block says so, instead of rendering nothing at all.
+    // The copy is about the RESPONSE and not about the backend: a missing key
+    // is all this page can see, and a page defect that read the wrong key would
+    // otherwise print a false claim about what CFB can do.
     expect(screen.getAllByTestId("not-recorded").length).toBeGreaterThanOrEqual(3);
-    expect(screen.getByText("This backend does not report a week-by-week record yet.")).toBeInTheDocument();
+    expect(screen.getByText("No week-by-week record in this response.")).toBeInTheDocument();
+    expect(screen.queryByText(/This backend does not/)).not.toBeInTheDocument();
   });
 });
 
