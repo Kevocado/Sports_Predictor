@@ -1,9 +1,14 @@
 name: tests
 
-# Sports_Predictor had no test workflow at all: the only other workflow is
-# `deploy-azure.yml`, which fires on push to main and deploys. So nothing gated a
-# commit here -- a red suite could be merged and would only surface in the deploy
-# log. This is the same gap closed for NFL, CFB and PL.
+# Sports_Predictor had no test workflow at all, and nothing else gated a commit:
+# `deploy-azure.yml` is `workflow_dispatch`-only (it was disabled by f490633,
+# "ci: stop the Azure deploy from firing on merge"), so there was no check on a PR
+# at all. A red suite could be merged and would first surface in a PR review or a
+# local run, not in a deploy log. This is the same gap closed for NFL, CFB and PL.
+#
+# The comment originally said deploy-azure fired on push to main and deploys. It had
+# not for two commits before this file was written; the claim was copied from the
+# other repos' workflows without checking this one.
 on:
   push:
     branches: [main]

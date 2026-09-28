@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
-import { yardageBreakdown, GameDetailModal } from "./GameDetailModal";
+import { yardageBreakdown, GameDetailModal, MARKET_LABEL } from "./GameDetailModal";
 import type { GameSummary, PlayerPropPrediction, SportApi } from "../types";
 
 vi.mock("../context/SportContext", () => ({
@@ -161,3 +161,52 @@ describe("GameDetailModal yardage panel", () => {
   });
 });
 
+// A label bound to the wrong number is the one thing the relabelling exists to
+// prevent, and no assertion here could catch it. Swapping the labels for
+// `passing_yards` and `rushing_yards` produced real rendered output reading
+// "Ravens Rush yds 280" for a quarterback, with all the other tests green.
+//
+// The suite pins that the label *strings* appear, which is "a value was produced".
+// This pins that each label appears next to its own value and not a neighbour's —
+// the actual property under review.
+describe('yardageBreakdown label binding', () => {
+  const passingProp = {
+    player_id: 'p1', player_name: 'Lamar Jackson', position: 'QB', recent_team: 'BAL',
+    passing_yards: 280, rushing_yards: 0, receiving_yards: 0,
+  };
+  const rushingProp = {
+    player_id: 'p2', player_name: 'Derrick Henry', position: 'RB', recent_team: 'BAL',
+    passing_yards: 0, rushing_yards: 120, receiving_yards: 0,
+  };
+
+  it('binds each market label to its own value', () => {
+    const markets = yardageBreakdown([passingProp, rushingProp] as never[]);
+
+    const passing = markets.find(m => m.market === 'passing_yards');
+    const rushing = markets.find(m => m.market === 'rushing_yards');
+
+    expect(passing?.yards).toBe(280);
+    expect(rushing?.yards).toBe(120);
+    // The rendered label has to travel with its own number, or the panel states
+    // that a quarterback rushed for 280 yards.
+    expect(`${MARKET_LABEL.passing_yards} ${passing?.yards}`).toBe('Pass yds 280');
+    expect(`${MARKET_LABEL.rushing_yards} ${rushing?.yards}`).toBe('Rush yds 120');
+  });
+
+  it('counts a player once per market, not once per (player, market) pair', () => {
+    // A player with a real number in two yardage markets contributes to both, which is
+    // correct -- and is exactly why the "one yardage market per position" claim this
+    // PR removed was never safe to rely on.
+    const twoMarket = {
+      player_id: 'p3', player_name: 'Two Market', position: 'RB', recent_team: 'BAL',
+      passing_yards: 40, rushing_yards: 60, receiving_yards: 0,
+    };
+
+    const markets = yardageBreakdown([twoMarket] as never[]);
+    const passing = markets.find(m => m.market === 'passing_yards');
+    const rushing = markets.find(m => m.market === 'rushing_yards');
+
+    expect(passing).toEqual({ market: 'passing_yards', yards: 40, n: 1 });
+    expect(rushing).toEqual({ market: 'rushing_yards', yards: 60, n: 1 });
+  });
+});
