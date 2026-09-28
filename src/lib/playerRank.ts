@@ -10,10 +10,29 @@ export function isSkillPosition(position: string): position is SkillPosition {
   return (POSITION_ORDER as readonly string[]).includes(position);
 }
 
-// Every player prop only ever has ONE of these three populated (the model
-// only predicts the yardage market that matches the player's own
-// position -- see NFL/CFB's models/player_props.py POSITION_YARDAGE_MARKET)
-// so this is really just "whichever one exists," not a real fallback chain.
+// Whichever of the three yardage fields this prop carries, defaulting to 0 for a
+// prop with none (a kicker). Reads as a fallback chain, so the reason it is safe
+// to index by position alone has to be stated precisely -- the earlier comment
+// here did not, and it contradicted the symbol it cited.
+//
+// It is NOT true that the model projects one market per position. NFL/CFB
+// `models/player_props.py::POSITION_MARKETS` is a `dict[str, list[str]]` whose
+// own comment reads "Each position can now have multiple markets (e.g. RB gets
+// both rushing_yards and carries)", `predict_props` loops
+// `for market in POSITION_MARKETS.get(position, [])`, and RB actually gets
+// `[rushing_yards, carries]` while WR and TE get
+// `[receiving_yards, receptions]`. So a position has several markets, and
+// `PlayerPropPrediction` carries them all -- `carries` and `receptions` are
+// populated too and are simply not yardage, which is why this skips them.
+//
+// What holds is narrower, and it is a fact about today's table rather than a
+// guarantee of the symbol: of the three *yardage* fields, each position is
+// currently given at most one (QB passing, RB rushing, WR/TE receiving), so in
+// practice this is "whichever one exists". Nothing enforces that. If a position
+// were ever given two yardage markets the `??` chain returns the first and
+// silently drops the other -- keyYardage would need to sum, or take a market
+// argument, at that point. `GameDetailModal.yardageBreakdown` already has to
+// handle the multi-market case and reports one row per market for that reason.
 export function keyYardage(prop: PlayerPropPrediction): number {
   return prop.passing_yards ?? prop.rushing_yards ?? prop.receiving_yards ?? 0;
 }
