@@ -404,10 +404,20 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
               #8's figure and its explanation; this keeps A4's. */}
           <section>
             {propsLoading && <p className="text-xs text-sp-text-faint">Loading player projections…</p>}
+            {/* Two different gaps, two different sentences, because the game
+                either has no props at all or has props the model does not
+                project. A4 deleted the position filter buttons, and with them
+                the filter this branch's sentence used to name: it read "No
+                players at this position for this game", and there has been no
+                position left to read that against since. The branch is now
+                reachable only when `gameProps` is non-empty and every one of
+                them plays K / OL / DL / P — positions with no market, so
+                `buildBoxScoreGroups` has no group to render. So the sentence
+                names the thing that is actually missing. */}
             {!propsLoading && boxScoreGroups.length === 0 && (
               <p className="text-xs text-sp-text-faint rounded-lg bg-sp-850/40 p-3 border border-sp-border/40">
                 {gameProps && gameProps.length > 0
-                  ? "No players at this position for this game."
+                  ? "No modelled positions for this game. Every player the feed returned is at a position the model does not project (kicker, offensive or defensive line), and the box score only covers QB, RB, WR and TE."
                   : "No player projection props available for this specific game yet. (Ensure your backend player-props route catches external API timeouts gracefully)."}
               </p>
             )}

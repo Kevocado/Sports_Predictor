@@ -133,13 +133,32 @@ describe("GameDetailModal's predicted box score", () => {
     expect([...cells].map((c) => c.textContent)).toEqual(["84.2", "—", "30"]);
   });
 
-  it("replaces the Team Yardage cards with one totals row per team, away then home", async () => {
+  it("keeps the yardage block and adds one totals row per team under each position group, away then home", async () => {
+    // This used to be called "replaces the Team Yardage cards ...", and the
+    // removal it described was reverted in 41c79ad: the "Projected Yardage by
+    // Market" block is back, because `BoxScoreTotal` is `{ label, values }`
+    // rendered as given, so the shared component cannot supply a per-team
+    // yardage, and the caller's `teamSubtotals` run per POSITION group — one
+    // team's yardage is spread over four tables. What is actually asserted is
+    // the WR group's own totals rows, in the game's away-then-home order, with
+    // the yardage block still above them.
     await renderModal([
       prop("r1", "Ravens", "WR", { receiving_yards: 60 }),
       prop("r2", "Ravens", "WR", { receiving_yards: 40 }),
       prop("k1", "Chiefs", "WR", { receiving_yards: 30 }),
     ]);
-    expect(screen.queryByText("Team Yardage Predictions")).not.toBeInTheDocument();
+    // The block is still on the page. It is not a per-team total either — it is
+    // per market, with the count it summed — which is why it is not redundant
+    // with the rows below. (A4's version of this line asserted the absence of
+    // the heading "Team Yardage Predictions", a string #8 had already renamed
+    // to "Projected Yardage by Market" and which appears nowhere in src/: the
+    // assertion could not fail, while the block it claimed to negate rendered
+    // on the same screen.)
+    const yardage = within(screen.getByTestId("yardage-by-market"));
+    expect(yardage.getByText("Projected Yardage by Market")).toBeInTheDocument();
+    expect(yardage.getByText(/not team total yards/i)).toBeInTheDocument();
+    // WR is the only position on the roster here, so the two totals below are
+    // that group's, not a Ravens yardage line and a Chiefs yardage line.
     const totals = screen.getAllByTestId("box-score-subtotal");
     expect(totals).toHaveLength(2);
     expect(totals[0]).toHaveTextContent("Chiefs total30");
@@ -153,6 +172,24 @@ describe("GameDetailModal's predicted box score", () => {
     expect(await screen.findByText(/No player projection props available for this specific game yet/)).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.queryByTestId("box-score")).not.toBeInTheDocument();
+  });
+
+  it("names the empty state after what is missing, not after a position filter", async () => {
+    // The branch the other empty state does not cover: the game DID return
+    // props, and every one of them plays a position the model does not project
+    // (K / OL / DL / P), so there is no group to render. A4 retired the
+    // position filter the sentence here used to name — it read "No players at
+    // this position for this game", and no position control has existed since,
+    // so it pointed at something the reader cannot see. It had no test, which is
+    // how a stale sentence survives the change that removed its subject.
+    render(<GameDetailModal game={game} api={mockApi({ playerProps: vi.fn().mockResolvedValue([
+      prop("k", "Ravens", "K"), prop("ol", "Chiefs", "OL"),
+    ]) })} onClose={() => {}} />);
+    expect(await screen.findByText(/No modelled positions for this game/)).toBeInTheDocument();
+    // The sentence has to survive a reword of the box score, but not one that
+    // reaches for a control again.
+    expect(screen.queryByText(/at this position/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 });
 

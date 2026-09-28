@@ -147,14 +147,16 @@ describe("GameDetailModal yardage panel", () => {
     // A kicker: no yardage market, and no position group in the box score
     // either, so nothing about this player renders a name anywhere. Since A4
     // removed the flat "Model Player Projections" list, there is no longer a
-    // player name on the page to wait for -- the modal prints its no-props
-    // state instead, and that is what the wait below is for. The assertion this
-    // test exists for is unchanged. The wording is matched loosely on purpose:
-    // it is A4's, it is not this test's subject, and a reword should not fail a
-    // test about the yardage block.
+    // player name on the page to wait for -- the modal prints its no-modelled-
+    // positions state instead, and that is what the wait below is for. The
+    // assertion this test exists for is unchanged. The wording is matched
+    // loosely on purpose: it is A4's, it is not this test's subject, and a
+    // reword should not fail a test about the yardage block. (The first
+    // alternative was "No players at this position", a sentence naming the
+    // position filter A4 deleted; it was reworded, not the branch.)
     const api = mockApi([{ player_id: "p", player_name: "p", recent_team: "Ravens", position: "K", anytime_td_prob: 0.1 }]);
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByText(/No players at this position|No player projection props available/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/No modelled positions for this game|No player projection props available/)).toBeInTheDocument());
     expect(screen.queryByText(/Projected Yardage/i)).not.toBeInTheDocument();
   });
 });
