@@ -294,43 +294,56 @@ describe("GameDetailModal on a final", () => {
 });
 
 describe("GameDetailModal and the plain-English panel", () => {
-  const explanation = {
-    headline: "Baltimore are the slight favourites, but this is close to a coin flip.",
-    sections: [{ market: "result", title: "Why Baltimore", text: "The model has them at 62%." }],
-    source: "llm" as const,
-    model: "gpt-4o-mini",
+  // Flow-first since the rollout: the summary sits behind the button and
+  // nothing is fetched until a reader asks. The v1 `headline`/`sections`
+  // shape these tests used to send is no longer rendered by any panel (the
+  // union arm was removed), so the fixture below is a v2 answer.
+  const answer = {
+    verdict: "Baltimore are the pick.",
+    band: "moderate",
+    factors: [{ key: "moneyline", direction: "neutral", headline: "Why", text: "Numbers." }],
+    source: "template" as const,
+    model: "",
     generated_at: new Date().toISOString(),
     sport: "nfl",
     pick_timing: "pre_kickoff" as const,
   };
 
-  it("fetches the summary for this game and shows its headline", async () => {
-    const explain = vi.fn().mockResolvedValue(explanation);
+  it("fetches nothing until asked, then shows the summary for this game", async () => {
+    const explain = vi.fn().mockResolvedValue(answer);
     render(<GameDetailModal game={game} api={mockApi()} onClose={() => {}} explain={explain} />);
-    expect(await screen.findByText(explanation.headline)).toBeInTheDocument();
+    expect(explain).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /ai summary/i }));
+    expect(await screen.findByText("Baltimore are the pick.")).toBeInTheDocument();
     expect(explain).toHaveBeenCalledWith("nfl", game.game_id);
   });
 
-  it("shows the rest of the modal while the summary is still being written", async () => {
-    // The summary is the first thing in the modal, so if it gated the rest the
-    // whole detail view would sit empty behind a spinner.
-    let release: (v: typeof explanation) => void = () => {};
-    const explain = vi.fn().mockReturnValue(new Promise<typeof explanation>((r) => { release = r; }));
+  it("shows the flow and the rest of the modal while the summary is still being written", async () => {
+    // No skeleton: the flow is the thing on screen while the request is in
+    // flight, so there is no frame where the panel is empty.
+    let release: (v: typeof answer) => void = () => {};
+    const explain = vi.fn().mockReturnValue(new Promise<typeof answer>((r) => { release = r; }));
     render(<GameDetailModal game={game} api={mockApi()} onClose={() => {}} explain={explain} />);
-    expect(screen.getByText("Writing the summary…")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /ai summary/i }));
+    expect(screen.getByTestId("fixture-flow")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Writing…" })).toBeDisabled();
     expect(screen.getByText("Game Detail & Model Projections")).toBeInTheDocument();
     expect(await screen.findByText("Ravens")).toBeInTheDocument();
-    release(explanation);
-    expect(await screen.findByText(explanation.headline)).toBeInTheDocument();
+    release(answer);
+    expect(await screen.findByText("Baltimore are the pick.")).toBeInTheDocument();
   });
 
   it("says the summary failed and offers a retry that asks again", async () => {
     const explain = vi.fn().mockRejectedValue(new Error("explainer down"));
     render(<GameDetailModal game={game} api={mockApi()} onClose={() => {}} explain={explain} />);
+    fireEvent.click(screen.getByRole("button", { name: /ai summary/i }));
     const retry = await screen.findByRole("button", { name: "Try again" });
-    explain.mockResolvedValue(explanation);
+    // The flow is still on screen beside the retry, not an error panel.
+    expect(screen.getByTestId("fixture-flow")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    explain.mockResolvedValue(answer);
     fireEvent.click(retry);
-    expect(await screen.findByText(explanation.headline)).toBeInTheDocument();
+    expect(await screen.findByText("Baltimore are the pick.")).toBeInTheDocument();
     expect(explain).toHaveBeenCalledTimes(2);
   });
 
