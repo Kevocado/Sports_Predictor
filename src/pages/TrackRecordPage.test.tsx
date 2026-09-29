@@ -873,7 +873,7 @@ describe("the section nav", () => {
     const nav = screen.getByRole("navigation", { name: /track record sections/i });
     const hrefs = [...nav.querySelectorAll("a")].map((a) => a.getAttribute("href")!);
     expect(hrefs).toEqual([
-      "#tr-headline", "#tr-week", "#tr-props", "#tr-yards", "#tr-position", "#tr-points", "#tr-market",
+      "#tr-headline", "#tr-all-picks", "#tr-week", "#tr-props", "#tr-yards", "#tr-position", "#tr-points", "#tr-market",
     ]);
     for (const href of hrefs) {
       const id = href.slice(1);
