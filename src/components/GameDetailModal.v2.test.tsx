@@ -143,6 +143,9 @@ async function show(
       explain={explain}
     />,
   );
+  // Flow-first since the rollout: the summary the assertions below read sits
+  // behind the button, so every test asks for it. One funnel, so one press.
+  fireEvent.click(screen.getByRole("button", { name: /ai summary/i }));
   await screen.findByText(/Baltimore are the pick/);
   return out;
 }
@@ -390,5 +393,22 @@ describe("an unplaceable pick fails closed, in the de-emphasis as well as the ac
     // above is about the key resolving rather than about selection being inert.
     fireEvent.click(screen.getByTestId("factor-moneyline"));
     expect(screen.getByTestId("factor-moneyline")).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+describe("the flow stands alone when the explainer is unreachable", () => {
+  it("shows the flow's text with no request made and no error in its place", async () => {
+    // The explainer rejects: a dead container, a proxy 502, a timeout. The
+    // modal must still say what it knows from its own data, and must not
+    // spend a request it was never asked to make.
+    const explain = vi.fn().mockRejectedValue(new Error("unreachable"));
+    render(<GameDetailModal game={game} api={mockApi()} onClose={() => {}} explain={explain} />);
+    expect(await screen.findByTestId("fixture-flow")).toBeInTheDocument();
+    expect(screen.getByText("Ravens vs Chiefs")).toBeInTheDocument();
+    expect(explain).not.toHaveBeenCalled();
+    // The button offers the summary; no alert, no empty panel.
+    expect(screen.getByRole("button", { name: /ai summary/i })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByTestId("fixture-summary")).toBeNull();
   });
 });

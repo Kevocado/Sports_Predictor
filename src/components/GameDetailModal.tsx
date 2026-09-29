@@ -4,12 +4,15 @@
 // that the modal and the explain call sites import the type from the panel that
 // declares it. So ours' import line is not a preference, it is a door that is no
 // longer there; theirs' is the only one that resolves.
-import { BoxScore, ExplainerPanel, pct, spread } from "../predictor-ui";
+import { BoxScore, FixtureExplainer, pct, spread } from "../predictor-ui";
 import type { Explanation } from "../predictor-ui";
-// The v2 panel's figures, derived rather than fetched. Kept from
-// origin/v2-wire: A4 replaced the player-props area and never touched this.
-import { barPick, panelFacts } from "../lib/panelFacts";
-import { useCallback, useEffect, useMemo, useState } from "react";
+// The v2 panel's figures, derived rather than fetched, from the SHARED adapter:
+// the panel renders no figure of its own, so this mapping is where the
+// explanation meets this site's prediction response. The pick translation the
+// bar depends on lives in the shared component now, applied against the same
+// segments it draws.
+import { panelFacts } from "../predictor-ui/lib/panelFacts";
+import { useEffect, useMemo, useState } from "react";
 import type { GamePrediction, GameSummary, GameVerdict, HeadToHead as HeadToHeadData, PlayerPropPrediction, SportApi, TeamForm, WeekPrediction } from "../types";
 import { TeamName } from "./TeamName";
 import { MarketBar } from "./MarketBar";
@@ -114,7 +117,7 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
   // `panelFacts` allocates a new array on every call and the panel takes those
   // arrays as props — without this the tiles and segments are a fresh identity on
   // every render, which re-renders the whole panel whenever anything else moves.
-  const panel = useMemo(() => panelFacts(game, prediction), [game, prediction]);
+  const panel = useMemo(() => panelFacts({ kind: "SP", game, prediction }), [game, prediction]);
   const [predictionError, setPredictionError] = useState<string | null>(null);
   const [allProps, setAllProps] = useState<PlayerPropPrediction[] | null>(null);
   const [propsLoading, setPropsLoading] = useState(true);
@@ -122,42 +125,54 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
   const [homeForm, setHomeForm] = useState<TeamForm | null>(null);
   const [awayForm, setAwayForm] = useState<TeamForm | null>(null);
   const [h2h, setH2h] = useState<HeadToHeadData | null>(null);
-  const [summary, setSummary] = useState<Explanation | null>(null);
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [summaryError, setSummaryError] = useState(false);
   const isFinal = game.home_score != null && game.away_score != null;
 
-  // The summary is fetched on its own and never gates the rest of the modal:
-  // it is the first thing on screen, so anything that waited for it would
-  // leave the whole detail view empty behind a spinner.
-  const loadSummary = useCallback(() => {
-    if (!explain) return;
-    let cancelled = false;
-    setSummaryLoading(true);
-    setSummaryError(false);
-    explain(sport, game.game_id)
-      .then((r) => { if (!cancelled) setSummary(r); })
-      .catch(() => { if (!cancelled) { setSummary(null); setSummaryError(true); } })
-      .finally(() => { if (!cancelled) setSummaryLoading(false); });
-    return () => { cancelled = true; };
-  }, [explain, sport, game.game_id]);
-
-  useEffect(() => loadSummary(), [loadSummary]);
-
-  // The answer's pick, restated in the vocabulary the bar above is drawn in.
-  //
-  // The bar joins the pick to a segment BY LABEL, and the service's wording and
-  // this site's segment labels are two independent call sites that happen to
-  // agree today: NFL and CFB both build the pick from the same `game["home_team"]`
-  // string this site labels segments with. Nothing in the type system connects
-  // them, so a reword on the service's side ("Ravens win", the shape PL ships)
-  // un-accents every bar in the app while the verdict sentence above still names
-  // a pick. `barPick` is the guard, and it fails closed. Derived, not fetched,
-  // and memoised so the panel is not re-rendered by an identity change here.
-  const wired = useMemo(() => {
-    if (!summary || !("factors" in summary) || !summary.pick) return summary;
-    return { ...summary, pick: barPick(summary.pick, panel.segments) };
-  }, [summary, panel.segments]);
+  // The flow's facts: what this site already has, no request. The pick is the
+  // leading side of the site's own probabilities — reading the numbers, not
+  // grading them — and every field the flow can word is present only when the
+  // data carries it: no score before there is one, no result before the final,
+  // no rightness before the verdict is reconciled. The flow never claims more
+  // than the bundle holds, because a sentence it cannot support is not rendered
+  // at all.
+  const finite = (x: unknown): number | undefined =>
+    typeof x === "number" && Number.isFinite(x) ? x : undefined;
+  const flowBundle = useMemo(() => {
+    const hw = finite(prediction?.home_win_prob);
+    const aw = finite(prediction?.away_win_prob);
+    // Rightness arrives with the reconciled verdict, which loads after the
+    // modal opens; until then the finished flow states the result and says
+    // nothing about the pick, rather than grading unreconciled numbers.
+    const wasRight = verdict?.moneyline?.hit;
+    const pick =
+      hw !== undefined && aw !== undefined
+        ? {
+            label: hw >= aw ? game.home_team : game.away_team,
+            prob: hw >= aw ? hw : aw,
+            ...(typeof wasRight === "boolean" ? { was_right: wasRight } : {}),
+          }
+        : undefined;
+    const score =
+      game.home_score != null && game.away_score != null
+        ? { home: game.home_score, away: game.away_score }
+        : undefined;
+    return {
+      home_team: game.home_team,
+      away_team: game.away_team,
+      market_line: finite(game.spread_line) ?? null,
+      home_win_prob: hw,
+      away_win_prob: aw,
+      pick,
+      score,
+      result: !score
+        ? undefined
+        : score.home === score.away
+          ? "draw"
+          : score.home > score.away
+            ? "home_win"
+            : "away_win",
+    };
+  }, [game, prediction, verdict]);
+  const flowState = isFinal ? "finished" : "pre-game";
 
   useEffect(() => {
     let cancelled = false;
@@ -236,21 +251,22 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
         <div className="overflow-y-auto px-6 py-6 space-y-6">
 
           {/* In plain English — first, because it is the one-screen answer.
-              Hidden entirely when there is no explainer, rather than shown
-              empty. */}
+              The flow renders from facts this modal already holds, with no
+              request; the AI summary sits behind the button and costs nothing
+              until a reader asks. Hidden entirely when there is no explainer,
+              rather than shown empty. */}
           {explain && (
-            <ExplainerPanel
-              data={wired}
-              loading={summaryLoading}
-              error={summaryError}
-              onRetry={() => loadSummary()}
-              // The figures the panel draws, from this site's OWN prediction
+            <FixtureExplainer
+              sport={sport}
+              state={flowState}
+              bundle={flowBundle}
+              request={() => explain(sport, game.game_id)}
+              // The figures the summary draws, from this site's OWN prediction
               // response rather than from the explanation. The panel is handed
               // numbers and renders them; it must never be the thing that
               // decides what the numbers are, or the explanation and the
               // prediction could disagree on screen.
-              tiles={panel.tiles}
-              segments={panel.segments}
+              extras={{ tiles: panel.tiles, segments: panel.segments }}
             />
           )}
 
