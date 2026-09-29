@@ -1,4 +1,4 @@
-// Synced from predictor-ui@2599287e15ef. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
+// Synced from predictor-ui@f8e53df1c14c. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
 import type { ReactNode } from "react";
 
 export function StatTile({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
