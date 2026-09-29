@@ -429,7 +429,7 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
               <p className="text-xs text-sp-text-faint rounded-lg bg-sp-850/40 p-3 border border-sp-border/40">
                 {gameProps && gameProps.length > 0
                   ? "No modelled positions for this game. Every player the feed returned is at a position the model does not project (kicker, offensive or defensive line), and the box score only covers QB, RB, WR and TE."
-                  : "No player projection props available for this specific game yet. (Ensure your backend player-props route catches external API timeouts gracefully)."}
+                  : "No player projection props available for this specific game yet."}
               </p>
             )}
             {/* A table per position, because each position has its own markets.
