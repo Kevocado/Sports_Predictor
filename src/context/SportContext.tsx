@@ -10,12 +10,24 @@ interface SportContextValue {
 
 const SportContext = createContext<SportContextValue | null>(null);
 
+/** The sport named in the URL (?sport=nfl|cfb); anything else is NFL. */
+export function sportFromSearch(search: string): Sport {
+  return new URLSearchParams(search).get("sport") === "cfb" ? "cfb" : "nfl";
+}
+
 export function SportProvider({ children }: { children: ReactNode }) {
-  const [sport, setSport] = useState<Sport>("nfl");
-  const value = useMemo<SportContextValue>(
-    () => ({ sport, setSport, api: sport === "nfl" ? nflApi : cfbApi }),
-    [sport],
-  );
+  // The URL owns the sport, so the family switcher's links, Back and shared
+  // links all land on the right sport.
+  const [sport, setSportState] = useState<Sport>(() => sportFromSearch(window.location.search));
+  const value = useMemo<SportContextValue>(() => {
+    const setSport = (next: Sport) => {
+      const params = new URLSearchParams(window.location.search);
+      params.set("sport", next);
+      window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+      setSportState(next);
+    };
+    return { sport, setSport, api: sport === "nfl" ? nflApi : cfbApi };
+  }, [sport]);
   return <SportContext.Provider value={value}>{children}</SportContext.Provider>;
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
-import { yardageBreakdown, GameDetailModal } from "./GameDetailModal";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import { yardageBreakdown, GameDetailModal, MARKET_LABEL } from "./GameDetailModal";
 import type { GameSummary, PlayerPropPrediction, SportApi } from "../types";
 
 vi.mock("../context/SportContext", () => ({
@@ -62,9 +62,38 @@ describe("yardageBreakdown", () => {
     const broken = { ...qb("Lamar", 280), passing_yards: undefined } as PlayerPropPrediction;
     expect(yardageBreakdown([broken])).toEqual([]);
   });
+
+  it("ignores a NaN yardage rather than poisoning the market sum", () => {
+    // `typeof NaN === "number"`, so a type check alone lets it through. It then
+    // renders as `NaN` and makes the whole market total NaN, so one bad row
+    // destroys every other player's figure in the panel.
+    const nan = { ...qb("Lamar", 280), passing_yards: NaN } as PlayerPropPrediction;
+    expect(yardageBreakdown([nan])).toEqual([]);
+    const mixed = yardageBreakdown([nan, qb("Tua", 250)]);
+    expect(mixed).toHaveLength(1);
+    expect(mixed[0].yards).toBe(250);
+  });
 });
 
 describe("GameDetailModal yardage panel", () => {
+  /**
+   * The block itself, not the modal.
+   *
+   * Since A4 the modal also carries a predicted box score, whose QB column
+   * header is also "Pass yds" and whose per-position totals row is also the sum
+   * of that market for the roster. So on one screen the same label and the same
+   * number legitimately appear twice, and a bare `getByText("Pass yds")` no
+   * longer says which of the two it meant -- it threw "Found multiple
+   * elements". Scoping the query to this block is what keeps the assertion
+   * about the block, which is what the test names. Every string asserted here
+   * is unchanged; what changed is that the query can no longer be satisfied by
+   * the box score. The mutation these tests exist to catch
+   * (`Math.round(market.yards * 2)`) still fails all of them.
+   */
+  function panel() {
+    return within(screen.getByTestId("yardage-by-market"));
+  }
+
   it("does not present a single number labelled as the team's total", async () => {
     const api = mockApi([qb("Lamar", 280), rb("Mark", 90), wr("Zay", 110)]);
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
@@ -76,9 +105,31 @@ describe("GameDetailModal yardage panel", () => {
     const api = mockApi([qb("Lamar", 280), rb("Mark", 90), wr("Zay", 110)]);
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
     await waitFor(() => expect(screen.getByText("Lamar")).toBeInTheDocument());
-    expect(screen.getByText("Pass yds")).toBeInTheDocument();
-    expect(screen.getByText("Rush yds")).toBeInTheDocument();
-    expect(screen.getByText("Rec yds")).toBeInTheDocument();
+    expect(panel().getByText("Pass yds")).toBeInTheDocument();
+    expect(panel().getByText("Rush yds")).toBeInTheDocument();
+    expect(panel().getByText("Rec yds")).toBeInTheDocument();
+  });
+
+  it("renders the actual projected yardage, not just the labels", async () => {
+    // The label-only version of this test passed with the render mutated to
+    // `Math.round(market.yards * 2)` -- all 139 tests green against a number that
+    // was wrong by 100%. Asserting the values is what makes the panel honest.
+    const api = mockApi([qb("Lamar", 280), rb("Mark", 90), wr("Zay", 110)]);
+    render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
+    await waitFor(() => expect(screen.getByText("Lamar")).toBeInTheDocument());
+    expect(panel().getByText("280")).toBeInTheDocument();
+    expect(panel().getByText("90")).toBeInTheDocument();
+    expect(panel().getByText("110")).toBeInTheDocument();
+  });
+
+  it("sums a market across players and shows how many contributed", async () => {
+    const api = mockApi([qb("Lamar", 280), rb("Mark", 60), rb("Gus", 30), wr("Zay", 110)]);
+    render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
+    await waitFor(() => expect(screen.getByText("Lamar")).toBeInTheDocument());
+    // 60 + 30, and the box score's own RB totals row says 90 too. The count is
+    // the block's alone: the box score prints a sum, never how many went into it.
+    expect(panel().getByText("90")).toBeInTheDocument();
+    expect(panel().getByText("(2)")).toBeInTheDocument();
   });
 
   it("states both why these are not a team yardage total", async () => {
@@ -93,9 +144,69 @@ describe("GameDetailModal yardage panel", () => {
   });
 
   it("hides the panel entirely when a team has no yardage projection", async () => {
+    // A kicker: no yardage market, and no position group in the box score
+    // either, so nothing about this player renders a name anywhere. Since A4
+    // removed the flat "Model Player Projections" list, there is no longer a
+    // player name on the page to wait for -- the modal prints its no-modelled-
+    // positions state instead, and that is what the wait below is for. The
+    // assertion this test exists for is unchanged. The wording is matched
+    // loosely on purpose: it is A4's, it is not this test's subject, and a
+    // reword should not fail a test about the yardage block. (The first
+    // alternative was "No players at this position", a sentence naming the
+    // position filter A4 deleted; it was reworded, not the branch.)
     const api = mockApi([{ player_id: "p", player_name: "p", recent_team: "Ravens", position: "K", anytime_td_prob: 0.1 }]);
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByText("p")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/No modelled positions for this game|No player projection props available/)).toBeInTheDocument());
     expect(screen.queryByText(/Projected Yardage/i)).not.toBeInTheDocument();
+  });
+});
+
+// A label bound to the wrong number is the one thing the relabelling exists to
+// prevent, and no assertion here could catch it. Swapping the labels for
+// `passing_yards` and `rushing_yards` produced real rendered output reading
+// "Ravens Rush yds 280" for a quarterback, with all the other tests green.
+//
+// The suite pins that the label *strings* appear, which is "a value was produced".
+// This pins that each label appears next to its own value and not a neighbour's —
+// the actual property under review.
+describe('yardageBreakdown label binding', () => {
+  const passingProp = {
+    player_id: 'p1', player_name: 'Lamar Jackson', position: 'QB', recent_team: 'BAL',
+    passing_yards: 280, rushing_yards: 0, receiving_yards: 0,
+  };
+  const rushingProp = {
+    player_id: 'p2', player_name: 'Derrick Henry', position: 'RB', recent_team: 'BAL',
+    passing_yards: 0, rushing_yards: 120, receiving_yards: 0,
+  };
+
+  it('binds each market label to its own value', () => {
+    const markets = yardageBreakdown([passingProp, rushingProp] as never[]);
+
+    const passing = markets.find(m => m.market === 'passing_yards');
+    const rushing = markets.find(m => m.market === 'rushing_yards');
+
+    expect(passing?.yards).toBe(280);
+    expect(rushing?.yards).toBe(120);
+    // The rendered label has to travel with its own number, or the panel states
+    // that a quarterback rushed for 280 yards.
+    expect(`${MARKET_LABEL.passing_yards} ${passing?.yards}`).toBe('Pass yds 280');
+    expect(`${MARKET_LABEL.rushing_yards} ${rushing?.yards}`).toBe('Rush yds 120');
+  });
+
+  it('counts a player once per market, not once per (player, market) pair', () => {
+    // A player with a real number in two yardage markets contributes to both, which is
+    // correct -- and is exactly why the "one yardage market per position" claim this
+    // PR removed was never safe to rely on.
+    const twoMarket = {
+      player_id: 'p3', player_name: 'Two Market', position: 'RB', recent_team: 'BAL',
+      passing_yards: 40, rushing_yards: 60, receiving_yards: 0,
+    };
+
+    const markets = yardageBreakdown([twoMarket] as never[]);
+    const passing = markets.find(m => m.market === 'passing_yards');
+    const rushing = markets.find(m => m.market === 'rushing_yards');
+
+    expect(passing).toEqual({ market: 'passing_yards', yards: 40, n: 1 });
+    expect(rushing).toEqual({ market: 'rushing_yards', yards: 60, n: 1 });
   });
 });

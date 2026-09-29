@@ -1,21 +1,9 @@
 name: Deploy Sports Predictor Frontend to Azure Container Apps
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'package.json'
-      - 'vite.config.ts'
-      - 'tsconfig*.json'
-      - 'Dockerfile'
-      - 'Caddyfile'
-  workflow_dispatch:
-    inputs:
-      force_rebuild:
-        description: 'Force rebuild and deploy even if no changes'
-        type: boolean
-        default: false
+  # Everything runs on the VPS now: this Azure deploy no longer fires on push
+  # or PR. Run it by hand from the Actions tab only if Azure is ever needed.
+  workflow_dispatch: {}
 
 permissions:
   id-token: write

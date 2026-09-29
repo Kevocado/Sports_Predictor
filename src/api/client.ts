@@ -1,9 +1,19 @@
+// The summary's type belongs to the panel. It is imported here because this
+// module fetches one and has to say what it returns, and it is deliberately NOT
+// re-exported: the modal, the explain call sites and the tests all import
+// `Explanation` from `../predictor-ui` directly. This module used to re-export
+// it as a second door onto the same type, and nothing consumed that door — two
+// doors onto one type is the same "local copy" mistake the declaration here was
+// originally deleted for.
+import type { Explanation } from "../predictor-ui";
 import type {
   CurrentWeek,
   GamePrediction,
   GameSummary,
   GameVerdict,
   HeadToHead,
+  HubPlayersResponse,
+  HubTeamsResponse,
   PlayerPropPrediction,
   PowerRankingsResponse,
   RetrainResponse,
@@ -13,6 +23,16 @@ import type {
   TrackRecord,
   WeekPrediction,
 } from "../types";
+
+// A backend that accepts the connection but never answers must still end in
+// the page's error state (with Try again), never an endless "Loading…".
+export const REQUEST_TIMEOUT_MS = 15_000;
+
+function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
 
 export function createApiClient(baseUrl: string): SportApi {
   const cleanBase = baseUrl.replace(/\/+$/, "");
@@ -43,7 +63,7 @@ export function createApiClient(baseUrl: string): SportApi {
 
   async function get<T>(path: string, ttlMs: number = TTL_MS): Promise<T> {
     return cached(path, async () => {
-      const res = await fetch(`${cleanBase}${path}`);
+      const res = await fetchWithTimeout(`${cleanBase}${path}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail ?? `${res.status} ${res.statusText}`);
@@ -54,7 +74,7 @@ export function createApiClient(baseUrl: string): SportApi {
 
   async function getOrNull<T>(path: string): Promise<T | null> {
     return cached(path, async () => {
-      const res = await fetch(`${cleanBase}${path}`);
+      const res = await fetchWithTimeout(`${cleanBase}${path}`);
       if (res.status === 404) return null;
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -91,23 +111,46 @@ export function createApiClient(baseUrl: string): SportApi {
       get<TeamForm>(`/teams/${encodeURIComponent(team)}/form?season=${season}&n=${n}`),
     headToHead: (gameId, season, week, nSeasons = 8) =>
       get<HeadToHead>(`/games/${gameId}/head-to-head?season=${season}&week=${week}&n_seasons=${nSeasons}`),
+    hubTeams: (season) => get<HubTeamsResponse>(`/hub/teams?season=${season}`),
+    hubPlayers: (season) => get<HubPlayersResponse>(`/hub/players?season=${season}`),
   };
 }
 
-// DYNAMIC RESOLUTION: If running on the Azure production frontend domain, 
-// automatically point directly to the respective backend FQDNs. Otherwise, use local dev ports.
-const isProd = window.location.hostname.includes("azurecontainerapps.io");
+// Same-origin by default: the Caddy in front of this site (see Caddyfile)
+// and the Vite dev/preview server (vite.config.ts) both proxy these paths
+// to the NFL and CFB APIs. Override per build with VITE_NFL_API_BASE_URL /
+// VITE_CFB_API_BASE_URL only when the APIs live on another origin.
+export const NFL_BASE_URL: string = import.meta.env.VITE_NFL_API_BASE_URL ?? "/api/nfl";
+export const CFB_BASE_URL: string = import.meta.env.VITE_CFB_API_BASE_URL ?? "/api/cfb";
 
-const NFL_BASE_URL = isProd
-  ? "https://nfl-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api"
-  : "http://localhost:8001/api";
+export const NFL_EXPLAIN_BASE_URL: string = import.meta.env.VITE_NFL_EXPLAIN_BASE_URL ?? "/api/explain/nfl";
+export const CFB_EXPLAIN_BASE_URL: string = import.meta.env.VITE_CFB_EXPLAIN_BASE_URL ?? "/api/explain/cfb";
 
-const CFB_BASE_URL = isProd
-  ? "https://cfb-predictor.proudbay-f56b8dfa.eastus2.azurecontainerapps.io/api"
-  : "http://localhost:8003/api";
+/**
+ * The plain-English summary for one game. Same-origin like every other call
+ * here, on the family's 15 s timeout.
+ *
+ * It is deliberately NOT cached: the panel's own footer states how long ago
+ * the summary was written, and a cached copy would keep showing a stale age
+ * beside fresh numbers. The service caches by the facts it was given, so a
+ * repeat request is cheap at the other end.
+ */
+export function createExplainer(baseUrl: string) {
+  const cleanBase = baseUrl.replace(/\/+$/, "");
+  return async function explain(id: string): Promise<Explanation> {
+    const res = await fetchWithTimeout(`${cleanBase}/${encodeURIComponent(id)}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail ?? `${res.status} ${res.statusText}`);
+    }
+    return res.json();
+  };
+}
 
 export const nflApi = createApiClient(NFL_BASE_URL);
 export const cfbApi = createApiClient(CFB_BASE_URL);
+export const nflExplain = createExplainer(NFL_EXPLAIN_BASE_URL);
+export const cfbExplain = createExplainer(CFB_EXPLAIN_BASE_URL);
 
 /**
  * Best-effort warm of both sport clients: current week first, then the main

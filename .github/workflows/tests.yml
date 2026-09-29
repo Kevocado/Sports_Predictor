@@ -1,0 +1,44 @@
+name: tests
+
+# Sports_Predictor had no test workflow at all, and nothing else gated a commit:
+# `deploy-azure.yml` is `workflow_dispatch`-only (it was disabled by f490633,
+# "ci: stop the Azure deploy from firing on merge"), so there was no check on a PR
+# at all. A red suite could be merged and would first surface in a PR review or a
+# local run, not in a deploy log. This is the same gap closed for NFL, CFB and PL.
+#
+# The comment originally said deploy-azure fired on push to main and deploys. It had
+# not for two commits before this file was written; the claim was copied from the
+# other repos' workflows without checking this one.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vitest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
+      # `npm run build` runs `tsc -b`, so a type error fails here even if no test
+      # happens to touch the file. Vitest does not typecheck by default, and the
+      # six lying types this branch deletes were only visible to the compiler.
+      - name: Build (typechecks)
+        run: npm run build
+
+      - run: npm run test
+
+      - run: npm run lint

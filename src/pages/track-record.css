@@ -1,0 +1,165 @@
+/* The track record page's own stylesheet.
+ *
+ * Everything in here is a declaration a unit test cannot see. `getComputedStyle`
+ * returns "" and `getBoundingClientRect` returns zeros under vitest+jsdom, so
+ * the geometry this file exists to guarantee is asserted two other ways:
+ * TrackRecordPage.test.tsx READS THIS FILE and checks each declaration is
+ * really present, and the B6 report carries the numbers a real browser
+ * measured. A Tailwind utility is not a substitute here without moving the
+ * assertion to wherever the class ended up -- a test that greps for
+ * `position: sticky` and silently keeps passing after the class is renamed is
+ * worse than no test, because it reports a guarantee the page no longer has.
+ */
+
+/* --- the section nav ---------------------------------------------------- */
+
+/*
+ * Sticky to the top of the viewport, because this page is now longer than a
+ * phone screen and is scanned rather than read. It sits AFTER the headline in
+ * the flow, so the headline is what is above the fold on arrival and the nav
+ * only pins once the reader has scrolled past the thing they came for.
+ *
+ * Opaque, or the rows scrolling underneath read through it.
+ *
+ * The height is fixed rather than content-sized, because `scroll-margin-top`
+ * below is a number that has to be able to clear this box. Measured at 48px.
+ */
+.tr-nav {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  height: 3rem;
+  background: var(--color-pr-stage);
+  border-bottom: 1px solid var(--color-pr-rule);
+  display: flex;
+  align-items: stretch;
+}
+
+/*
+ * The links scroll inside this box instead of widening the page: at 390px
+ * there is room for about three labels, and the rule is that the DOCUMENT
+ * never scrolls sideways. `min-width: 0` so this flex child is allowed to
+ * shrink below its content, which is what makes the overflow happen here
+ * rather than on `body`.
+ *
+ * The rail is genuinely wider than the box it lives in -- 7 entries, 2.5 of
+ * them visible -- and until now nothing said so: the last visible label was
+ * simply sliced off by the viewport edge, which reads as "that is all of
+ * them". Two declarations fix it, and neither is a gradient:
+ *
+ *  - `border-right` is a full-height hairline drawn exactly where the content
+ *    is cut, so there is something to scroll PAST. On a flex child stretched
+ *    to the nav's content box it costs 1px of WIDTH, not height, so the
+ *    `height: 3rem` above and the `scroll-margin-top: 4rem` below are
+ *    untouched -- that pairing is the thing the geometry test pins.
+ *  - `scroll-snap-type: x proximity` makes the rail stop at a label rather
+ *    than between two of them, so a trackpad flick lands on something
+ *    readable. `proximity`, not `mandatory`: mandatory would hijack a reader
+ *    who is trying to reach the last entry.
+ */
+.tr-nav-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-right: 1px solid var(--color-pr-rule);
+  scroll-snap-type: x proximity;
+}
+
+/* The snap targets are the list items, not the links: the item is the flex
+ * box that gets a scroll position, and snapping its start edge puts a whole
+ * label against the box's edge instead of half of one. */
+.tr-nav-scroll > ul > li {
+  scroll-snap-align: start;
+}
+
+/*
+ * A 48px strip of 12px type, so the links fill the height of the strip: the
+ * gap between them must not be the target. `outline-offset: -2px` pulls the
+ * focus ring INSIDE, because the family draws it at +2px and this strip is
+ * pinned to the very top of the viewport -- half of that ring would be off
+ * screen exactly when the reader needs to see where the keyboard is.
+ */
+.tr-nav a {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  padding-inline: 0.625rem;
+  white-space: nowrap;
+  font-family: var(--font-pr-display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-pr-text-dim);
+  outline-offset: -2px;
+}
+.tr-nav a:hover {
+  color: var(--color-pr-text);
+}
+
+/* --- anchor targets ------------------------------------------------------ */
+
+/*
+ * An anchor jump has to land the section heading BELOW the pinned nav, not
+ * under it. 4rem is the nav's 3rem plus a 1rem gap, so these two declarations
+ * have to move together -- which is exactly why the height is a fixed value
+ * and not whatever the content happened to be.
+ */
+.tr-section {
+  scroll-margin-top: 4rem;
+}
+
+/* --- numbers ------------------------------------------------------------- */
+
+/*
+ * Digits line up in a column. The family already sets this on `[data-sport]`,
+ * so this is belt-and-braces for the cells that are read as columns, where a
+ * one-character shift per row is the whole difference between scannable and
+ * not.
+ */
+.tr-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- the accuracy bar ---------------------------------------------------- */
+
+/*
+ * One accuracy on an accuracy scale. The track is a fixed 8px so the 50%
+ * reference line is at a predictable place, and the fill's width is set from
+ * the accuracy alone -- see the B2 note in TrackRecordPage.tsx. Volume is
+ * never a factor of this width.
+ *
+ * The track is `--color-pr-panel-2` and the fill is the sport's accent. Every
+ * accent in tokens.css clears 3:1 against the track (WCAG 1.4.11, non-text
+ * contrast), which the contrast test in TrackRecordPage.test.tsx asserts by
+ * reading both files rather than trusting this comment.
+ */
+.tr-bar {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--color-pr-panel-2);
+  overflow: hidden;
+}
+.tr-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-pr-accent);
+}
+/*
+ * The 50% reference. Exactly half the track, always, whatever the number is:
+ * this is the line a coin flip sits on and the line the whole page is read
+ * against, so it is a property of the SCALE and not of any one value.
+ * `--color-pr-text-dim` on `--color-pr-panel-2` is 8.33:1.
+ */
+.tr-bar-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--color-pr-text-dim);
+}

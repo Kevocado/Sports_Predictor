@@ -1,0 +1,18 @@
+// Synced from predictor-ui@2599287e15ef. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
+export * from "./fmt";
+export { contrast, inkFor, luminance } from "./contrast";
+export { AppFrame, type SiteLink, type Sport, type Tab } from "./components/AppFrame";
+export { MatchCard, type Side } from "./components/MatchCard";
+export { ProbabilityBar, type PickRef, type Segment } from "./components/ProbabilityBar";
+export { RoundNavigator } from "./components/RoundNavigator";
+export { StatTile } from "./components/StatTile";
+export { EmptyState, ErrorState, Skeleton } from "./components/States";
+export { ExplainerPanel, type Explanation, type Verdict, type LegacyExplanation, type Common } from "./components/ExplainerPanel";
+export { BandChip, PanelHeading, type Band } from "./components/ExplainerVerdict";
+export { KeyNumberTile, type MarketTile } from "./components/KeyNumberTile";
+export { FactorList, type Factor } from "./components/FactorList";
+export { RecordStrip } from "./components/RecordStrip";
+export { StatTable, type Column } from "./components/StatTable";
+export { StatusBadge, statusWords, type Moment, type Status } from "./components/StatusBadge";
+export { TeamChip } from "./components/TeamChip";
+export { BoxScore, type BoxScoreRow, type BoxScoreColumn, type BoxScoreGroup, type BoxScoreTotal, type BoxScoreProps } from "./components/BoxScore";

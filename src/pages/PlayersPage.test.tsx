@@ -1,80 +1,113 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { PlayersPage } from "./PlayersPage";
-import type { PlayerPropPrediction, SportApi } from "../types";
+import type { HubPlayer, PlayerPropPrediction, SportApi } from "../types";
 
-function qb(id: string, name: string, yards: number, team = "KC"): PlayerPropPrediction {
-  return { player_id: id, player_name: name, recent_team: team, position: "QB", anytime_td_prob: 0.3, passing_yards: yards };
+function player(id: string, name: string, position: string, epa: number | null, extra: Partial<HubPlayer> = {}): HubPlayer {
+  return {
+    player_id: id, name, team: "KC", position, games: 5,
+    completions: 0, attempts: 0, passing_yards: 0, passing_tds: 0, interceptions: 0,
+    carries: 0, rushing_yards: 0, rushing_tds: 0, receptions: 0, targets: 0,
+    receiving_yards: 0, receiving_tds: 0,
+    epa_total: epa, target_share: null, air_yards_share: null, fantasy_ppr_pg: null,
+    ...extra,
+  };
 }
 
+const qbs = [
+  player("qb1", "Patrick Mahomes", "QB", 42.5, { passing_yards: 1510, passing_tds: 12, interceptions: 3 }),
+  player("qb2", "Josh Allen", "QB", 38.1, { team: "BUF", passing_yards: 1402 }),
+  player("qb3", "Lamar Jackson", "QB", 30.0, { team: "BAL" }),
+  player("qb4", "Joe Burrow", "QB", 20.0, { team: "CIN" }),
+  player("qb5", "Jalen Hurts", "QB", 12.0, { team: "PHI" }),
+  player("qb6", "Bo Nix", "QB", -4.0, { team: "DEN" }),
+];
+const wr = player("wr1", "Tyreek Hill", "WR", 18.2, { team: "MIA", targets: 51, target_share: 0.281, receiving_yards: 620, receiving_tds: 4 });
+const players = [...qbs, wr];
+const leaderboards = { QB: qbs.slice(0, 5), RB: [], WR: [wr], TE: [] };
+
 const props: PlayerPropPrediction[] = [
-  qb("qb1", "Patrick Mahomes", 320),
-  qb("qb2", "Josh Allen", 280, "BUF"),
-  qb("qb3", "Lamar Jackson", 250, "BAL"),
-  qb("qb4", "Joe Burrow", 200, "CIN"),
-  // Placeholder rows the CFB feed sometimes emits must never surface as "top players".
-  qb("qb0", "Team", 400, "KC"),
-  { player_id: "rb1", player_name: "Saquon Barkley", recent_team: "PHI", position: "RB", anytime_td_prob: 0.55, rushing_yards: 110 },
+  { player_id: "qb1", player_name: "Patrick Mahomes", recent_team: "KC", position: "QB", anytime_td_prob: 0.3, passing_yards: 281.4 },
 ];
 
-const playerProps = vi.fn().mockResolvedValue(props);
-const currentWeek = vi.fn().mockResolvedValue({ season: 2026, week: 7 });
-const api: SportApi = {
-  games: vi.fn(), gamePrediction: vi.fn(), playerProps, trackRecord: vi.fn(),
-  retrain: vi.fn(), gameVerdict: vi.fn(), predictionsForWeek: vi.fn(),
-  currentWeek, standings: vi.fn(), powerRankings: vi.fn(),
-  predictionsBatch: vi.fn(), teamForm: vi.fn(), headToHead: vi.fn(),
-};
+const api = {
+  currentWeek: vi.fn().mockResolvedValue({ season: 2026, week: 7 }),
+  hubPlayers: vi.fn().mockResolvedValue({ season: 2026, players, leaderboards }),
+  playerProps: vi.fn().mockResolvedValue(props),
+} as unknown as SportApi;
 
+const sportState = { sport: "nfl" };
 vi.mock("../context/SportContext", () => ({
-  useSport: () => ({ sport: "nfl", setSport: () => {}, api }),
+  useSport: () => ({ sport: sportState.sport, setSport: () => {}, api }),
 }));
 
+const table = () => screen.getByRole("table");
+const headers = () => within(table()).getAllByRole("columnheader").map((h) => h.textContent ?? "");
+
 describe("PlayersPage", () => {
-  it("fetches props for the sport's actual current week, not a hardcoded season/week", async () => {
+  it("loads the season's players for the sport's current season and week", async () => {
     render(<PlayersPage />);
-
-    await waitFor(() => expect(playerProps).toHaveBeenCalledWith(2026, 7));
-    expect(await screen.findByText(/week 7 top players/i)).toBeInTheDocument();
+    await screen.findByRole("table");
+    expect(api.hubPlayers).toHaveBeenCalledWith(2026);
+    expect(api.playerProps).toHaveBeenCalledWith(2026, 7);
   });
 
-  it("spotlights the top 3 players per position, best first", async () => {
+  it("shows only quarterbacks under QB, with passing columns", async () => {
     render(<PlayersPage />);
-    await waitFor(() => expect(screen.getByTestId("spotlight-QB")).toBeInTheDocument());
-
-    const card = screen.getByTestId("spotlight-QB");
-    const names = within(card).getAllByTestId(/spotlight-QB-player-/).map((el) => el.textContent);
-    expect(names[0]).toMatch(/Patrick Mahomes/);
-    expect(names[1]).toMatch(/Josh Allen/);
-    expect(names[2]).toMatch(/Lamar Jackson/);
-    expect(within(card).queryByText(/Joe Burrow/)).not.toBeInTheDocument();
-    // #1 shows the projected stat and the team logo
-    expect(within(card).getByText("320")).toBeInTheDocument();
-    expect(within(card).getByAltText("KC logo")).toBeInTheDocument();
+    await screen.findByRole("table");
+    for (const label of ["Pass yds", "Pass TD", "INT", "EPA"]) expect(headers().some((h) => h.startsWith(label))).toBe(true);
+    expect(within(table()).getByText("Patrick Mahomes")).toBeInTheDocument();
+    expect(within(table()).queryByText("Tyreek Hill")).not.toBeInTheDocument();
   });
 
-  it("never surfaces placeholder 'Team' rows as top players", async () => {
+  it("switches to receiver columns under WR", async () => {
     render(<PlayersPage />);
-    await waitFor(() => expect(screen.getByTestId("spotlight-QB")).toBeInTheDocument());
-
-    // The 400-yard "Team" placeholder would outrank everyone if not filtered.
-    expect(screen.queryByTestId("spotlight-QB-player-qb0")).not.toBeInTheDocument();
-    expect(screen.queryAllByText("Team")).toHaveLength(0);
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "WR" }));
+    for (const label of ["Targets", "Target share", "Rec yds", "Rec TD", "EPA"]) expect(headers().some((h) => h.startsWith(label))).toBe(true);
+    expect(within(table()).getByText("Tyreek Hill")).toBeInTheDocument();
+    expect(within(table()).getByText("28%")).toBeInTheDocument();
+    expect(within(table()).queryByText("Patrick Mahomes")).not.toBeInTheDocument();
   });
 
-  it("keeps the full ranked list below the spotlight and filters it by search", async () => {
+  it("lists the position's top 5 by EPA", async () => {
     render(<PlayersPage />);
-    await waitFor(() => expect(screen.getByText("Joe Burrow")).toBeInTheDocument());
-
-    fireEvent.change(screen.getByPlaceholderText(/search player/i), { target: { value: "burrow" } });
-    // Burrow appears in both the spotlight card and the full list.
-    expect(screen.getAllByText("Joe Burrow").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Patrick Mahomes")).not.toBeInTheDocument();
+    const board = await screen.findByRole("list", { name: /EPA leaders/i });
+    const names = within(board).getAllByRole("listitem").map((li) => li.textContent);
+    expect(names).toHaveLength(5);
+    expect(names[0]).toContain("Patrick Mahomes");
+    expect(names.join(" ")).not.toContain("Bo Nix");
   });
 
-  it("does not use betting language in the heading", async () => {
+  it("shows this week's projection when the model has one, and a dash otherwise", async () => {
     render(<PlayersPage />);
-    await waitFor(() => expect(screen.getByText(/week 7 top players/i)).toBeInTheDocument());
-    expect(screen.queryByText(/best bets/i)).not.toBeInTheDocument();
+    await screen.findByRole("table");
+    expect(headers().some((h) => h.startsWith("Projected this week"))).toBe(true);
+    const mahomes = within(table()).getByText("Patrick Mahomes").closest("tr")!;
+    expect(within(mahomes).getByText("281")).toBeInTheDocument();
+    const allen = within(table()).getByText("Josh Allen").closest("tr")!;
+    const cells = within(allen).getAllByRole("cell");
+    expect(cells[cells.length - 1].textContent).toBe("—");
+  });
+
+  it("narrows by name search", async () => {
+    render(<PlayersPage />);
+    await screen.findByRole("table");
+    fireEvent.change(screen.getByRole("searchbox", { name: /search players/i }), { target: { value: "allen" } });
+    expect(within(table()).getByText("Josh Allen")).toBeInTheDocument();
+    expect(within(table()).queryByText("Patrick Mahomes")).not.toBeInTheDocument();
+  });
+
+  it("clears the previous sport's players while the new sport loads", async () => {
+    const { rerender } = render(<PlayersPage />);
+    await screen.findByRole("table");
+    let release: (v: { season: number; week: number }) => void = () => {};
+    vi.mocked(api.currentWeek).mockReturnValueOnce(new Promise((r) => { release = r; }));
+    sportState.sport = "cfb";
+    rerender(<PlayersPage />);
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    release({ season: 2026, week: 7 });
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    sportState.sport = "nfl";
   });
 });

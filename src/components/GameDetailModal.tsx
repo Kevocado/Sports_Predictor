@@ -1,14 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
-import type { GamePrediction, GameSummary, GameVerdict, HeadToHead as HeadToHeadData, PlayerPropPrediction, SportApi, TeamForm } from "../types";
+// `Explanation` comes from `../predictor-ui`, and only from there. `../api/client`
+// used to re-export it as a second door onto the same type and no longer does --
+// its own header says so, and it now carries a deliberate comment explaining
+// that the modal and the explain call sites import the type from the panel that
+// declares it. So ours' import line is not a preference, it is a door that is no
+// longer there; theirs' is the only one that resolves.
+import { BoxScore, ExplainerPanel, pct, spread } from "../predictor-ui";
+import type { Explanation } from "../predictor-ui";
+// The v2 panel's figures, derived rather than fetched. Kept from
+// origin/v2-wire: A4 replaced the player-props area and never touched this.
+import { barPick, panelFacts } from "../lib/panelFacts";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { GamePrediction, GameSummary, GameVerdict, HeadToHead as HeadToHeadData, PlayerPropPrediction, SportApi, TeamForm, WeekPrediction } from "../types";
 import { TeamName } from "./TeamName";
 import { MarketBar } from "./MarketBar";
 import { FormStrip } from "./FormStrip";
 import { HeadToHead } from "./HeadToHead";
-import { POSITION_ORDER, keyStatLabel, keyYardage, tdConfidenceTone } from "../lib/playerRank";
+import { boxScoreColumnsFor, buildBoxScoreGroups } from "../lib/boxScoreRows";
 
-type PositionFilter = "ALL" | (typeof POSITION_ORDER)[number];
-
-const MARKET_LABEL = {
+export const MARKET_LABEL = {
   passing_yards: "Pass yds",
   rushing_yards: "Rush yds",
   receiving_yards: "Rec yds",
@@ -22,11 +31,22 @@ export interface YardageMarketBreakdown {
 
 /** Yardage projected for one roster, grouped by the market it was projected in.
  *
- * Kept per market and never summed. The model projects exactly one yardage
- * market per position (NFL/CFB `models/player_props.py::POSITION_MARKETS`), so
- * summing the roster's single yardage field adds a QB's passing to an RB's
- * rushing and a WR's receiving, and the total is not any real quantity: on a
- * full roster it ran 800-1400 yards, against a real figure of roughly 300-450.
+ * Kept per market and never summed. `POSITION_MARKETS` (NFL/CFB
+ * `models/player_props.py`) is a dict of *lists* -- its own comment says "each
+ * position can have multiple markets", RB gets both rushing_yards and carries --
+ * so the earlier claim that the model projects exactly one market per position was
+ * wrong, and it was wrong in a customer-visible sentence as well as in a comment.
+ *
+ * The arithmetic still holds, for a different and verified reason: summing the
+ * roster's yardage fields adds a QB's passing to an RB's rushing and a WR's
+ * receiving, and the total is not any real quantity. On a full roster it ran
+ * 800-1400 yards against a real figure of roughly 300-450.
+ *
+ * What is *not* safe is to rely on each player having at most one yardage field. If
+ * `POSITION_MARKETS` ever gives a position two yardage markets, the parts still do not
+ * sum to the old single-field total, and the correct rendering is one row per market
+ * with the player counted in both -- which is what this does, and which
+ * `test_binds_each_market_label_to_its_own_value` and its sibling now pin.
  * Team total yards is `rushing + receiving` across every player, which needs a
  * team-level model that does not exist yet -- so this reports what is actually
  * projected and says so, rather than publishing a number nobody can reproduce.
@@ -59,26 +79,85 @@ function VerdictBadge({ label, hit }: { label: string; hit: boolean }) {
   return (
     <span className="flex items-center gap-1.5 rounded-lg bg-sp-850/60 px-2.5 py-1 text-xs">
       <span className="text-sp-text-dim">{label}</span>
-      <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${hit ? "bg-win/20 text-win" : "bg-loss/20 text-loss"}`}>
+      <span className={`rounded px-1.5 py-0.5 text-[12px] font-bold ${hit ? "bg-win/20 text-win" : "bg-loss/20 text-loss"}`}>
         {hit ? "HIT" : "MISS"}
       </span>
     </span>
   );
 }
 
-interface Props { game: GameSummary; api: SportApi; onClose: () => void; }
+// weekPrediction: the week's row for this game (the pick snapshotted before
+// kickoff, and whether it was rebuilt after). A final is judged on that pick,
+// never on today's model.
+// explain: fetches the plain-English summary. Optional on purpose — a site
+// deployed before the explainer exists, or a game it has no summary for, must
+// still open this modal and show everything else in it.
+interface Props { game: GameSummary; api: SportApi; weekPrediction?: WeekPrediction; onClose: () => void; explain?: (sport: string, id: string) => Promise<Explanation>; sport?: string; }
 
-export function GameDetailModal({ game, api, onClose }: Props) {
+function PregamePick({ game, week }: { game: GameSummary; week?: WeekPrediction }) {
+  if (week?.rebuilt) {
+    return (
+      <p className="mb-2 rounded-lg border border-sp-border/60 p-3 text-xs text-sp-text-dim">
+        Rebuilt after kickoff: this pick was made after the game started, so it is shown for reference and not counted.
+      </p>
+    );
+  }
+  const home = week && week.status !== "untracked" ? week.home_win_prob : undefined;
+  if (home == null) return <p className="mb-2 text-xs text-sp-text-dim">No pick was made before kickoff.</p>;
+  const label = home === 0.5 ? "Toss-up" : home > 0.5 ? game.home_team : game.away_team;
+  return <p className="mb-2 text-sm font-semibold text-sp-text">{`Pick before kickoff: ${label} · ${pct(home >= 0.5 ? home : 1 - home)}`}</p>;
+}
+
+export function GameDetailModal({ game, api, weekPrediction, onClose, explain, sport = "nfl" }: Props) {
   const [prediction, setPrediction] = useState<GamePrediction | null>(null);
+  // The panel's figures, derived rather than fetched. Memoised because
+  // `panelFacts` allocates a new array on every call and the panel takes those
+  // arrays as props — without this the tiles and segments are a fresh identity on
+  // every render, which re-renders the whole panel whenever anything else moves.
+  const panel = useMemo(() => panelFacts(game, prediction), [game, prediction]);
   const [predictionError, setPredictionError] = useState<string | null>(null);
   const [allProps, setAllProps] = useState<PlayerPropPrediction[] | null>(null);
   const [propsLoading, setPropsLoading] = useState(true);
   const [verdict, setVerdict] = useState<GameVerdict | null>(null);
-  const [positionFilter, setPositionFilter] = useState<PositionFilter>("ALL");
   const [homeForm, setHomeForm] = useState<TeamForm | null>(null);
   const [awayForm, setAwayForm] = useState<TeamForm | null>(null);
   const [h2h, setH2h] = useState<HeadToHeadData | null>(null);
+  const [summary, setSummary] = useState<Explanation | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState(false);
   const isFinal = game.home_score != null && game.away_score != null;
+
+  // The summary is fetched on its own and never gates the rest of the modal:
+  // it is the first thing on screen, so anything that waited for it would
+  // leave the whole detail view empty behind a spinner.
+  const loadSummary = useCallback(() => {
+    if (!explain) return;
+    let cancelled = false;
+    setSummaryLoading(true);
+    setSummaryError(false);
+    explain(sport, game.game_id)
+      .then((r) => { if (!cancelled) setSummary(r); })
+      .catch(() => { if (!cancelled) { setSummary(null); setSummaryError(true); } })
+      .finally(() => { if (!cancelled) setSummaryLoading(false); });
+    return () => { cancelled = true; };
+  }, [explain, sport, game.game_id]);
+
+  useEffect(() => loadSummary(), [loadSummary]);
+
+  // The answer's pick, restated in the vocabulary the bar above is drawn in.
+  //
+  // The bar joins the pick to a segment BY LABEL, and the service's wording and
+  // this site's segment labels are two independent call sites that happen to
+  // agree today: NFL and CFB both build the pick from the same `game["home_team"]`
+  // string this site labels segments with. Nothing in the type system connects
+  // them, so a reword on the service's side ("Ravens win", the shape PL ships)
+  // un-accents every bar in the app while the verdict sentence above still names
+  // a pick. `barPick` is the guard, and it fails closed. Derived, not fetched,
+  // and memoised so the panel is not re-rendered by an identity change here.
+  const wired = useMemo(() => {
+    if (!summary || !("factors" in summary) || !summary.pick) return summary;
+    return { ...summary, pick: barPick(summary.pick, panel.segments) };
+  }, [summary, panel.segments]);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,10 +205,18 @@ export function GameDetailModal({ game, api, onClose }: Props) {
   }, [onClose]);
 
   const gameProps = allProps ? filterPlayerPropsForGame(allProps, game) : null;
-  const availablePositions = useMemo(
-    () => POSITION_ORDER.filter((position) => (gameProps ?? []).some((p) => p.position === position)),
-    [gameProps],
+  // One group per position, each already ordered starters-then-bench, with the
+  // totals rows ordered away-then-home so they read like the scoreline above.
+  const boxScoreGroups = useMemo(
+    () => (gameProps ? buildBoxScoreGroups(gameProps, [game.away_team, game.home_team]) : []),
+    [gameProps, game.away_team, game.home_team],
   );
+  // Kept from origin/v2-wire, not from A4. Theirs' `visibleProps` memo is NOT
+  // carried over: it filtered by the `positionFilter` state and sorted by
+  // `keyYardage`, and A4 deleted the filter buttons (the box score groups by
+  // position instead) along with the `playerRank` import, so the memo has
+  // nothing left to read. `keyYardage` still exists -- `lib/boxScoreRows.ts`
+  // uses it for the box score's row order -- but not as a modal-level sort.
   const yardageByTeam = useMemo(
     () => [
       { team: game.home_team, markets: yardageBreakdown((gameProps ?? []).filter(p => p.recent_team === game.home_team)) },
@@ -137,11 +224,6 @@ export function GameDetailModal({ game, api, onClose }: Props) {
     ],
     [gameProps, game.home_team, game.away_team],
   );
-  const visibleProps = useMemo(() => {
-    if (!gameProps) return null;
-    const filtered = positionFilter === "ALL" ? gameProps : gameProps.filter((p) => p.position === positionFilter);
-    return [...filtered].sort((a, b) => keyYardage(b) - keyYardage(a) || b.anytime_td_prob - a.anytime_td_prob);
-  }, [gameProps, positionFilter]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -152,7 +234,26 @@ export function GameDetailModal({ game, api, onClose }: Props) {
           <button onClick={onClose} className="rounded-full p-1.5 text-sp-text-dim transition hover:bg-sp-800 hover:text-sp-text" aria-label="Close">✕</button>
         </div>
         <div className="overflow-y-auto px-6 py-6 space-y-6">
-          
+
+          {/* In plain English — first, because it is the one-screen answer.
+              Hidden entirely when there is no explainer, rather than shown
+              empty. */}
+          {explain && (
+            <ExplainerPanel
+              data={wired}
+              loading={summaryLoading}
+              error={summaryError}
+              onRetry={() => loadSummary()}
+              // The figures the panel draws, from this site's OWN prediction
+              // response rather than from the explanation. The panel is handed
+              // numbers and renders them; it must never be the thing that
+              // decides what the numbers are, or the explanation and the
+              // prediction could disagree on screen.
+              tiles={panel.tiles}
+              segments={panel.segments}
+            />
+          )}
+
           {/* Header Matchup */}
           <div className="flex items-center justify-center gap-10">
             <div className="flex flex-col items-center gap-1">
@@ -171,8 +272,9 @@ export function GameDetailModal({ game, api, onClose }: Props) {
             <section>
               <div className="mb-2">
                 <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Result &amp; verdict</h3>
-                <p className="text-[11px] text-sp-text-dim">Whether the model's pregame call matched what actually happened.</p>
+                <p className="text-xs text-sp-text-dim">Whether the model's pregame call matched what actually happened.</p>
               </div>
+              <PregamePick game={game} week={weekPrediction} />
               {verdict ? (
                 <div className="flex flex-col gap-2">
                   <p className="font-display text-lg font-semibold tracking-wide text-sp-text">
@@ -200,7 +302,7 @@ export function GameDetailModal({ game, api, onClose }: Props) {
             <section>
               <div className="mb-2">
                 <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Recent form &amp; head-to-head</h3>
-                <p className="text-[11px] text-sp-text-dim">Last five results for each team, plus recent meetings between them.</p>
+                <p className="text-[12px] text-sp-text-dim">Last five results for each team, plus recent meetings between them.</p>
               </div>
               <div className="flex flex-col gap-3">
                 {homeForm && homeForm.recent_form.length > 0 && (
@@ -224,14 +326,18 @@ export function GameDetailModal({ game, api, onClose }: Props) {
           <section>
             <div className="mb-2">
               <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Match Markets</h3>
-              <p className="text-[11px] text-sp-text-dim">Win probability (straight-up), point spread cover chance, and total points line.</p>
+              <p className="text-xs text-sp-text-dim">
+                {isFinal
+                  ? "Today's model, for reference: the verdict above is judged on the pick made before kickoff."
+                  : "Win probability (straight-up), point spread cover chance, and total points line."}
+              </p>
             </div>
             {predictionError && <p className="text-xs text-loss">{predictionError}</p>}
             {!prediction && !predictionError && <p className="text-xs text-sp-text-faint">Loading match markets…</p>}
             {/* The card only shows these on the list view; restate them here
                 so the modal is self-contained. */}
             {game.spread_line != null && (
-              <p className="text-[11px] text-sp-text-faint">{`Spread ${game.spread_line} · Total ${game.total_line ?? "—"}`}</p>
+              <p className="text-xs text-sp-text-dim">{`${spread(game.home_team, -game.spread_line)} · Total ${game.total_line ?? "—"}`}</p>
             )}
             {prediction && prediction.predicted_margin != null && prediction.sigma != null && (
               <p className="text-xs text-sp-text-dim">
@@ -247,9 +353,19 @@ export function GameDetailModal({ game, api, onClose }: Props) {
               {prediction.under_prob != null && <MarketBar label="Under total points" prob={prediction.under_prob} />}
             </div>}
 
-            {/* Projected yardage, by market. Deliberately NOT a team total. */}
+            {/* Projected yardage, by market. Deliberately NOT a team total.
+                Kept from origin/v2-wire (#8) even though A4 deleted the block's
+                predecessor, and the reason it is not redundant is written down
+                in the report: the box score's totals rows are per POSITION
+                group, not per team, and they claim nothing at all when a single
+                player in the group has no projection for that market. This block
+                is per team, per market, carries the count it summed, and is the
+                only place on the page that says out loud why there is no team
+                yardage total. `data-testid` because the box score below prints
+                the same three market labels as its column headers, so a bare
+                getByText("Pass yds") can no longer say which of the two it meant. */}
             {yardageByTeam.some(row => row.markets.length > 0) && (
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5" data-testid="yardage-by-market">
                 <div className="text-xs text-sp-text-faint font-semibold uppercase tracking-wide">Projected Yardage by Market</div>
                 <div className="grid grid-cols-2 gap-4 mt-2">
                   {yardageByTeam.map(row => (
@@ -282,48 +398,52 @@ export function GameDetailModal({ game, api, onClose }: Props) {
             )}
           </section>
 
-          {/* Player Props Section */}
+          {/* Predicted box score — the model's own markets, grouped by
+              position. This replaces the old per-player projection list and its
+              position filter buttons: the grouping does the filtering.
+
+              It does NOT replace the yardage block above, which A4's plan
+              believed it did. A box score's totals row is per POSITION group
+              (`teamSubtotals` in lib/boxScoreRows.ts), so a team's yardage is
+              spread across four tables and a reader has to add the WR and TE
+              receiving rows to reach "Rec yds"; the row also refuses to print at
+              all when a single player in the group has no projection for that
+              market, where the block reports the partial sum and the count it
+              was summed from. Neither carries a team yardage total, because the
+              model computes one only as `rushing + receiving` across every
+              player and has no team-level yardage model. The block above keeps
+              #8's figure and its explanation; this keeps A4's. */}
           <section>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Model Player Projections</h3>
-                <p className="text-[11px] text-sp-text-dim">Predicted touchdown probabilities and expected yardage milestones from your machine learning models.</p>
-              </div>
-              {availablePositions.length > 1 && (
-                <div className="flex gap-1 rounded-lg border border-sp-border bg-sp-850/60 p-1">
-                  {(["ALL", ...availablePositions] as PositionFilter[]).map((position) => (
-                    <button
-                      key={position}
-                      onClick={() => setPositionFilter(position)}
-                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${positionFilter === position ? "bg-sp-gold text-sp-950" : "text-sp-text-dim hover:text-sp-text"}`}
-                    >
-                      {position}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
             {propsLoading && <p className="text-xs text-sp-text-faint">Loading player projections…</p>}
-            {!propsLoading && visibleProps && visibleProps.length === 0 && (
+            {/* Two different gaps, two different sentences, because the game
+                either has no props at all or has props the model does not
+                project. A4 deleted the position filter buttons, and with them
+                the filter this branch's sentence used to name: it read "No
+                players at this position for this game", and there has been no
+                position left to read that against since. The branch is now
+                reachable only when `gameProps` is non-empty and every one of
+                them plays K / OL / DL / P — positions with no market, so
+                `buildBoxScoreGroups` has no group to render. So the sentence
+                names the thing that is actually missing. */}
+            {!propsLoading && boxScoreGroups.length === 0 && (
               <p className="text-xs text-sp-text-faint rounded-lg bg-sp-850/40 p-3 border border-sp-border/40">
                 {gameProps && gameProps.length > 0
-                  ? "No players at this position for this game."
-                  : "No player projection props available for this specific game yet. (Ensure your backend player-props route catches external API timeouts gracefully)."}
+                  ? "No modelled positions for this game. Every player the feed returned is at a position the model does not project (kicker, offensive or defensive line), and the box score only covers QB, RB, WR and TE."
+                  : "No player projection props available for this specific game yet."}
               </p>
             )}
-            {visibleProps && visibleProps.length > 0 && <div className="flex flex-col gap-1.5">
-              {visibleProps.map((prop) => (
-                <div key={prop.player_id} className="flex items-center justify-between rounded-lg bg-sp-850/60 px-3 py-2 text-sm">
-                  <span className="text-sp-text font-medium">{prop.player_name} <span className="text-xs text-sp-text-faint font-normal">({prop.position} · {prop.recent_team})</span></span>
-                  <div className="flex items-center gap-2 font-mono text-xs text-sp-text-dim">
-                    <span>{keyStatLabel(prop.position)} {Math.round(keyYardage(prop))}</span>
-                    <span className={`rounded px-1.5 py-0.5 font-semibold ${tdConfidenceTone(prop.anytime_td_prob)}`}>
-                      TD {Math.round(prop.anytime_td_prob * 100)}%
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>}
+            {/* A table per position, because each position has its own markets.
+                The title goes on the first one only: it is the section heading,
+                and it carries the "Projected order" note the vendored BoxScore
+                renders when no row has a real starter flag. */}
+            {boxScoreGroups.map((group, i) => (
+              <BoxScore
+                key={group.position}
+                columns={boxScoreColumnsFor(group.position)}
+                groups={[group]}
+                title={i === 0 ? "Predicted box score" : undefined}
+              />
+            ))}
           </section>
 
         </div>
