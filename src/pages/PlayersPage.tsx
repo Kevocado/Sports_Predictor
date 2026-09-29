@@ -178,7 +178,7 @@ export function PlayersPage() {
         message={
           apiReturned > 0
             ? `Loaded ${apiReturned} player${apiReturned === 1 ? "" : "s"} for ${when?.season ?? "this"} season, but none passed the name filter.`
-            : `No weekly player stats published for ${when?.season ?? "this"} season yet. The source (nflverse) has not released them; a previous season's table is available below.`
+            : `No weekly player stats published for ${when?.season ?? "this"} season yet. The source (nflverse) has not released them.`
         }
       />
     );
