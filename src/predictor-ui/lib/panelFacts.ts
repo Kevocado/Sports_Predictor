@@ -1,4 +1,4 @@
-// Synced from predictor-ui@486fe5ebbbc0. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
+// Synced from predictor-ui@b86828f16e73. Do not edit here: change predictor-hub/packages/predictor-ui and re-run scripts/sync-ui.mjs.
 /** Shared v2 panelFacts adapter.
  *
  *  One function, two call sites.  Each call site passes an input tagged with
@@ -45,18 +45,20 @@ export interface PLFixture {
   btts_yes_prob: number | null;
 }
 
-/** The fields of a Sports game this adapter reads. */
+/** The fields of a Sports game this adapter reads. All lines optional: callers
+ *  pass their own `GameSummary`, whose lines are optional (`spread_line?`),
+ *  and an absent line must read as absent, not as zero. */
 export interface SPGame {
   home_team: string;
   away_team: string;
-  spread_line: number | null;
-  total_line: number | null;
+  spread_line?: number | null;
+  total_line?: number | null;
 }
 
 /** The fields of a Sports prediction this adapter reads. */
 export interface SPPrediction {
-  home_win_prob: number | null;
-  away_win_prob: number | null;
+  home_win_prob?: number | null;
+  away_win_prob?: number | null;
   predicted_margin?: number | null;
   predicted_total?: number | null;
 }
@@ -118,7 +120,7 @@ export function panelFacts(
       { key: "home_win", prob: fixture.home_win },
       { key: "draw", prob: fixture.draw },
       { key: "away_win", prob: fixture.away_win },
-    ].filter((e): e is { prob: number } => e.prob !== null);
+    ].filter((e): e is { key: string; prob: number } => e.prob !== null);
 
     if (known.length) {
       for (const e of known) {
@@ -134,7 +136,8 @@ export function panelFacts(
         // practice the row is omitted; the branch that draws it is the one that
         // needs a test, or it ships unexercised.
         if (e.key !== "draw" && fixture.implied !== null) {
-          legend.push({ label, prob: fixture.implied, market: "result" });
+          const implied: number = fixture.implied;
+          legend.push({ label, prob: implied, market: "result" });
         }
       }
 
