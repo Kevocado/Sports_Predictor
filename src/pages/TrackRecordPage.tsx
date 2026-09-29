@@ -232,6 +232,133 @@ function HeadlineSection({ games }: { games: GamesTrackRecord }) {
   );
 }
 
+/** Render snapshotted_at as a real time, not a raw ISO string. */
+function formatPickTime(iso: string): string {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}, ${d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+/** One accuracy card for the all-picks figure, mirroring AccuracyCard. */
+function AllPicksCard({
+  label,
+  accuracy,
+  graded,
+  testId,
+}: {
+  label: string;
+  accuracy: number | null | undefined;
+  graded: string;
+  testId?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5 rounded-pr border border-pr-rule bg-pr-panel p-4" data-testid={testId}>
+      <span className="text-xs font-semibold uppercase tracking-wide text-pr-text-dim">{label}</span>
+      <span className="font-pr-display text-2xl font-semibold text-pr-text">{rate(accuracy)}</span>
+      <AccuracyBar value={accuracy} testId={testId} />
+      <span className="text-xs text-pr-text-faint">{graded}</span>
+    </div>
+  );
+}
+
+function AllPicksSection({ games }: { games: GamesTrackRecord }) {
+  const all = games.all_picks;
+  const headlineN = games.n_resolved ?? 0;
+  const allPicksN = all?.n_resolved ?? 0;
+
+  // If the backend has not shipped B8, all_picks is absent.
+  if (!all) {
+    return (
+      <Section
+        id="tr-all-picks"
+        title="All tracked picks"
+        blurb="All picks data not yet recorded by this backend."
+      >
+        <p className="text-sm text-pr-text-faint">No all-picks record in this response.</p>
+      </Section>
+    );
+  }
+
+  const allPicksPct = all.pct_moneyline_correct;
+
+  // The "why they differ" line: the two n_resolved values are the reason.
+  const differNote = allPicksN !== headlineN
+    ? `${plural(allPicksN - headlineN, "pick")} counted in all-picks were made after kickoff and are not in the headline. Headline: ${headlineN} resolved, All picks: ${allPicksN} resolved.`
+    : "Both figures are identical — every pick was made before kickoff.";
+
+  return (
+    <Section
+      id="tr-all-picks"
+      title="All tracked picks"
+      blurb={differNote}
+    >
+      {/* Two across from the narrowest width. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <AllPicksCard
+          label="Moneyline accuracy"
+          accuracy={allPicksPct}
+          graded={gradedCount(all.n_resolved)}
+          testId={`accuracy-bar-all-picks-moneyline`}
+        />
+        <AllPicksCard
+          label="Spread (ATS) accuracy"
+          accuracy={all.pct_ats_correct}
+          graded={gradedCount(all.n_resolved)}
+          testId={`accuracy-bar-all-picks-ats`}
+        />
+        <AllPicksCard
+          label="Total (O/U) accuracy"
+          accuracy={all.pct_totals_correct}
+          graded={gradedCount(all.n_resolved)}
+          testId={`accuracy-bar-all-picks-totals`}
+        />
+      </div>
+      <StatTile
+        label="Games resolved"
+        value={allPicksN.toLocaleString("en-US")}
+        sub="all tracked picks (pre-kickoff and rebuilt after kickoff)"
+      />
+      <StatTile
+        label="Pre-kickoff games resolved"
+        value={headlineN.toLocaleString("en-US")}
+        sub="headline accuracy only counts picks made before game start"
+      />
+
+      {/* Per-pick table: one row per resolved (game, market) pick, hit and miss alike. */}
+      {((games.per_pick ?? []).length > 0) ? (
+        <Section
+          id="tr-all-picks-per-pick"
+          title="Per-pick detail"
+          blurb="One row per resolved (game, market) pick. Hit and miss are both listed, never filtered or collapsed by default."
+        >
+          <StatTable
+            rows={games.per_pick ?? []}
+            rowKey={(r) => `${r.game_id}-${r.market}`}
+            caption="Per-pick detail: hit, market, and time made"
+            columns={[
+              { key: "game_id", label: "Game", numeric: false, value: (r) => r.game_id },
+              { key: "gameday", label: "Gameday", numeric: false, value: (r) => r.gameday },
+              { key: "market", label: "Market", numeric: false, value: (r) => r.market },
+              { key: "pick", label: "Pick", numeric: false, value: (r) => r.pick },
+              { key: "actual", label: "Actual", numeric: false, value: (r) => r.actual },
+              { key: "hit", label: "Hit", numeric: false, value: (r) => (r.hit ? "hit" : "miss") },
+              { key: "rebuilt", label: "Rebuilt", numeric: false, value: (r) => (r.rebuilt ? "after kickoff" : "before kickoff") },
+              {
+                key: "snapshotted_at",
+                label: "Time made",
+                numeric: false,
+                value: (r) => formatPickTime(r.snapshotted_at),
+              },
+            ]}
+          />
+        </Section>
+      ) : (
+        // No resolved picks to display.
+        <p className="text-sm text-pr-text-faint">No resolved picks to display.</p>
+      )}
+    </Section>
+  );
+}
+
 function WeekSection({ games }: { games: GamesTrackRecord }) {
   const weekly = games.weekly ?? [];
   const columns: Column<WeeklyRow>[] = [
@@ -847,6 +974,7 @@ export function TrackRecordPage() {
   // than a screen.
   const sections: [string, string][] = [
     ["tr-headline", "Record"],
+    ["tr-all-picks", "All picks"],
     ["tr-week", "By week"],
     ["tr-props", "Player props"],
     ["tr-yards", "Yardage"],
@@ -868,6 +996,11 @@ export function TrackRecordPage() {
           for, and it has to be in the first screen; the nav only pins once
           they have scrolled past it. */}
       <HeadlineSection games={games} />
+
+      {/* The all-picks figure sits beneath the headline, showing the full
+          record alongside the pre-kickoff headline, with a line explaining
+          why they differ (the two n_resolved values). */}
+      <AllPicksSection games={games} />
 
       <nav className="tr-nav" aria-label="Track record sections">
         <div className="tr-nav-scroll">

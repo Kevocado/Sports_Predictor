@@ -233,6 +233,33 @@ export interface GamesTrackRecord {
   /** Predicted margin, in points. */
   margin?: PointForecast;
   vs_market?: VsMarket;
+  /**
+   * The same three accuracies as the headline, over EVERY resolved row -- rebuilt INCLUDED.
+   * The headline is the pre-kickoff record and rebuilt picks never count toward it, because a
+   * hit rate is only meaningful if the pick existed before the result. What B8 adds is that
+   * nothing is hidden and everything is counted, in two figures instead of one.
+   */
+  all_picks?: AllPicksRecord;
+  /** One row per resolved (game, market) pick, hit and miss alike, never filtered. */
+  per_pick?: PerPickRow[];
+}
+export interface AllPicksRecord {
+  n_resolved: number;
+  pct_moneyline_correct: number | null;
+  pct_ats_correct: number | null;
+  pct_totals_correct: number | null;
+}
+export interface PerPickRow {
+  game_id: string;
+  gameday: string;
+  market: "moneyline" | "ats" | "totals";
+  pick: string;
+  actual: string;
+  hit: boolean;
+  rebuilt: boolean;
+  /** The time the pick was made. The plan's standing constraint is that every pick is
+   *  displayed with the time it was made; until B8 this was stored and exposed nowhere. */
+  snapshotted_at: string;
 }
 export interface ConfidenceBucket { label: string; n: number; hit_rate: number | null; }
 export interface AnytimeTdTrackRecord {
