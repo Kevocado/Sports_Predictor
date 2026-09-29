@@ -158,7 +158,31 @@ export function PlayersPage() {
 
   if (error) return <ErrorState message={`Couldn't load player stats: ${error}`} onRetry={() => setAttempt((n) => n + 1)} />;
   if (!data) return <Skeleton label="Loading players…" />;
-  if (rows.length === 0) return <EmptyState message={`No player stats for ${when?.season ?? "this"} season yet.`} />;
+  if (rows.length === 0) {
+    // Two different empties, and the old copy merged them into one word: "yet".
+    //
+    // Measured on the deployed API: `hub/players?season=2024` returns 547
+    // players and `?season=2026` returns none — because nflverse publishes
+    // per-season weekly player stats through 2024 and has released nothing for
+    // 2025 or 2026 (both 404 at the release URL). The endpoint is working; the
+    // data is not published yet. "No player stats for 2026 season yet" reads as
+    // "we have not got round to it", which sends a reader to refresh a page
+    // that will not change.
+    //
+    // `apiReturned` separates the two: rows dropped by `isRealPlayer` mean the
+    // feed DID send something and the filter removed it, which is our bug and
+    // must not be reported as an upstream delay.
+    const apiReturned = (data.players ?? []).length;
+    return (
+      <EmptyState
+        message={
+          apiReturned > 0
+            ? `Loaded ${apiReturned} player${apiReturned === 1 ? "" : "s"} for ${when?.season ?? "this"} season, but none passed the name filter.`
+            : `No weekly player stats published for ${when?.season ?? "this"} season yet. The source (nflverse) has not released them.`
+        }
+      />
+    );
+  }
 
   return (
     <div>
