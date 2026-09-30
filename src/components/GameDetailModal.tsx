@@ -264,6 +264,14 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
     [visibleProps, visibleTeams],
   );
   const hasBoxScore = boxScoreByTeam.length > 0;
+  // Whether the team control is on screen, decided by the GAME and never by the
+  // scope currently selected: `hasBoxScore` goes false the moment a team with
+  // no projections is selected, and gating the control on it took the only way
+  // back to Both with it. A user who lands on an empty Away or Home must still
+  // be able to press Both, so the control asks the unscoped question — does this
+  // game have any player props to filter at all? (With none there is nothing to
+  // switch between, and the control stays hidden.)
+  const hasTeamFilter = (gameProps?.length ?? 0) > 0;
   // The "Projected order" note, once on the section. BoxScore only prints it
   // under its own title, and no table carries one now, so the section says it —
   // with the same meaning: no visible row has a real starter flag.
@@ -437,7 +445,7 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
           <section aria-label="Predicted box score">
             <div className="mb-2 flex items-center justify-between gap-3">
               <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Predicted box score</h3>
-              {hasBoxScore && (
+              {hasTeamFilter && (
                 <div role="group" aria-label="Filter box score by team" data-testid="box-score-team-filter" className="flex shrink-0 overflow-hidden rounded-lg border border-sp-border/60 text-xs">
                   {(["away", "both", "home"] as const).map((f) => (
                     <button
