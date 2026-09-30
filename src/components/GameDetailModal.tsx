@@ -178,6 +178,9 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
     let cancelled = false;
     setPrediction(null); setPredictionError(null); setAllProps(null); setPropsLoading(true); setVerdict(null);
     setHomeForm(null); setAwayForm(null); setH2h(null);
+    // The team filter belongs to the fixture, not the session: reopening the
+    // default (Both) with every game, or Away would hide half the next box score.
+    setTeamFilter("both");
 
     // Fetch main game prediction
     api.gamePrediction(game.season, game.week, game.game_id)
@@ -220,25 +223,75 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
   }, [onClose]);
 
   const gameProps = allProps ? filterPlayerPropsForGame(allProps, game) : null;
-  // One group per position, each already ordered starters-then-bench, with the
-  // totals rows ordered away-then-home so they read like the scoreline above.
-  const boxScoreGroups = useMemo(
-    () => (gameProps ? buildBoxScoreGroups(gameProps, [game.away_team, game.home_team]) : []),
-    [gameProps, game.away_team, game.home_team],
+
+  // A4's three-state team control: Away / Both / Home, defaulting to Both.
+  // Reset per game alongside the rest of the modal state in the fetch effect
+  // below — a filter left over from another fixture would hide half of this
+  // one's box score.
+  const [teamFilter, setTeamFilter] = useState<"away" | "both" | "home">("both");
+
+  // The teams the filter leaves visible, away first like the scoreline above.
+  const visibleTeams = useMemo(
+    () => (teamFilter === "away" ? [game.away_team] : teamFilter === "home" ? [game.home_team] : [game.away_team, game.home_team]),
+    [teamFilter, game.away_team, game.home_team],
   );
+  const visibleProps = useMemo(() => {
+    if (!gameProps) return null;
+    if (teamFilter === "both") return gameProps;
+    const team = teamFilter === "away" ? game.away_team : game.home_team;
+    return gameProps.filter((prop) => prop.recent_team === team);
+  }, [gameProps, teamFilter, game.away_team, game.home_team]);
+
+  // Grouped by team then position: one section per visible team, each with its
+  // own position tables, each table already ordered starters-then-bench by
+  // buildBoxScoreGroups. The per-position subtotal rows are stripped — each
+  // team's total is rendered ONCE, in the strip at the end of the section, so
+  // no number is encoded twice. (buildBoxScoreGroups still computes them; the
+  // lib is untouched, the modal just does not render them.)
+  const boxScoreByTeam = useMemo(
+    () =>
+      visibleTeams
+        .map((team) => ({
+          team,
+          groups: visibleProps
+            ? buildBoxScoreGroups(
+                visibleProps.filter((prop) => prop.recent_team === team),
+                [team],
+              ).map((group) => ({ ...group, subtotals: null }))
+            : [],
+        }))
+        .filter((entry) => entry.groups.length > 0),
+    [visibleProps, visibleTeams],
+  );
+  const hasBoxScore = boxScoreByTeam.length > 0;
+  // The "Projected order" note, once on the section. BoxScore only prints it
+  // under its own title, and no table carries one now, so the section says it —
+  // with the same meaning: no visible row has a real starter flag.
+  const showProjectedNote =
+    hasBoxScore &&
+    !(visibleProps ?? []).some((prop) => prop.is_starter === true) &&
+    (visibleProps ?? []).some((prop) => prop.is_starter == null);
+
+  // Each visible team's total, once: the per-market sums (with the counts they
+  // were summed from) that the removed yardage cards used to carry. Same
+  // numbers, one home — which is what makes removing the cards a dedup rather
+  // than a deletion.
+  const teamTotals = useMemo(
+    () =>
+      visibleTeams.map((team) => ({
+        team,
+        markets: yardageBreakdown((visibleProps ?? []).filter((prop) => prop.recent_team === team)),
+      })),
+    [visibleProps, visibleTeams],
+  );
+  const showTeamTotals = teamTotals.some((row) => row.markets.length > 0);
   // Kept from origin/v2-wire, not from A4. Theirs' `visibleProps` memo is NOT
   // carried over: it filtered by the `positionFilter` state and sorted by
   // `keyYardage`, and A4 deleted the filter buttons (the box score groups by
   // position instead) along with the `playerRank` import, so the memo has
   // nothing left to read. `keyYardage` still exists -- `lib/boxScoreRows.ts`
   // uses it for the box score's row order -- but not as a modal-level sort.
-  const yardageByTeam = useMemo(
-    () => [
-      { team: game.home_team, markets: yardageBreakdown((gameProps ?? []).filter(p => p.recent_team === game.home_team)) },
-      { team: game.away_team, markets: yardageBreakdown((gameProps ?? []).filter(p => p.recent_team === game.away_team)) },
-    ],
-    [gameProps, game.home_team, game.away_team],
-  );
+  const emptyScope = teamFilter === "both" ? null : teamFilter === "away" ? game.away_team : game.home_team;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -368,41 +421,116 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
               {prediction.over_prob != null && <MarketBar label="Over total points" prob={prediction.over_prob} />}
               {prediction.under_prob != null && <MarketBar label="Under total points" prob={prediction.under_prob} />}
             </div>}
+          </section>
 
-            {/* Projected yardage, by market. Deliberately NOT a team total.
-                Kept from origin/v2-wire (#8) even though A4 deleted the block's
-                predecessor, and the reason it is not redundant is written down
-                in the report: the box score's totals rows are per POSITION
-                group, not per team, and they claim nothing at all when a single
-                player in the group has no projection for that market. This block
-                is per team, per market, carries the count it summed, and is the
-                only place on the page that says out loud why there is no team
-                yardage total. `data-testid` because the box score below prints
-                the same three market labels as its column headers, so a bare
-                getByText("Pass yds") can no longer say which of the two it meant. */}
-            {yardageByTeam.some(row => row.markets.length > 0) && (
-              <div className="flex flex-col gap-1.5" data-testid="yardage-by-market">
-                <div className="text-xs text-sp-text-faint font-semibold uppercase tracking-wide">Projected Yardage by Market</div>
-                <div className="grid grid-cols-2 gap-4 mt-2">
-                  {yardageByTeam.map(row => (
-                    <div key={row.team} className="rounded-lg bg-sp-850/60 p-3">
-                      <div className="font-semibold text-sm">{row.team}</div>
-                      {row.markets.length > 0 ? (
-                        <dl className="mt-1 flex flex-col gap-0.5 text-sm">
-                          {row.markets.map(market => (
-                            <div key={market.market} className="flex items-baseline justify-between gap-2">
-                              <dt className="text-sp-text-dim">
-                                {MARKET_LABEL[market.market]} <span className="text-sp-text-faint">({market.n})</span>
-                              </dt>
-                              <dd className="font-mono">{Math.round(market.yards)}</dd>
-                            </div>
-                          ))}
-                        </dl>
-                      ) : (
-                        <div className="text-sm text-sp-text-faint">No yardage projection</div>
-                      )}
-                    </div>
+          {/* Predicted box score — the model's own markets, grouped by team then
+              position (A4). The three-state team control sits on the header
+              line and defaults to Both; switching re-groups in place (one
+              state update, same scroll container, nothing remounts), so there
+              is no scroll jump.
+
+              Team totals appear ONCE per team, in the strip at the end: the
+              per-market sums with the counts they were summed from. Those are
+              the numbers the old side-by-side yardage cards carried — same
+              numbers, one home — which is why the cards are gone and no figure
+              is encoded twice. */}
+          <section aria-label="Predicted box score">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Predicted box score</h3>
+              {hasBoxScore && (
+                <div role="group" aria-label="Filter box score by team" data-testid="box-score-team-filter" className="flex shrink-0 overflow-hidden rounded-lg border border-sp-border/60 text-xs">
+                  {(["away", "both", "home"] as const).map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      aria-pressed={teamFilter === f}
+                      onClick={() => setTeamFilter(f)}
+                      className={`px-2.5 py-1 transition ${teamFilter === f ? "bg-sp-accent/20 font-semibold text-sp-text" : "text-sp-text-dim hover:bg-sp-800"}`}
+                    >
+                      {f === "away" ? "Away" : f === "home" ? "Home" : "Both"}
+                    </button>
                   ))}
+                </div>
+              )}
+            </div>
+            {/* The "Projected order" note, once on the section rather than once
+                per table: no table carries a title anymore, and BoxScore only
+                prints the note under its title. */}
+            {showProjectedNote && (
+              <p className="mb-1 text-xs text-sp-text-dim" data-testid="box-score-projected-note">
+                Projected order — no depth-chart feed for this sport
+              </p>
+            )}
+            {propsLoading && <p className="text-xs text-sp-text-faint">Loading player projections…</p>}
+            {/* Two different gaps, two different sentences, because the game
+                either has no props at all or has props the model does not
+                project. When the filter hides a team, the sentence names the
+                team it is about rather than the game. */}
+            {!propsLoading && !hasBoxScore && (
+              <p className="text-xs text-sp-text-faint rounded-lg bg-sp-850/40 p-3 border border-sp-border/40">
+                {visibleProps && visibleProps.length > 0
+                  ? emptyScope
+                    ? `No modelled positions for ${emptyScope} in this game. Every ${emptyScope} player the feed returned is at a position the model does not project (kicker, offensive or defensive line), and the box score only covers QB, RB, WR and TE.`
+                    : "No modelled positions for this game. Every player the feed returned is at a position the model does not project (kicker, offensive or defensive line), and the box score only covers QB, RB, WR and TE."
+                  : emptyScope
+                    ? `No ${emptyScope} player projections for this game yet.`
+                    : "No player projection props available for this specific game yet."}
+              </p>
+            )}
+            {/* A table per position, per team: each position has its own
+                markets, and each team its own section, away first. */}
+            {boxScoreByTeam.map(({ team, groups }, ti) => (
+              <div key={team} className={ti === 0 ? "mt-3" : "mt-6"}>
+                <h4 data-testid="box-score-team-section" className="font-display text-xs font-bold uppercase tracking-wider text-sp-text">{team}</h4>
+                {groups.map((group) => (
+                  <BoxScore
+                    key={group.position}
+                    columns={boxScoreColumnsFor(group.position)}
+                    groups={[group]}
+                  />
+                ))}
+              </div>
+            ))}
+            {/* Each visible team's total, once. A rate has no total and a
+                missing market is a dash, exactly like the per-position cells
+                above; the counts travel with the sums. */}
+            {showTeamTotals && (
+              <div data-testid="box-score-team-totals" className="mt-5">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <caption className="sr-only">Projected yardage by team and market</caption>
+                    <thead>
+                      <tr className="border-b border-sp-border text-[0.6875rem] uppercase tracking-wide text-sp-text-dim">
+                        <th scope="col" className="px-2 py-1.5 text-left font-semibold">Team</th>
+                        {(Object.keys(MARKET_LABEL) as (keyof typeof MARKET_LABEL)[]).map((market) => (
+                          <th key={market} scope="col" className="px-2 py-1.5 text-right font-semibold">
+                            {MARKET_LABEL[market]}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {teamTotals.map((row) => (
+                        <tr key={row.team} data-testid="box-score-team-total" className="border-b border-sp-border/60">
+                          <th scope="row" className="px-2 py-1.5 text-left font-semibold">{`${row.team} total`}</th>
+                          {(Object.keys(MARKET_LABEL) as (keyof typeof MARKET_LABEL)[]).map((market) => {
+                            const entry = row.markets.find((m) => m.market === market);
+                            return (
+                              <td key={market} className="px-2 py-1.5 text-right tabular-nums">
+                                {entry ? (
+                                  <>
+                                    <span className="font-mono">{Math.round(entry.yards)}</span> <span className="text-sp-text-faint">({entry.n})</span>
+                                  </>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
                 <p className="mt-1 text-xs leading-snug text-sp-text-faint">
                   Position-market projections, not team total yards. These cover the whole
@@ -412,54 +540,6 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
                 </p>
               </div>
             )}
-          </section>
-
-          {/* Predicted box score — the model's own markets, grouped by
-              position. This replaces the old per-player projection list and its
-              position filter buttons: the grouping does the filtering.
-
-              It does NOT replace the yardage block above, which A4's plan
-              believed it did. A box score's totals row is per POSITION group
-              (`teamSubtotals` in lib/boxScoreRows.ts), so a team's yardage is
-              spread across four tables and a reader has to add the WR and TE
-              receiving rows to reach "Rec yds"; the row also refuses to print at
-              all when a single player in the group has no projection for that
-              market, where the block reports the partial sum and the count it
-              was summed from. Neither carries a team yardage total, because the
-              model computes one only as `rushing + receiving` across every
-              player and has no team-level yardage model. The block above keeps
-              #8's figure and its explanation; this keeps A4's. */}
-          <section>
-            {propsLoading && <p className="text-xs text-sp-text-faint">Loading player projections…</p>}
-            {/* Two different gaps, two different sentences, because the game
-                either has no props at all or has props the model does not
-                project. A4 deleted the position filter buttons, and with them
-                the filter this branch's sentence used to name: it read "No
-                players at this position for this game", and there has been no
-                position left to read that against since. The branch is now
-                reachable only when `gameProps` is non-empty and every one of
-                them plays K / OL / DL / P — positions with no market, so
-                `buildBoxScoreGroups` has no group to render. So the sentence
-                names the thing that is actually missing. */}
-            {!propsLoading && boxScoreGroups.length === 0 && (
-              <p className="text-xs text-sp-text-faint rounded-lg bg-sp-850/40 p-3 border border-sp-border/40">
-                {gameProps && gameProps.length > 0
-                  ? "No modelled positions for this game. Every player the feed returned is at a position the model does not project (kicker, offensive or defensive line), and the box score only covers QB, RB, WR and TE."
-                  : "No player projection props available for this specific game yet."}
-              </p>
-            )}
-            {/* A table per position, because each position has its own markets.
-                The title goes on the first one only: it is the section heading,
-                and it carries the "Projected order" note the vendored BoxScore
-                renders when no row has a real starter flag. */}
-            {boxScoreGroups.map((group, i) => (
-              <BoxScore
-                key={group.position}
-                columns={boxScoreColumnsFor(group.position)}
-                groups={[group]}
-                title={i === 0 ? "Predicted box score" : undefined}
-              />
-            ))}
           </section>
 
         </div>
