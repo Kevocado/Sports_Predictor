@@ -4,7 +4,7 @@
 // that the modal and the explain call sites import the type from the panel that
 // declares it. So ours' import line is not a preference, it is a door that is no
 // longer there; theirs' is the only one that resolves.
-import { BoxScore, FixtureExplainer, pct, spread } from "../predictor-ui";
+import { BoxScore, FixtureExplainer, spread } from "../predictor-ui";
 import type { Explanation } from "../predictor-ui";
 // The v2 panel's figures, derived rather than fetched, from the SHARED adapter:
 // the panel renders no figure of its own, so this mapping is where the
@@ -19,6 +19,12 @@ import { MarketBar } from "./MarketBar";
 import { FormStrip } from "./FormStrip";
 import { HeadToHead } from "./HeadToHead";
 import { boxScoreColumnsFor, buildBoxScoreGroups } from "../lib/boxScoreRows";
+// `hasStarted` is the LIST CARD's own rule (`weekCards.ts:76`), imported rather
+// than re-derived, and `weekTally` is the same function the week navigator uses
+// for the record line. Two functions, one definition each: the card and the
+// modal cannot decide "started" or "the record" differently, because that
+// divergence IS the 68/72 bug.
+import { hasStarted, weekTally } from "../lib/weekCards";
 
 export const MARKET_LABEL = {
   passing_yards: "Pass yds",
@@ -95,29 +101,104 @@ function VerdictBadge({ label, hit }: { label: string; hit: boolean }) {
 // explain: fetches the plain-English summary. Optional on purpose — a site
 // deployed before the explainer exists, or a game it has no summary for, must
 // still open this modal and show everything else in it.
-interface Props { game: GameSummary; api: SportApi; weekPrediction?: WeekPrediction; onClose: () => void; explain?: (sport: string, id: string) => Promise<Explanation>; sport?: string; }
+// weekPredictions: every row of the week, for the record strip. The list page
+// has already fetched them (`GamesPage.tsx:86`); the modal is handed the same
+// array rather than asking again, so opening a game costs no second week fetch.
+interface Props { game: GameSummary; api: SportApi; weekPrediction?: WeekPrediction; weekPredictions?: WeekPrediction[]; onClose: () => void; explain?: (sport: string, id: string) => Promise<Explanation>; sport?: string; }
 
-function PregamePick({ game, week }: { game: GameSummary; week?: WeekPrediction }) {
-  if (week?.rebuilt) {
-    return (
-      <p className="mb-2 rounded-lg border border-sp-border/60 p-3 text-xs text-sp-text-dim">
-        Rebuilt after kickoff: this pick was made after the game started, so it is shown for reference and not counted.
-      </p>
-    );
-  }
-  const home = week && week.status !== "untracked" ? week.home_win_prob : undefined;
-  if (home == null) return <p className="mb-2 text-xs text-sp-text-dim">No pick was made before kickoff.</p>;
-  const label = home === 0.5 ? "Toss-up" : home > 0.5 ? game.home_team : game.away_team;
-  return <p className="mb-2 text-sm font-semibold text-sp-text">{`Pick before kickoff: ${label} · ${pct(home >= 0.5 ? home : 1 - home)}`}</p>;
+/** The moment a Sports pick must beat. Both sports here start at kickoff. */
+const MOMENT = "kickoff" as const;
+
+/** One number per pick, chosen by when the game started.
+ *
+ *  The list card reads the stored pre-kickoff snapshot; the modal used to read
+ *  today's freshly computed prediction, so the same pick read 68% on the card
+ *  and 72% in the tile — and the tile's `win · {team}` sub made the fresh
+ *  number read as the pick. The record judges the snapshot, so once a game has
+ *  started the snapshot is the only figure that may be called the pick. Before
+ *  kickoff there is no snapshot to disagree with, and the live model number is
+ *  the pick.
+ *
+ *  `started` is the card's own rule, imported from `weekCards.ts`, so the two
+ *  surfaces cannot define "started" differently — that divergence was the bug.
+ *
+ *  A started game with no stored snapshot has NO pick, and says so. The fresh
+ *  number is real, but it is not a pick made before kickoff and must not be
+ *  promoted into the pick's place wearing the pick's label.
+ */
+export function pickProbability(
+  game: GameSummary,
+  prediction: GamePrediction | null,
+  week: WeekPrediction | null,
+): number | null {
+  const snapshot = week && week.status !== "untracked" ? week.home_win_prob ?? null : null;
+  if (hasStarted(game)) return snapshot;
+  return prediction?.home_win_prob ?? snapshot;
 }
 
-export function GameDetailModal({ game, api, weekPrediction, onClose, explain, sport = "nfl" }: Props) {
+/** The away side of the same pair, from the same source, for the bar's two segments. */
+function pickProbabilities(
+  game: GameSummary,
+  prediction: GamePrediction | null,
+  week: WeekPrediction | null,
+): { home: number; away: number } | null {
+  const home = pickProbability(game, prediction, week);
+  if (home == null) return null;
+  const snapshotAway = week && week.status !== "untracked" ? week.away_win_prob ?? null : null;
+  const away =
+    hasStarted(game) ? snapshotAway ?? 1 - home : prediction?.away_win_prob ?? snapshotAway ?? 1 - home;
+  return { home, away };
+}
+
+/**
+ * The prediction object the adapter reads, carrying the ONE chosen moneyline
+ * pair. Everything else the tiles draw — the model's own margin and total — is
+ * today's fresh run, and stays so: the spread tile's `model` sub says which run
+ * it is, so a reader can see they are different numbers for different questions
+ * without either being restated as the pick.
+ *
+ * A started game reads from the snapshot even with no fresh response at all: the
+ * stored pick is the one figure the page may state, and a request that failed or
+ * has not landed is not a reason to state no number when the number is already
+ * held. The spread and total tiles need the fresh run, so with none they are
+ * simply absent — a market the facts do not carry is not passed at all.
+ */
+function panelInput(game: GameSummary, prediction: GamePrediction | null, week: WeekPrediction | null) {
+  const pair = pickProbabilities(game, prediction, week);
+  if (!prediction && !pair) return null;
+  return {
+    ...prediction,
+    home_win_prob: pair?.home ?? null,
+    away_win_prob: pair?.away ?? null,
+    predicted_margin: prediction?.predicted_margin ?? null,
+    predicted_total: prediction?.predicted_total ?? null,
+  };
+}
+
+export function GameDetailModal({ game, api, weekPrediction, weekPredictions, onClose, explain, sport = "nfl" }: Props) {
   const [prediction, setPrediction] = useState<GamePrediction | null>(null);
   // The panel's figures, derived rather than fetched. Memoised because
   // `panelFacts` allocates a new array on every call and the panel takes those
   // arrays as props — without this the tiles and segments are a fresh identity on
   // every render, which re-renders the whole panel whenever anything else moves.
-  const panel = useMemo(() => panelFacts({ kind: "SP", game, prediction }), [game, prediction]);
+  //
+  // The prediction it reads is `panelInput`, not the raw response: that is where
+  // the moneyline pair is replaced by the ONE pair this page may state (see
+  // `pickProbability`). Passing the raw response here is what let the tile and
+  // the list card disagree.
+  const panelInputFor = useMemo(() => panelInput(game, prediction, weekPrediction ?? null), [game, prediction, weekPrediction]);
+  const panel = useMemo(() => panelFacts({ kind: "SP", game, prediction: panelInputFor }), [game, panelInputFor]);
+  // The moneyline tile's sub is dropped rather than rewritten. `panelFacts` gives
+  // it `win · {team}`, and that sub is what dressed the number up as the pick;
+  // without it `KeyNumberTile` falls back to the market's own label, so the tile
+  // reads "moneyline" under the figure and the block's verdict line is the only
+  // place the pick is named. The spread and total tiles keep their subs — those
+  // are the model's own run against the market's line, which is a different
+  // question from which side is the pick.
+  const tiles = useMemo(
+    () => panel.tiles.map((t) => (t.market === "moneyline" ? { ...t, sub: undefined } : t)),
+    [panel.tiles],
+  );
   const [predictionError, setPredictionError] = useState<string | null>(null);
   const [allProps, setAllProps] = useState<PlayerPropPrediction[] | null>(null);
   const [propsLoading, setPropsLoading] = useState(true);
@@ -137,8 +218,12 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
   const finite = (x: unknown): number | undefined =>
     typeof x === "number" && Number.isFinite(x) ? x : undefined;
   const flowBundle = useMemo(() => {
-    const hw = finite(prediction?.home_win_prob);
-    const aw = finite(prediction?.away_win_prob);
+    // The SAME pair the tiles draw. The flow and the block read one bundle, so
+    // they cannot state two different probabilities for the same pick — which is
+    // exactly the 68/72 defect, in a different component.
+    const pair = pickProbabilities(game, prediction, weekPrediction ?? null);
+    const hw = pair?.home;
+    const aw = pair?.away;
     // Rightness arrives with the reconciled verdict, which loads after the
     // modal opens; until then the finished flow states the result and says
     // nothing about the pick, rather than grading unreconciled numbers.
@@ -162,6 +247,10 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
       home_win_prob: hw,
       away_win_prob: aw,
       pick,
+      // A pick snapshotted at or after kickoff is shown and never counted, and
+      // the badge that says so belongs to the block. The bundle carries the flag
+      // and nothing words it a second time.
+      ...(weekPrediction?.rebuilt ? { pick_timing: "rebuilt" as const } : {}),
       score,
       result: !score
         ? undefined
@@ -171,8 +260,20 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
             ? "home_win"
             : "away_win",
     };
-  }, [game, prediction, verdict]);
+  }, [game, prediction, verdict, weekPrediction]);
   const flowState = isFinal ? "finished" : "pre-game";
+
+  // The record: this week's picks made before kickoff, from the function the
+  // week navigator already uses, over the rows the list page already fetched.
+  // `null` rather than a zeroed tally while the rows are absent, so the strip
+  // never flashes 0/0 — "0/0" is a claim about a record that does not exist.
+  const record = useMemo(
+    () =>
+      weekPredictions
+        ? { label: `Picks made before ${MOMENT} correct`, ...weekTally(weekPredictions) }
+        : null,
+    [weekPredictions],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -314,12 +415,18 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
               state={flowState}
               bundle={flowBundle}
               request={() => explain(sport, game.game_id)}
-              // The figures the summary draws, from this site's OWN prediction
-              // response rather than from the explanation. The panel is handed
-              // numbers and renders them; it must never be the thing that
-              // decides what the numbers are, or the explanation and the
-              // prediction could disagree on screen.
-              extras={{ tiles: panel.tiles, segments: panel.segments }}
+              // The figures the block draws — and the figures the summary draws
+              // underneath it — from this site's OWN prediction response rather
+              // than from the explanation. The panel is handed numbers and
+              // renders them; it must never be the thing that decides what the
+              // numbers are, or the explanation and the prediction could
+              // disagree on screen.
+              //
+              // `record` is the one thing the block adds that the list view held
+              // on the other side of the click, so the modal no longer has to
+              // fetch the week a second time to show it: the rows arrive as a
+              // prop from the page that already has them.
+              extras={{ tiles, segments: panel.segments, record: record ?? undefined, moment: MOMENT }}
             />
           )}
 
@@ -343,7 +450,10 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
                 <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Result &amp; verdict</h3>
                 <p className="text-xs text-sp-text-dim">Whether the model's pregame call matched what actually happened.</p>
               </div>
-              <PregamePick game={game} week={weekPrediction} />
+              {/* No pick sentence here. The block above already badges the
+                  timing and names the pick, and this section's whole subject is
+                  whether that call was right — restating which pick was made
+                  would state the same figure a second time. */}
               {verdict ? (
                 <div className="flex flex-col gap-2">
                   <p className="font-display text-lg font-semibold tracking-wide text-sp-text">
@@ -391,31 +501,49 @@ export function GameDetailModal({ game, api, weekPrediction, onClose, explain, s
             </section>
           )}
 
-          {/* Match Markets Section */}
+          {/* The model's OTHER markets — today's fresh run, not the pick.
+              The two win-probability bars that used to head this section are
+              gone: the block's tile and bar already state that one pair, and
+              stating it twice is how this page came to read 68% and 72% at
+              once. What stays is the part the tiles do not draw at all —
+              cover chance, over/under, and the margin's own spread — so nothing
+              is lost with the duplicate. */}
           <section>
             <div className="mb-2">
-              <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Match Markets</h3>
+              <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Other model markets</h3>
               <p className="text-xs text-sp-text-dim">
                 {isFinal
                   ? "Today's model, for reference: the verdict above is judged on the pick made before kickoff."
-                  : "Win probability (straight-up), point spread cover chance, and total points line."}
+                  : "Point spread cover chance and total points line, from today's run."}
               </p>
             </div>
             {predictionError && <p className="text-xs text-loss">{predictionError}</p>}
             {!prediction && !predictionError && <p className="text-xs text-sp-text-faint">Loading match markets…</p>}
-            {/* The card only shows these on the list view; restate them here
-                so the modal is self-contained. */}
-            {game.spread_line != null && (
-              <p className="text-xs text-sp-text-dim">{`${spread(game.home_team, -game.spread_line)} · Total ${game.total_line ?? "—"}`}</p>
-            )}
+            {/* The market's own lines, restated ONLY when no tile will carry
+                them. `panelFacts` draws the spread tile from `spread_line` and
+                the total tile's sub from `total_line`, but only when the model
+                also has a margin and a total for that game; with no forecast
+                there is no tile, and dropping the line then would lose a figure
+                the page can still state honestly. A line that IS on a tile is
+                not restated here, so no figure appears twice. */}
+            {(() => {
+              const parts: string[] = [];
+              if (game.spread_line != null && prediction?.predicted_margin == null) {
+                parts.push(spread(game.home_team, -game.spread_line));
+              }
+              if (game.total_line != null && prediction?.predicted_total == null) {
+                parts.push(`Total ${game.total_line}`);
+              }
+              return parts.length > 0 ? (
+                <p className="text-xs text-sp-text-dim">{parts.join(" · ")}</p>
+              ) : null;
+            })()}
             {prediction && prediction.predicted_margin != null && prediction.sigma != null && (
               <p className="text-xs text-sp-text-dim">
                 {`Projected margin: ${prediction.predicted_margin >= 0 ? game.home_team : game.away_team} by ${Math.abs(prediction.predicted_margin).toFixed(1)} ± ${prediction.sigma.toFixed(1)} pts`}
               </p>
             )}
             {prediction && <div className="flex flex-col gap-1.5">
-              <MarketBar label={`${game.home_team} win`} prob={prediction.home_win_prob} />
-              <MarketBar label={`${game.away_team} win`} prob={prediction.away_win_prob} />
               {prediction.home_cover_prob != null && <MarketBar label={`${game.home_team} covers spread`} prob={prediction.home_cover_prob} />}
               {prediction.away_cover_prob != null && <MarketBar label={`${game.away_team} covers spread`} prob={prediction.away_cover_prob} />}
               {prediction.over_prob != null && <MarketBar label="Over total points" prob={prediction.over_prob} />}

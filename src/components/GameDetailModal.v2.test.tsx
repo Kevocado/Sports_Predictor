@@ -76,10 +76,21 @@ const barName = (container: HTMLElement) => {
 };
 
 const game: GameSummary = {
-  game_id: "2026_01_KC_BAL", season: 2026, week: 1, gameday: "2026-09-07T20:00:00Z",
+  // The kickoff is deliberately far in the future. This file's subject is how
+  // the PANEL joins a pick to a segment — which label, which accent, which
+  // de-emphasis — and the modal now chooses the moneyline source by timing
+  // (`pickProbability`): a game that has started with no stored pre-kickoff pick
+  // draws no bar at all, because a fresh number must not stand in for a pick
+  // made before kickoff. An unstarted fixture keeps these tests on their own
+  // subject. The timing rule itself is pinned in
+  // GameDetailModal.instant.test.tsx, and by the case below.
+  game_id: "2026_01_KC_BAL", season: 2026, week: 1, gameday: "2999-09-07T20:00:00Z",
   home_team: "Ravens", away_team: "Chiefs",
   home_score: null, away_score: null,
 };
+
+/** The same fixture with a kickoff in the past: started, and no stored pick. */
+const startedGame: GameSummary = { ...game, game_id: "2020_01_KC_BAL", gameday: "2020-09-07T20:00:00Z" };
 
 /** Home 62 / away 38, so the pick is the FAVOURITE and the bar is not lopsided. */
 const prediction = (over: Partial<GamePrediction> = {}): GamePrediction => ({
@@ -149,6 +160,24 @@ async function show(
   await screen.findByText(/Baltimore are the pick/);
   return out;
 }
+
+describe("which figures the bar is drawn from", () => {
+  it("draws the bar for a game that has not started, from today's model", async () => {
+    // The fixture the rest of this file uses. Stated once, here, so the far-future
+    // kickoff at the top of the file cannot be mistaken for an accident.
+    const { container } = await show({ label: game.home_team });
+    expect(fills(container)).toHaveLength(2);
+  });
+
+  it("draws NO bar for a game that has started with no stored pre-kickoff pick", async () => {
+    // The same panel, a started game, and no snapshot. Today's 62/38 is a real
+    // number, but it is not a pick made before kickoff — and a bar whose pick is
+    // accented states that a pick exists. So there is no bar, rather than a bar
+    // wearing a number the record would not judge.
+    const { container } = await show({ label: startedGame.home_team }, {}, undefined, startedGame);
+    expect(fills(container)).toHaveLength(0);
+  });
+});
 
 describe("the accent follows the pick", () => {
   it("accents the home side when the pick is the home team", async () => {
