@@ -10,12 +10,15 @@ vi.mock("../context/SportContext", () => ({
 const game: GameSummary = { game_id: "2026_01_KC_BAL", season: 2026, week: 1, gameday: "2026-09-07T20:00:00Z", home_team: "Ravens", away_team: "Chiefs", home_score: null, away_score: null };
 function prop(id: string, team: string, position = "WR", over: Partial<PlayerPropPrediction> = {}): PlayerPropPrediction { return { player_id: id, player_name: id, recent_team: team, position, anytime_td_prob: 0.3, ...over }; }
 
-// The box score is a table per position, so the column headers are read off
-// the one table rather than off the whole modal. The position label is a
-// colgroup header in the body, not a column, so read the thead.
+// The box score is a table per (team, position), so the column headers are
+// read off the box-score tables rather than off the whole modal: the section
+// now also carries the team-totals strip, which is a table of its own. The
+// position label is a colgroup header in the body, not a column, so read the
+// thead.
 async function renderModal(props: PlayerPropPrediction[], api = mockApi({ playerProps: vi.fn().mockResolvedValue(props) })) {
   render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
-  return screen.findAllByRole("table");
+  const sections = await screen.findAllByTestId("box-score");
+  return sections.map((s) => within(s).getByRole("table"));
 }
 function headers(table: HTMLElement) {
   return [...table.querySelectorAll("thead th")].map((h) => h.textContent);
@@ -64,13 +67,15 @@ describe("GameDetailModal's predicted box score", () => {
 
   it("gives each position its own columns, the model's own markets and nothing more", async () => {
     const tables = await renderModal(roster);
-    // One table per position, in QB -> RB -> WR -> TE order.
+    // One table per (team, position): the away section first (Chiefs: QB, TE),
+    // then the home section (Ravens: RB, WR), each position in QB -> RB -> WR
+    // -> TE order within its section.
     expect(tables.map(headers)).toEqual([
       ["Player", "Pass yds", "TD %"],
+      ["Player", "Rec yds", "Rec", "TD %"],
       // RB has no receiving market, so no Rec yds / Rec columns: see
       // boxScoreRows.ts. A column that can only ever be a dash is not shipped.
       ["Player", "Rush yds", "Carries", "TD %"],
-      ["Player", "Rec yds", "Rec", "TD %"],
       ["Player", "Rec yds", "Rec", "TD %"],
     ]);
   });
@@ -92,8 +97,8 @@ describe("GameDetailModal's predicted box score", () => {
     await renderModal([prop("a", "Ravens", "QB"), prop("b", "Chiefs", "WR")]);
     expect(screen.queryByRole("button", { name: "QB" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "ALL" })).not.toBeInTheDocument();
-    // Close is the only button the modal has left.
-    expect(screen.getAllByRole("button")).toHaveLength(1);
+    // Close plus the Away / Both / Home team filter: no position control.
+    expect(screen.getAllByRole("button")).toHaveLength(4);
   });
 
   it("lists starters before bench, in depth-chart order, when the feed has one", async () => {
@@ -133,36 +138,29 @@ describe("GameDetailModal's predicted box score", () => {
     expect([...cells].map((c) => c.textContent)).toEqual(["84.2", "—", "30"]);
   });
 
-  it("keeps the yardage block and adds one totals row per team under each position group, away then home", async () => {
-    // This used to be called "replaces the Team Yardage cards ...", and the
-    // removal it described was reverted in 41c79ad: the "Projected Yardage by
-    // Market" block is back, because `BoxScoreTotal` is `{ label, values }`
-    // rendered as given, so the shared component cannot supply a per-team
-    // yardage, and the caller's `teamSubtotals` run per POSITION group — one
-    // team's yardage is spread over four tables. What is actually asserted is
-    // the WR group's own totals rows, in the game's away-then-home order, with
-    // the yardage block still above them.
+  it("removes the yardage cards and shows each team's total once, away then home", async () => {
+    // A4's dedup rule, reaffirmed at Phase 0 review: the side-by-side
+    // "Projected Yardage by Market" cards are gone, and each team's total is
+    // rendered once — in the totals strip, not once per position group. The
+    // strip carries the cards' numbers (per-market sums with the counts they
+    // were summed from), so nothing is lost, and no per-position subtotal row
+    // survives to encode either total a second time.
     await renderModal([
       prop("r1", "Ravens", "WR", { receiving_yards: 60 }),
       prop("r2", "Ravens", "WR", { receiving_yards: 40 }),
       prop("k1", "Chiefs", "WR", { receiving_yards: 30 }),
     ]);
-    // The block is still on the page. It is not a per-team total either — it is
-    // per market, with the count it summed — which is why it is not redundant
-    // with the rows below. (A4's version of this line asserted the absence of
-    // the heading "Team Yardage Predictions", a string #8 had already renamed
-    // to "Projected Yardage by Market" and which appears nowhere in src/: the
-    // assertion could not fail, while the block it claimed to negate rendered
-    // on the same screen.)
-    const yardage = within(screen.getByTestId("yardage-by-market"));
-    expect(yardage.getByText("Projected Yardage by Market")).toBeInTheDocument();
-    expect(yardage.getByText(/not team total yards/i)).toBeInTheDocument();
-    // WR is the only position on the roster here, so the two totals below are
-    // that group's, not a Ravens yardage line and a Chiefs yardage line.
-    const totals = screen.getAllByTestId("box-score-subtotal");
+    expect(screen.queryByTestId("yardage-by-market")).not.toBeInTheDocument();
+    expect(screen.queryByText("Projected Yardage by Market")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("box-score-subtotal")).not.toBeInTheDocument();
+    // WR is the only position on the roster here, so both totals below are the
+    // teams' own — one row each, in the game's away-then-home order.
+    const totals = within(screen.getByTestId("box-score-team-totals")).getAllByTestId("box-score-team-total");
     expect(totals).toHaveLength(2);
-    expect(totals[0]).toHaveTextContent("Chiefs total30");
-    expect(totals[1]).toHaveTextContent("Ravens total100");
+    expect(totals[0]).toHaveTextContent("Chiefs total");
+    expect(within(totals[0]).getByText("30")).toBeInTheDocument();
+    expect(totals[1]).toHaveTextContent("Ravens total");
+    expect(within(totals[1]).getByText("100")).toBeInTheDocument();
   });
 
   it("renders no table at all when the game has no props, and says so", async () => {
