@@ -240,6 +240,10 @@ export function GamesPage() {
           game={selectedGame}
           api={api}
           weekPrediction={byId.get(selectedGame.game_id)}
+          // The rows are already in this page's state (`:86`), so the modal's
+          // record strip costs no second week fetch. It reads the same tally the
+          // navigator above shows, from the same function.
+          weekPredictions={weekPredictions}
           onClose={() => setSelectedGame(null)}
           sport={sport}
           explain={(s, id) => (s === "cfb" ? cfbExplain(id) : nflExplain(id))}

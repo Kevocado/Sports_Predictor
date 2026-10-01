@@ -199,15 +199,39 @@ describe("GameDetailModal", () => {
     expect(screen.queryByText("other")).not.toBeInTheDocument();
   });
 
-  it("restates the spread/total line near the match markets", async () => {
+  it("restates the spread/total line when no tile will carry it", async () => {
     const api = mockApi();
-    render(<GameDetailModal game={{ ...game, spread_line: -2.5, total_line: 46.5 }} api={api} onClose={() => {}} />);
     // `spread_line` is the HOME team's line in nflverse's convention (NFL_Predictor's
     // `game_outcome.py`: "the home team's expected margin"), so −2.5 is the home
     // team RECEIVING 2.5 and the rendering is `spread(home, -spread_line)`. It is
     // not "the away side is favoured, therefore flip it" — the field is defined in
     // the home frame from the start, and the away side is favoured as a consequence.
+    //
+    // The default mock prediction carries no `predicted_margin` or
+    // `predicted_total`, so `panelFacts` draws no spread tile and no total tile
+    // and this line is the ONLY place the market's line can be read. When the
+    // model DOES forecast them the tiles carry both and the line is dropped —
+    // pinned by the sibling test below, so the dedup cannot be undone by
+    // deleting the tiles or by widening this line.
+    render(<GameDetailModal game={{ ...game, spread_line: -2.5, total_line: 46.5 }} api={api} onClose={() => {}} />);
     await waitFor(() => expect(screen.getByText("Ravens +2.5 · Total 46.5")).toBeInTheDocument());
+  });
+
+  it("does not restate a line that a tile already draws", async () => {
+    const api = mockApi({
+      gamePrediction: vi.fn().mockResolvedValue({
+        home_win_prob: 0.6, away_win_prob: 0.4, home_cover_prob: null, away_cover_prob: null,
+        over_prob: null, under_prob: null, predicted_margin: 3.5, predicted_total: 45.5,
+      } satisfies GamePrediction),
+    });
+    render(<GameDetailModal game={{ ...game, spread_line: -2.5, total_line: 46.5 }} api={api} onClose={() => {}} explain={vi.fn().mockReturnValue(new Promise<never>(() => {}))} />);
+    // Both lines are on the tiles now: the spread tile's value is the line and
+    // its sub is the model's own margin; the total tile's sub carries the line.
+    const block = await screen.findByTestId("instant-block");
+    expect(within(block).getByTestId("tile-spread")).toHaveTextContent("Ravens +2.5");
+    expect(within(block).getByTestId("tile-total")).toHaveTextContent("line 46.5");
+    // The one summary line is gone, so no figure is stated twice.
+    expect(screen.queryByText("Ravens +2.5 · Total 46.5")).not.toBeInTheDocument();
   });
 
   it("shows a confidence band from predicted_margin and sigma", async () => {
@@ -268,26 +292,43 @@ describe("GameDetailModal", () => {
 
 describe("GameDetailModal on a final", () => {
   const finalGame = { ...game, home_score: 20, away_score: 17 };
+  // The `PregamePick` sentence is gone: the block's badge and verdict line say
+  // the same thing once, in the shared panel, and this file's job now is to pin
+  // that they are gone rather than to keep asserting the old prose. The
+  // equivalent assertions live in GameDetailModal.instant.test.tsx.
 
-  it("shows the pick made before kickoff, and labels today's model as reference only", async () => {
+  it("no longer prints the retired 'Pick before kickoff' sentence", async () => {
     const api = mockApi();
     const week = { game_id: finalGame.game_id, status: "resolved" as const, home_win_prob: 0.32, away_win_prob: 0.68, verdict: null };
-    render(<GameDetailModal game={finalGame} api={api} weekPrediction={week} onClose={() => {}} />);
-    expect(await screen.findByText("Pick before kickoff: Chiefs · 68%")).toBeInTheDocument();
-    expect(screen.getByText(/Today's model, for reference/)).toBeInTheDocument();
+    render(<GameDetailModal game={finalGame} api={api} weekPrediction={week} onClose={() => {}} explain={vi.fn().mockReturnValue(new Promise<never>(() => {}))} />);
+    await waitFor(() => expect(screen.getByTestId("instant-block")).toBeInTheDocument());
+    expect(screen.queryByText(/Pick before kickoff/)).not.toBeInTheDocument();
   });
 
-  it("labels a pick rebuilt after kickoff", async () => {
+  it("no longer repeats the retired rebuilt prose below the panel", async () => {
     const api = mockApi();
     const week = { game_id: finalGame.game_id, status: "resolved" as const, rebuilt: true, home_win_prob: 0.5, away_win_prob: 0.5, verdict: null };
-    render(<GameDetailModal game={finalGame} api={api} weekPrediction={week} onClose={() => {}} />);
-    expect(await screen.findByText(/Rebuilt after kickoff/)).toBeInTheDocument();
+    render(<GameDetailModal game={finalGame} api={api} weekPrediction={week} onClose={() => {}} explain={vi.fn().mockReturnValue(new Promise<never>(() => {}))} />);
+    const block = await screen.findByTestId("instant-block");
+    // Stated once, by the block's badge — the section below states the result,
+    // not which pick was made.
+    expect(within(block).getByText(/Rebuilt after kickoff/i)).toBeInTheDocument();
+    expect(within(block).getByText(/not counted/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Rebuilt after kickoff/i)).toHaveLength(1);
   });
 
-  it("says when there was no pick before kickoff", async () => {
+  it("no longer repeats the retired no-pick sentence below the panel", async () => {
     const api = mockApi();
-    render(<GameDetailModal game={finalGame} api={api} onClose={() => {}} />);
-    expect(await screen.findByText("No pick was made before kickoff.")).toBeInTheDocument();
+    render(<GameDetailModal game={finalGame} api={api} onClose={() => {}} explain={vi.fn().mockReturnValue(new Promise<never>(() => {}))} />);
+    await waitFor(() => expect(screen.getByTestId("instant-block")).toBeInTheDocument());
+    expect(screen.queryByText("No pick was made before kickoff.")).not.toBeInTheDocument();
+  });
+
+  it("still labels today's model as reference only on a final", async () => {
+    const api = mockApi();
+    const week = { game_id: finalGame.game_id, status: "resolved" as const, home_win_prob: 0.32, away_win_prob: 0.68, verdict: null };
+    render(<GameDetailModal game={finalGame} api={api} weekPrediction={week} onClose={() => {}} explain={vi.fn().mockReturnValue(new Promise<never>(() => {}))} />);
+    expect(screen.getByText(/Today's model, for reference/)).toBeInTheDocument();
   });
 });
 
