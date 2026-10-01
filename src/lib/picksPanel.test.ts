@@ -15,8 +15,6 @@ import { describe, expect, it } from "vitest";
 import type { PlayerPropPrediction, PlayerPropsTrackRecord, TrackRecord } from "../types";
 import {
   buildPicksPanel,
-  CFB_AVAILABILITY_NOTE,
-  NO_GRADED_RECORD_YET,
   positionCategories,
 } from "./picksPanel";
 
@@ -225,41 +223,12 @@ describe("an out player leaves the ranking entirely", () => {
   });
 });
 
-describe("provenance: an uncalibrated arm is described, not judged", () => {
-  it("shows the bucket context where a graded record exists", () => {
+describe("a row is the player and the prediction, nothing else (Kevin, 2026-10-01)", () => {
+  it("carries no provenance, record, margin or calibration text on any row", () => {
     const panel = buildPicksPanel({ sport: "nfl", props: nflSlate, out: nflOut, track: nflTrack.player_props, game });
-    const td = panel.categories.find((c) => c.category === "Anytime TD")!;
-    const p = td.rows[0].provenance;
-    expect(p).toContain("346");
-    expect(p.toLowerCase()).toContain("uncalibrated");
-    expect(p).toMatch(/bucket/i);
-  });
-
-  it("says there is no graded record yet when the backend has resolved none", () => {
-    const empty = {
-      ...nflTrack.player_props,
-      anytime_td: { n_resolved: 0, hit_rate_when_called: null, brier_score: null, confidence_buckets: [] },
-    } as PlayerPropsTrackRecord;
-    const panel = buildPicksPanel({ sport: "nfl", props: nflSlate, out: nflOut, track: empty, game });
-    const p = panel.categories.find((c) => c.category === "Anytime TD")!.rows[0].provenance;
-    expect(p).toContain(NO_GRADED_RECORD_YET);
-    // The failure this guards: with n_resolved 0 every bucket is `n: 0,
-    // hit_rate: null`, so a fallback that renders the buckets prints a hit rate
-    // of zero. No rate, no Brier figure, and no count dressed as a result.
-    expect(p).not.toMatch(/scored \d|brier|hit rate/i);
-    expect(p).not.toMatch(/graded \d|graded over/);
-  });
-
-  it("never claims the arm is good or bad in either state", () => {
-    for (const track of [nflTrack.player_props, cfbTrack.player_props]) {
-      const panel = buildPicksPanel({ sport: "nfl", props: nflSlate, out: nflOut, track, game });
-      for (const c of panel.categories) {
-        for (const r of c.rows) {
-          // Comparatives and verdicts about the arm itself. "better" is
-          // included deliberately: it is a comparative, and the shipped wording
-          // uses "at or above" precisely so this assertion can hold.
-          expect(r.provenance).not.toMatch(/\b(better|worse|poor|strong|weak|accurate|inaccurate|sharp|overrated|underrated|calibrated)\b/i);
-        }
+    for (const c of panel.categories) {
+      for (const r of c.rows) {
+        expect(Object.keys(r).sort()).toEqual(["detail", "key", "kind", "name", "team", "value"]);
       }
     }
   });
@@ -275,7 +244,7 @@ describe("provenance: an uncalibrated arm is described, not judged", () => {
     const prose = [
       panel.title,
       panel.availability,
-      ...panel.categories.flatMap((c) => [c.category, ...c.rows.flatMap((r) => [r.name, r.team ?? "", r.detail, r.provenance])]),
+      ...panel.categories.flatMap((c) => [c.category, ...c.rows.flatMap((r) => [r.name, r.team ?? "", r.detail])]),
       ...panel.out.flatMap((o) => [o.name, o.team ?? "", o.source, o.dated]),
     ].join(" | ").toLowerCase();
     for (const word of ["lock", "guaranteed", "guarantee", "best bet", "edge", "value", "valued", "odds", "line movement", "moneyline", "sharp", "juice"]) {
@@ -284,68 +253,7 @@ describe("provenance: an uncalibrated arm is described, not judged", () => {
   });
 });
 
-describe("yardage rows carry an error margin, or say there is not one", () => {
-  it("reads NFL's LIST shape by_position", () => {
-    const panel = buildPicksPanel({ sport: "nfl", props: nflSlate, out: nflOut, track: nflTrack.player_props, game });
-    const qb = panel.categories.find((c) => c.category === "QB passing yards")!.rows[0];
-    expect(qb.kind).toBe("projection");
-    expect(qb.margin).toBeCloseTo(66.76, 2);
-  });
-
-  it("reads CFB's BARE MAP mae_by_position, which is a different shape", () => {
-    const panel = buildPicksPanel({ sport: "cfb", props: nflSlate, out: [], track: cfbTrack.player_props, game });
-    const rb = panel.categories.find((c) => c.category === "RB rushing yards")!.rows[0];
-    expect(rb.margin).toBeCloseTo(27.37, 2);
-  });
-
-  it("omits the margin entirely when the backend has no MAE -- never a zero", () => {
-    // `carries` is served with n_resolved 0 and mean_absolute_error null on both
-    // backends. A margin of 0 would be a claim of perfect accuracy.
-    const panel = buildPicksPanel({ sport: "nfl", props: nflSlate, out: nflOut, track: nflTrack.player_props, game });
-    for (const c of panel.categories) {
-      for (const r of c.rows) {
-        if (r.kind === "projection") expect(r.margin).not.toBe(0);
-      }
-    }
-    const carriesOnly = buildPicksPanel({
-      sport: "nfl",
-      props: nflSlate,
-      out: nflOut,
-      track: {
-        ...nflTrack.player_props,
-        rushing_yards: { n_resolved: 0, mean_absolute_error: null, mean_signed_error: null },
-      } as PlayerPropsTrackRecord,
-      game,
-    });
-    expect(carriesOnly.categories.find((c) => c.category === "RB rushing yards")!.rows[0].margin).toBeUndefined();
-  });
-
-  it("renders the no-error-estimate wording through the shipped component", () => {
-    // PicksList draws `no error estimate yet` for an absent `margin`. Assert the
-    // component's own contract rather than trusting that ours reaches it.
-    const panel = buildPicksPanel({
-      sport: "nfl",
-      props: nflSlate,
-      out: nflOut,
-      track: { ...nflTrack.player_props, rushing_yards: { n_resolved: 0, mean_absolute_error: null, mean_signed_error: null } } as PlayerPropsTrackRecord,
-      game,
-    });
-    expect(panel.categories.find((c) => c.category === "RB rushing yards")!.rows[0].margin).toBeUndefined();
-  });
-});
-
 describe("CFB: the flag for a sport with no availability feed at all", () => {
-  it("marks every CFB row 'no availability check'", () => {
-    const panel = buildPicksPanel({ sport: "cfb", props: nflSlate, out: [], track: cfbTrack.player_props, game });
-    for (const c of panel.categories) for (const r of c.rows) expect(r.provenance).toContain(CFB_AVAILABILITY_NOTE);
-  });
-
-  it("does not mark NFL rows with it -- NFL has an injury feed to check against", () => {
-    const panel = buildPicksPanel({ sport: "nfl", props: nflSlate, out: nflOut, track: nflTrack.player_props, game });
-    const all = panel.categories.flatMap((c) => c.rows.map((r) => r.provenance)).join(" ");
-    expect(all).not.toContain(CFB_AVAILABILITY_NOTE);
-  });
-
   it("claims no CFB player is available, in any wording", () => {
     const panel = buildPicksPanel({ sport: "cfb", props: nflSlate, out: [], track: cfbTrack.player_props, game });
     const text = JSON.stringify(panel).toLowerCase();

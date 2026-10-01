@@ -323,9 +323,9 @@ describe("GameDetailModal on a final", () => {
     const block = await screen.findByTestId("instant-block");
     // Stated once, by the block's badge — the section below states the result,
     // not which pick was made.
-    expect(within(block).getByText(/Rebuilt after kickoff/i)).toBeInTheDocument();
-    expect(within(block).getByText(/not counted/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/Rebuilt after kickoff/i)).toHaveLength(1);
+    expect(within(block).getByText("Made after kickoff")).toBeInTheDocument();
+    expect(within(block).getByText(/Counted in the track record/i)).toBeInTheDocument();
+    expect(screen.getAllByText("Made after kickoff")).toHaveLength(1);
   });
 
   it("no longer repeats the retired no-pick sentence below the panel", async () => {
