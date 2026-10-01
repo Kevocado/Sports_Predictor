@@ -13,11 +13,21 @@
  * making the fresh number read as the pick. A page must not state one figure
  * twice with two values, and the record judges the snapshot, so once a game has
  * started the snapshot is the only figure that may be called the pick.
+ *
+ * **The block is the only place the figures appear, BEFORE and AFTER the button.**
+ * `InstantBlock` renders the tiles, the bar, its legend and the record, and the
+ * panel behind the button deliberately renders none of them: an earlier plan said
+ * the figures sat under the summary, and the reviewer's fix inverted that — the
+ * summary adds WORDS and the block keeps the numbers, so pressing the button must
+ * not produce a second copy of any figure. That makes "exactly once" a claim
+ * about two states rather than one, and the second state is where a duplicate
+ * would actually appear, so it is asserted here rather than assumed.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { GameDetailModal, pickProbability } from "./GameDetailModal";
 import { toCardModel } from "../lib/weekCards";
+import type { Explanation } from "../predictor-ui";
 import type { GamePrediction, GameSummary, GameVerdict, SportApi, WeekPrediction } from "../types";
 
 vi.mock("../context/SportContext", () => ({
@@ -151,12 +161,97 @@ function blockNetwork() {
   return fetchSpy;
 }
 
+/** The one colour that means "this is the pick". A bar that spends it on
+ *  anything but the pick is claiming something nobody picked, and a bar that
+ *  spends it on nothing while a pick exists is claiming there is no pick. */
+const ACCENT = "var(--color-pr-accent)";
+
+/** What `ProbabilityBar` painted each segment, in order, as the browser would
+ *  colour it. Read from the elements rather than from the props, so a bar that
+ *  stopped accenting cannot pass by still being handed a pick. */
+const fills = (root: HTMLElement) =>
+  [...root.querySelectorAll<HTMLElement>("[data-testid='pbar-fill']")].map((f) => f.style.backgroundColor);
+
+/** Which segment carries the accent, by index. -1 when none does. */
+const accentedAt = (root: HTMLElement) => fills(root).indexOf(ACCENT);
+
+/** The bar's accessible name — the screen-reader half of the accent. The accent
+ *  is a colour, and a meaning carried by colour alone is not carried at all, so
+ *  a bar that accents without saying so is only half right and the name is how
+ *  that is checked. */
+const barName = (root: HTMLElement) =>
+  root.querySelector<HTMLElement>("[data-testid='instant-block'] [role='img']")?.getAttribute("aria-label") ?? "";
+
+/** Every element that draws one of this page's figures. A figure is counted by
+ *  the element that draws it, never by the digits it prints: the panel puts the
+ *  leading side's percentage on a tile AND on the bar, by design, so a
+ *  text-frequency assertion would be measuring the panel's design rather than
+ *  this phase's rule. What must be unique is the FIGURE — one tile, one bar,
+ *  one record — and one place it may live.
+ *
+ *  `tile-total` is in the list whether or not it renders: a count of 0 and a
+ *  count of 1 are both correct for a game with no total, and the assertion that
+ *  matters is the one that says the element appears at most once and never
+ *  outside the block. */
+const FIGURE_TESTIDS = [
+  "tile-moneyline",
+  "tile-spread",
+  "tile-total",
+  "pbar-fill",
+  "pbar-label",
+  "pbar-legend",
+  "pbar-market-fill",
+  "pbar-market-figures",
+  "record-fill",
+] as const;
+
+/** The figures on the page, and where each one lives.
+ *
+ *  Returned as a list rather than asserted inside a helper so the failure names
+ *  the figure and its count, which is the thing a reader of the failure needs
+ *  and the thing a bare `toHaveLength` does not give. */
+const figureCensus = (): Array<{ testid: string; count: number; inBlock: number }> =>
+  FIGURE_TESTIDS.map((testid) => {
+    const all = screen.queryAllByTestId(testid);
+    const block = screen.queryByTestId("instant-block");
+    return {
+      testid,
+      count: all.length,
+      inBlock: block ? all.filter((el) => block.contains(el)).length : 0,
+    };
+  });
+
+/** A v2 answer in the shape the service sends, so the button resolves. The
+ *  `pick` is deliberately the AWAY side with the game's own vocabulary: if the
+ *  summary's pick could still reach a rendered bar, this answer is what would
+ *  show it, so an unplaceable-looking label here is the canary for that. */
+const aiSummary = (): Explanation =>
+  ({
+    verdict: "Baltimore are the pick, but the line is thinner than the number.",
+    band: "moderate",
+    pick: { label: "Chiefs win" },
+    factors: [
+      { key: "moneyline", direction: "neutral", headline: "The model likes Baltimore", text: "It rates Baltimore better than Kansas City." },
+    ],
+    source: "template",
+    model: "",
+    generated_at: "2026-09-07T12:00:00Z",
+    sport: "nfl",
+    pick_timing: "pre_kickoff",
+  }) as unknown as Explanation;
+
+/** Press the button and wait for the summary to take its place above the flow. */
+async function askForTheSummary() {
+  fireEvent.click(screen.getByRole("button", { name: /ai summary/i }));
+  return screen.findByTestId("fixture-summary");
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe.each(["nfl", "cfb"])("GameDetailModal's instant block (%s)", (sport) => {
-  it("renders the block from the bundle with the network blocked", () => {
+  it("shows the block BEFORE the button, with no request made", () => {
     const fetchSpy = blockNetwork();
     const { explain } = renderModal(sport, { weekPrediction: snapshot(), weekPredictions: weekRows });
 
@@ -165,7 +260,7 @@ describe.each(["nfl", "cfb"])("GameDetailModal's instant block (%s)", (sport) =>
     // resolved.
     const block = screen.getByTestId("instant-block");
     expect(within(block).getByTestId("tile-moneyline")).toBeInTheDocument();
-    expect(within(block).getByTestId("pbar-fill")).toBeInTheDocument();
+    expect(within(block).getAllByTestId("pbar-fill")).toHaveLength(2);
     expect(within(block).getByTestId("record-fill")).toBeInTheDocument();
     expect(within(block).getByText("Ravens is the pick.")).toBeInTheDocument();
 
@@ -173,6 +268,141 @@ describe.each(["nfl", "cfb"])("GameDetailModal's instant block (%s)", (sport) =>
     // need. The AI button has not been pressed and nothing was spent.
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(explain).not.toHaveBeenCalled();
+
+    // The button is still there, and nothing is behind it yet: the block is not
+    // a placeholder that a press fills in, it is the finished answer.
+    expect(screen.getByRole("button", { name: /ai summary/i })).toBeInTheDocument();
+    expect(screen.queryByTestId("fixture-summary")).toBeNull();
+    expect(document.body.textContent ?? "").not.toMatch(/Baltimore are the pick/);
+  });
+
+  it("keeps every figure EXACTLY ONCE after the button is pressed", async () => {
+    blockNetwork();
+    // The AI answer names the away side in the service's own vocabulary
+    // ("Chiefs win"), which is the label the shared panel would have had to
+    // translate onto a segment. It is here so that a summary which grew a bar
+    // back would put a SECOND bar and a SECOND accent on the page and be caught
+    // here rather than by a screenshot.
+    const { explain } = renderModal(sport, {
+      weekPrediction: snapshot(),
+      weekPredictions: weekRows,
+      explain: vi.fn().mockResolvedValue(aiSummary()),
+    });
+
+    // Before: the block holds every figure the game has.
+    const block = screen.getByTestId("instant-block");
+    const before = figureCensus();
+    expect(before.find((f) => f.testid === "tile-moneyline")?.count).toBe(1);
+    expect(before.find((f) => f.testid === "pbar-fill")?.count).toBe(2);
+    expect(before.find((f) => f.testid === "record-fill")?.count).toBe(1);
+
+    const summary = await askForTheSummary();
+    expect(explain).toHaveBeenCalledTimes(1);
+
+    // AFTER: not one figure has been added, removed or doubled, and not one has
+    // moved out of the block. The summary is words; the numbers stayed put.
+    expect(figureCensus()).toEqual(before);
+
+    // And the census is the shape it should be, spelled out rather than left to
+    // the equality above: no figure outside the block, and no market row, which
+    // this site has no implied figures to fill one with.
+    const after = figureCensus();
+    for (const figure of after) {
+      expect(figure.inBlock, `${figure.testid} rendered outside the block`).toBe(figure.count);
+    }
+    for (const absent of ["pbar-legend", "pbar-market-fill", "pbar-market-figures"] as const) {
+      expect(after.find((f) => f.testid === absent)?.count, `${absent} was drawn`).toBe(0);
+    }
+
+    // The block never unmounted: "the summary appears above it, not instead of
+    // it after a gap". Asserted on the ORDER, because a panel that unmounted and
+    // remounted would satisfy an existence check while still flickering.
+    // The block never unmounted: "the summary appears above it, not instead of
+    // it after a gap". Asserted on the ORDER — `FOLLOWING` set on
+    // `block.compare(summary)` means the summary comes after the block, which
+    // is the reader's reading order: the facts, then what the words added.
+    expect(
+      block.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING,
+      "the summary does not render after the block",
+    ).toBeTruthy();
+    // The facts and the flow are still mounted under the summary.
+    expect(screen.getByTestId("fixture-flow")).toBeInTheDocument();
+    expect(screen.getByTestId("instant-block")).toBe(block);
+  });
+
+  it("accents the bar segment matching the bundle's pick, and says so", async () => {
+    blockNetwork();
+    // The pick is the LEADING side, so with the card's 68/32 the accent belongs
+    // to segment 0. Asserted on the painted colour AND the accessible name,
+    // because the accent is a colour and a meaning carried by colour alone is
+    // not carried at all.
+    renderModal(sport, {
+      weekPrediction: snapshot(),
+      weekPredictions: weekRows,
+      explain: vi.fn().mockResolvedValue(aiSummary()),
+    });
+    const block = screen.getByTestId("instant-block");
+    expect(fills(block)).toHaveLength(2);
+    expect(accentedAt(block)).toBe(0);
+    expect(fills(block)[1]).not.toBe(ACCENT);
+    expect(barName(block)).toBe("Ravens 68%, Chiefs 32%, the pick is Ravens");
+
+    // The label the bundle names is a SEGMENT's label — the join is by string,
+    // so a bundle whose pick label is not on the bar accents nothing at all.
+    // This is the whole of what the accent depends on, so it is checked here
+    // rather than assumed: the accented segment is the pick's, by name.
+    const labels = [...block.querySelectorAll<HTMLElement>("[data-testid='pbar-label']")].map((l) => l.dataset.seg);
+    expect(labels).toEqual(["Ravens", "Chiefs"]);
+    expect(labels[accentedAt(block)]).toBe("Ravens");
+
+    // And it survives the press: the summary does not re-accent, because it
+    // draws no bar. The service's own answer picks "Chiefs win"; a second
+    // accent on segment 1 would be the panel translating a pick into a
+    // contradiction with the block's.
+    const blockBefore = screen.getByTestId("instant-block");
+    await askForTheSummary();
+    expect(accentedAt(screen.getByTestId("instant-block"))).toBe(0);
+    expect(screen.getByTestId("instant-block")).toBe(blockBefore);
+  });
+
+  it("accents the AWAY segment when the away side leads, which is the case an index would get wrong", async () => {
+    blockNetwork();
+    // The segments are home-first, so an accent driven by segment ORDER lands
+    // on Ravens and tells the reader the model picked the side it rated LEAST
+    // likely. Pre-kickoff, so today's model is the pick and the bundle supplies
+    // it: away 62, home 38.
+    renderModal(sport, {
+      game: upcomingGame,
+      api: offlineApi({ gamePrediction: vi.fn().mockResolvedValue({ ...fresh, home_win_prob: 0.38, away_win_prob: 0.62 }) }),
+      weekPredictions: weekRows,
+      explain: vi.fn().mockResolvedValue(aiSummary()),
+    });
+    const block = await screen.findByTestId("instant-block");
+    expect(accentedAt(block)).toBe(1);
+    expect(fills(block)[0]).not.toBe(ACCENT);
+    expect(barName(block)).toBe("Ravens 38%, Chiefs 62%, the pick is Chiefs");
+    // The verdict line names the same team the bar accents, once, in words.
+    expect(within(block).getByText("Chiefs is the pick.")).toBeInTheDocument();
+    // Still exactly one accent after the button.
+    await askForTheSummary();
+    expect(accentedAt(screen.getByTestId("instant-block"))).toBe(1);
+  });
+
+  it("shows the record with NO pick at all, rather than dropping it", () => {
+    blockNetwork();
+    // A record and no pick is a bundle the block must still render: the record
+    // is about past picks, not this fixture, and a guard that required a pick
+    // dropped it silently. Here the week carries rows but none for this game,
+    // so the strip renders and the block says the pick is absent.
+    renderModal(sport, { weekPredictions: weekRows });
+    const block = screen.getByTestId("instant-block");
+    expect(within(block).getByText("Picks made before kickoff correct")).toBeInTheDocument();
+    expect(within(block).getByText("3/4")).toBeInTheDocument();
+    expect(within(block).getByText(/no pick/i)).toBeInTheDocument();
+    // No moneyline tile and no bar, because there is no pick to state and a bar
+    // that accents something claims there is one.
+    expect(within(block).queryByTestId("tile-moneyline")).toBeNull();
+    expect(within(block).queryByTestId("pbar-fill")).toBeNull();
   });
 
   it("shows only the stored pre-kickoff probability once the game has started", () => {
@@ -216,18 +446,55 @@ describe.each(["nfl", "cfb"])("GameDetailModal's instant block (%s)", (sport) =>
     expect(within(block).getByTestId("tile-moneyline")).not.toHaveTextContent(/win ·/);
   });
 
-  it("no longer repeats the markets below the panel", () => {
+  it("no longer repeats the markets below the panel", async () => {
     blockNetwork();
-    renderModal(sport, { weekPrediction: snapshot(), weekPredictions: weekRows });
+    // The fresh run below: the only thing this page may now draw from it beyond
+    // the block's own tiles is the part the tiles do NOT draw — cover chance and
+    // the over/under pair. Those rows have no other home in the panel, so
+    // deleting them with the duplicates would lose a figure the site can state.
+    renderModal(sport, {
+      game: { ...startedGame, spread_line: -2.5, total_line: 46.5 },
+      weekPrediction: snapshot(),
+      weekPredictions: weekRows,
+      api: offlineApi({ gamePrediction: vi.fn().mockResolvedValue(fresh) }),
+    });
+    await screen.findByTestId("instant-block");
+
+    // The section, and the two win-probability bars that headed it. Those bars
+    // are the duplicate: the block's tile and bar already state that one pair,
+    // and stating it twice is how this page came to read 68% and 72% at once.
     expect(screen.queryByText("Match Markets")).toBeNull();
+    expect(screen.queryByText("Ravens win")).toBeNull();
+    expect(screen.queryByText("Chiefs win")).toBeNull();
+    // Spelled out in full, because a heading is a thing a rename can satisfy
+    // and a row is a thing only a deletion can.
+    expect(document.body.textContent ?? "").not.toMatch(/\bRavens win\b|\bChiefs win\b/);
+
+    // The rows that are NOT duplicates survive, and the section that was renamed
+    // rather than deleted is here with its new name. Partial removal is the
+    // point: the cover and over/under rows exist nowhere else in the panel
+    // (the shared adapter emits moneyline, spread and total only), so taking
+    // them with the duplicates would have been a deletion wearing a dedup's
+    // name.
+    expect(screen.getByText("Other model markets")).toBeInTheDocument();
+    expect(screen.getByText("Ravens covers spread")).toBeInTheDocument();
+    expect(screen.getByText("Chiefs covers spread")).toBeInTheDocument();
+    expect(screen.getByText("Over total points")).toBeInTheDocument();
+    expect(screen.getByText("Under total points")).toBeInTheDocument();
   });
 
   it("no longer prints the flow's pick sentences", () => {
     blockNetwork();
     renderModal(sport, { weekPrediction: snapshot(), weekPredictions: weekRows });
+    // These three left the shared package: the block's verdict line, its timing
+    // chip and its rebuilt badge say all of it, once, and the flow below states
+    // the result rather than restating which pick was made.
     expect(screen.queryByText(/Win probabilities/)).toBeNull();
     expect(screen.queryByText(/The model picks/)).toBeNull();
     expect(screen.queryByText(/The pick was made/)).toBeNull();
+    // Asserted over the whole page, not by a scoped query, so a sentence that
+    // moved into another component is still caught.
+    expect(document.body.textContent ?? "").not.toMatch(/Win probabilities|The model picks|The pick was made/);
   });
 
   it("carries the record, and counts no pick made after kickoff", () => {
