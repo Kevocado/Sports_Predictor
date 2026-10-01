@@ -14,6 +14,7 @@ import type {
   HeadToHead,
   HubPlayersResponse,
   HubTeamsResponse,
+  OutPlayerEntry,
   PlayerPropPrediction,
   PowerRankingsResponse,
   RetrainResponse,
@@ -98,6 +99,7 @@ export function createApiClient(baseUrl: string): SportApi {
     gamePrediction: (season, week, gameId) =>
       get<GamePrediction>(`/games/${season}/${week}/${gameId}/prediction`),
     playerProps: (season, week) => get<PlayerPropPrediction[]>(`/players/${season}/${week}/props`),
+    playerOut: (season, week) => get<OutPlayerEntry[]>(`/players/${season}/${week}/out`),
     trackRecord: () => get<TrackRecord>("/track-record"),
     retrain: () => post<RetrainResponse>("/retrain"),
     gameVerdict: (gameId) => getOrNull<GameVerdict>(`/games/${gameId}/verdict`),

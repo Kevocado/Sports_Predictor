@@ -40,6 +40,14 @@ function mockApi(props: PlayerPropPrediction[] = []): SportApi {
 // added a QB's passing yards to an RB's rushing and a WR's receiving, and
 // labelled the result as though it were team total yards. On a real roster it
 // landed at 800-1400 yards, which is not a real NFL or CFB number.
+
+// Phase 2 added the picks panel above the box score, which names the same
+// players. These assertions are about the box score, so they are scoped to it
+// rather than loosened to getAllByText.
+function boxScore() {
+  return within(screen.getByRole("region", { name: "Predicted box score" }));
+}
+
 describe("yardageBreakdown", () => {
   it("never sums across incompatible markets", () => {
     const breakdown = yardageBreakdown([qb("Lamar", 280), rb("Mark", 90), wr("Zay", 110)]);
@@ -97,14 +105,14 @@ describe("GameDetailModal team totals", () => {
   it("does not present a single number labelled as the team's total", async () => {
     const api = mockApi([qb("Lamar", 280), rb("Mark", 90), wr("Zay", 110)]);
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByText("Lamar")).toBeInTheDocument());
+    await waitFor(() => expect(boxScore().getByText("Lamar")).toBeInTheDocument());
     expect(screen.queryByText(/Total: 480/)).not.toBeInTheDocument();
   });
 
   it("shows each market separately with its own label", async () => {
     const api = mockApi([qb("Lamar", 280), rb("Mark", 90), wr("Zay", 110)]);
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByText("Lamar")).toBeInTheDocument());
+    await waitFor(() => expect(boxScore().getByText("Lamar")).toBeInTheDocument());
     expect(strip().getByText("Pass yds")).toBeInTheDocument();
     expect(strip().getByText("Rush yds")).toBeInTheDocument();
     expect(strip().getByText("Rec yds")).toBeInTheDocument();
@@ -118,7 +126,7 @@ describe("GameDetailModal team totals", () => {
     // numbers in its player cells.
     const api = mockApi([qb("Lamar", 280), rb("Mark", 90), wr("Zay", 110)]);
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByText("Lamar")).toBeInTheDocument());
+    await waitFor(() => expect(boxScore().getByText("Lamar")).toBeInTheDocument());
     const row = strip().getAllByTestId("box-score-team-total").find((r) => r.textContent?.includes("Ravens total"))!;
     expect(within(row).getByText("280")).toBeInTheDocument();
     expect(within(row).getByText("90")).toBeInTheDocument();
@@ -128,7 +136,7 @@ describe("GameDetailModal team totals", () => {
   it("sums a market across players and shows how many contributed", async () => {
     const api = mockApi([qb("Lamar", 280), rb("Mark", 60), rb("Gus", 30), wr("Zay", 110)]);
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByText("Lamar")).toBeInTheDocument());
+    await waitFor(() => expect(boxScore().getByText("Lamar")).toBeInTheDocument());
     // 60 + 30. The count is the strip's alone: the box score prints no sums now.
     const row = strip().getAllByTestId("box-score-team-total").find((r) => r.textContent?.includes("Ravens total"))!;
     expect(within(row).getByText("90")).toBeInTheDocument();
@@ -140,7 +148,7 @@ describe("GameDetailModal team totals", () => {
     // projected player includes third-stringers who will not carry the ball.
     const api = mockApi([qb("Lamar", 280), rb("Mark", 90), wr("Zay", 110)]);
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByText("Lamar")).toBeInTheDocument());
+    await waitFor(() => expect(boxScore().getByText("Lamar")).toBeInTheDocument());
     // The caveat is the point of the change: a reader must not add these up.
     expect(screen.getByText(/not team total yards/i)).toBeInTheDocument();
     expect(screen.getByText(/whole roster rather than the expected on-field lineup/i)).toBeInTheDocument();

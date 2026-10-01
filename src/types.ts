@@ -36,6 +36,30 @@ export interface GamePrediction { home_win_prob: number; away_win_prob: number; 
 // depth chart exists -- CFB has none, and NFL's live payload does not carry
 // the field yet. Absent is "unknown", not "not a starter".
 export interface PlayerPropPrediction { player_id: string; player_name: string; recent_team: string; position: string; anytime_td_prob: number; passing_yards?: number; rushing_yards?: number; receiving_yards?: number; carries?: number; receptions?: number; is_starter?: boolean | null; depth_slot?: number | null; }
+// A player the official report lists Out, as NFL_Predictor's sibling route
+// `GET /players/{season}/{week}/out` serves it.
+//
+// A SIBLING route, not a field on `/props`: that body is a bare JSON array and
+// three things depend on it staying one (the public snapshot stores it, the
+// server-side facts reader calls it, and the frontend client types it as
+// `PlayerPropPrediction[]`). A picks list is not a reason to break it.
+//
+// NFL only. CFB has no injury report and no depth-chart feed at all, so it has
+// no such route -- `playerOut` is never called for CFB, which is why the type
+// carries no sport discriminator and the caller must know which it is.
+//
+// `report_status` is optional because the route's own contract is that a status
+// meaning "not playing" removes a player and every other status does not; a
+// missing status is therefore not grounds for a removal.
+export interface OutPlayerEntry {
+  player_id: string;
+  player_name: string;
+  recent_team?: string;
+  report_status?: string;
+  report_season?: number;
+  report_week?: number;
+  source?: string;
+}
 // ---------------------------------------------------------------------------
 // Track record (B6)
 //
@@ -434,6 +458,11 @@ export interface SportApi {
   games: (season: number, week: number) => Promise<GameSummary[]>;
   gamePrediction: (season: number, week: number, gameId: string) => Promise<GamePrediction>;
   playerProps: (season: number, week: number) => Promise<PlayerPropPrediction[]>;
+  /** NFL only. CFB has no such route and must never call this -- a 404 there is
+   *  a missing feed, not an empty list. Resolves to `[]` on an unreadable feed
+   *  is the backend's contract; this client does not convert a failure into an
+   *  empty list, so a rejected promise stays a rejection the caller can word. */
+  playerOut: (season: number, week: number) => Promise<OutPlayerEntry[]>;
   trackRecord: () => Promise<TrackRecord>;
   retrain: () => Promise<RetrainResponse>;
   gameVerdict: (gameId: string) => Promise<GameVerdict | null>;

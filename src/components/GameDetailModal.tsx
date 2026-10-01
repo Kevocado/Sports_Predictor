@@ -4,7 +4,7 @@
 // that the modal and the explain call sites import the type from the panel that
 // declares it. So ours' import line is not a preference, it is a door that is no
 // longer there; theirs' is the only one that resolves.
-import { BoxScore, FixtureExplainer, spread } from "../predictor-ui";
+import { BoxScore, FixtureExplainer, PicksList, spread } from "../predictor-ui";
 // `FlowState` comes from the package too, for the same reason: the flow's states
 // are the package's vocabulary, and this file picks between them rather than
 // inventing a parallel set of names for the same three values.
@@ -16,7 +16,10 @@ import type { Explanation, FlowState } from "../predictor-ui";
 // segments it draws.
 import { panelFacts } from "../predictor-ui/lib/panelFacts";
 import { useEffect, useMemo, useState } from "react";
-import type { GamePrediction, GameSummary, GameVerdict, HeadToHead as HeadToHeadData, PlayerPropPrediction, SportApi, TeamForm, WeekPrediction } from "../types";
+import type { GamePrediction, GameSummary, GameVerdict, HeadToHead as HeadToHeadData, OutPlayerEntry, PlayerPropPrediction, PlayerPropsTrackRecord, SportApi, TeamForm, WeekPrediction } from "../types";
+// The ranking itself: which rows, under which heading, and what each row says
+// about itself. `PicksList` renders; this decides the words.
+import { buildPicksPanel, NO_GRADED_RECORD } from "../lib/picksPanel";
 import { TeamName } from "./TeamName";
 import { MarketBar } from "./MarketBar";
 import { FormStrip } from "./FormStrip";
@@ -245,6 +248,14 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
   const [predictionError, setPredictionError] = useState<string | null>(null);
   const [allProps, setAllProps] = useState<PlayerPropPrediction[] | null>(null);
   const [propsLoading, setPropsLoading] = useState(true);
+  // Phase 2 task 4: the model's own ranked calls, plus the availability facts
+  // behind them. `null` until both have landed, and a REJECTION stays distinct
+  // from an empty list -- "the report failed, so nobody was removed" and "the
+  // report ran and listed nobody" are different sentences and only one of them
+  // is safe to show. `picksError` is what keeps them apart.
+  const [outPlayers, setOutPlayers] = useState<OutPlayerEntry[]>([]);
+  const [outUnavailable, setOutUnavailable] = useState(false);
+  const [propsTrack, setPropsTrack] = useState<PlayerPropsTrackRecord | null>(null);
   const [verdict, setVerdict] = useState<GameVerdict | null>(null);
   const [homeForm, setHomeForm] = useState<TeamForm | null>(null);
   const [awayForm, setAwayForm] = useState<TeamForm | null>(null);
@@ -326,6 +337,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
     let cancelled = false;
     setPrediction(null); setPredictionError(null); setAllProps(null); setPropsLoading(true); setVerdict(null);
     setHomeForm(null); setAwayForm(null); setH2h(null);
+    setOutPlayers([]); setOutUnavailable(false); setPropsTrack(null);
     // The team filter belongs to the fixture, not the session: reopening the
     // default (Both) with every game, or Away would hide half the next box score.
     setTeamFilter("both");
@@ -340,6 +352,45 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
       .then((r) => { if (!cancelled) setAllProps(r); })
       .catch(() => { if (!cancelled) setAllProps([]); })
       .finally(() => { if (!cancelled) setPropsLoading(false); });
+
+    // The out list, for NFL only. CFB has no injury report and no depth-chart
+    // feed, so it has no such route -- asking for one there would produce a 404
+    // per fixture and, worse, tempt a reader into thinking CFB had checked and
+    // found nobody. Decision 5: CFB says "no availability check" instead.
+    //
+    // A failure here is NOT turned into an empty list. NFL#24 serves 200 `[]` for
+    // an unreadable feed by design, so a rejection reaching this client means the
+    // route itself is absent -- which is the live state today, since #24 is open.
+    // Either way the ranking below is still true, just ungated, so the panel
+    // renders and the availability line says which case it is.
+    if (sport === "cfb") {
+      setOutPlayers([]);
+      setOutUnavailable(true);
+    } else if (typeof api.playerOut !== "function") {
+      // A client without the route at all. `playerOut` was added to `SportApi`
+      // alongside NFL#24, and this modal is handed whatever api the page has --
+      // including a stub in a test, or a client from an older build. Calling it
+      // unconditionally turns a missing route into a crash that takes the whole
+      // modal down, including the box score, over an optional feature. Absent is
+      // exactly the "no check ran" case, which is what the sentence already says.
+      setOutPlayers([]);
+      setOutUnavailable(true);
+    } else {
+      api.playerOut(game.season, game.week)
+        .then((r) => { if (!cancelled) { setOutPlayers(Array.isArray(r) ? r : []); setOutUnavailable(false); } })
+        .catch(() => { if (!cancelled) { setOutPlayers([]); setOutUnavailable(true); } });
+    }
+
+    // The graded record, for the provenance line under each row. It fails soft
+    // to a flag rather than to a record: with none, a row says "no graded record
+    // yet", which is a true statement about an arm nothing has scored yet.
+    // Same guard as `playerOut`, for the same reason: this modal is handed whatever
+    // api object the page has, and a stub returning undefined must not crash a
+    // modal that has nothing else to do with the track record but cite it.
+    const trackRecord = typeof api.trackRecord === "function" ? api.trackRecord() : null;
+    Promise.resolve(trackRecord)
+      .then((r) => { if (!cancelled) setPropsTrack(r?.player_props ?? null); })
+      .catch(() => { if (!cancelled) setPropsTrack(null); });
 
     // Post-match verdict: only meaningful once the game has a final score,
     // and a missing verdict (not yet reconciled) is not an error.
@@ -362,7 +413,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
       .catch(() => { if (!cancelled) setH2h(null); });
 
     return () => { cancelled = true; };
-  }, [api, game.season, game.week, game.game_id, game.home_team, game.away_team, isFinal]);
+  }, [api, game.season, game.week, game.game_id, game.home_team, game.away_team, isFinal, sport]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -448,6 +499,62 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
   // nothing left to read. `keyYardage` still exists -- `lib/boxScoreRows.ts`
   // uses it for the box score's row order -- but not as a modal-level sort.
   const emptyScope = teamFilter === "both" ? null : teamFilter === "away" ? game.away_team : game.home_team;
+
+  // The model's own ranked calls (Phase 2 task 4), built by `buildPicksPanel` and
+  // rendered by the SHARED `PicksList`. This file holds no ranking rule of its
+  // own -- the three-row cap, the one-category-per-list rule, the refusal of a
+  // row whose visual cannot match its number and the refusal of an out player
+  // passed as a ranked row all live in the package, so a second implementation
+  // here is a second set of rules to drift.
+  //
+  // Built from the week's full props rather than `visibleProps`, so the team
+  // filter (which exists for the box score) cannot silently halve the ranking.
+  //
+  // It renders only once there is something to rank, and never before the track
+  // record has had its chance: showing rows with no provenance and then adding
+  // one would put a figure on screen that a moment later reads differently.
+  const picksPanel = useMemo(() => {
+    if (!allProps || propsLoading) return null;
+    // Deliberately NOT gated on the track record having loaded. A
+    // `/track-record` that will not answer leaves the graded context missing,
+    // and the honest row then reads "no graded record yet" -- which is true,
+    // because nothing grades it. Waiting for it (or hiding the list until it
+    // arrives) would mean a failing record endpoint silently removes the
+    // model's picks from the page, which is a worse lie than an uncontextualised
+    // number: the reader would conclude there are no calls to make at all.
+    //
+    // `NO_GRADED_RECORD` is the same shape the backends themselves serve for a
+    // market with nothing resolved, so the wording comes from one place rather
+    // than from a special case here.
+    const record = propsTrack ?? NO_GRADED_RECORD;
+    // Named `built`, not `panel`: `panel` is already the explainer's facts above
+    // and shadowing it inside this callback made the explainer read this object's
+    // shape instead -- which is an "over is not iterable" at render time, several
+    // hundred lines away from the cause.
+    const built = buildPicksPanel({
+      sport: sport === "cfb" ? "cfb" : "nfl",
+      props: allProps,
+      out: outPlayers,
+      track: record,
+      game,
+    });
+    return built.categories.length > 0 ? built : null;
+  }, [allProps, propsTrack, propsLoading, outPlayers, sport, game.home_team, game.away_team]);
+
+  // The availability sentence, worded from WHICH case we are in rather than
+  // whether a list is empty. An empty `out` array is ambiguous on its own --
+  // "the report ran and listed nobody" and "there was no report to run" are
+  // different facts -- so the panel's own sentence is overridden here whenever
+  // the route could not be read at all, which for NFL is today's live state
+  // because NFL#24 is still open.
+  const picksAvailability = useMemo(() => {
+    if (!picksPanel) return null;
+    if (sport === "cfb") return picksPanel.availability;
+    if (outUnavailable) {
+      return "Availability not checked for this week: the injury report could not be read, so nobody has been removed from these lists. That is a missing check, not a claim that everyone is available.";
+    }
+    return picksPanel.availability;
+  }, [picksPanel, outUnavailable, sport]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -605,6 +712,22 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
               {prediction.under_prob != null && <MarketBar label="Under total points" prob={prediction.under_prob} />}
             </div>}
           </section>
+
+          {/* The model's own top calls, before the box score: a ranked list is the
+              answer to "who should I watch", and the box score below is the
+              roster-wide detail that answers "who is projected to do what". */}
+          {picksPanel && (
+            <section aria-label="Model's top calls" className="flex flex-col gap-3">
+              <PicksList title={picksPanel.title} categories={picksPanel.categories} out={picksPanel.out} />
+              {/* Said once, here, and not folded into any row. It is a fact about
+                  the whole list -- whether anyone was removed from it at all --
+                  and repeating it per row would be three copies of a statement
+                  that is not about any one player. */}
+              <p data-testid="picks-availability" className="text-xs leading-snug text-sp-text-faint">
+                {picksAvailability}
+              </p>
+            </section>
+          )}
 
           {/* Predicted box score — the model's own markets, grouped by team then
               position (A4). The three-state team control sits on the header

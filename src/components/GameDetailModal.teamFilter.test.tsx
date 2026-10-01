@@ -50,6 +50,9 @@ function mockApi(props: PlayerPropPrediction[]): SportApi {
       home_cover_prob: null, away_cover_prob: null, over_prob: null, under_prob: null,
     }),
     playerProps: vi.fn().mockResolvedValue(props),
+    // Phase 2: the out list has its own route on NFL. Absent here means
+    // "no check ran", which the panel words as such rather than as nobody being out.
+    playerOut: vi.fn().mockResolvedValue([]),
     trackRecord: vi.fn(), retrain: vi.fn(),
     gameVerdict: vi.fn().mockResolvedValue(null),
     predictionsForWeek: vi.fn(), currentWeek: vi.fn(),
@@ -72,6 +75,15 @@ function teamTotals() {
   return within(screen.getByTestId("box-score-team-totals")).getAllByTestId("box-score-team-total");
 }
 
+
+// Phase 2 added the picks panel above the box score, and it names players too --
+// so a page-wide `getByText("Lamar")` is now ambiguous. These assertions are
+// about the BOX SCORE, so they are scoped to it rather than loosened to
+// getAllByText (which would pass whether or not the box score kept the row).
+function boxScore() {
+  return within(screen.getByRole("region", { name: "Predicted box score" }));
+}
+
 describe("the box-score team filter", () => {
   it("defaults to Both, showing both teams grouped by team — away section first", async () => {
     await renderModal();
@@ -80,8 +92,8 @@ describe("the box-score team filter", () => {
     const sections = screen.getAllByTestId("box-score-team-section");
     expect(sections.map((s) => s.textContent)).toEqual(["Chiefs", "Ravens"]);
     // Both teams' players are on the page.
-    expect(screen.getByText("Mahomes")).toBeInTheDocument();
-    expect(screen.getByText("Lamar")).toBeInTheDocument();
+    expect(boxScore().getByText("Mahomes")).toBeInTheDocument();
+    expect(boxScore().getByText("Lamar")).toBeInTheDocument();
   });
 
   it("Away shows the away team only, then re-groups back to Both", async () => {
@@ -89,13 +101,13 @@ describe("the box-score team filter", () => {
     fireEvent.click(screen.getByRole("button", { name: "Away" }));
     expect(screen.getByRole("button", { name: "Away" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getAllByTestId("box-score-team-section").map((s) => s.textContent)).toEqual(["Chiefs"]);
-    expect(screen.getByText("Mahomes")).toBeInTheDocument();
-    expect(screen.queryByText("Lamar")).not.toBeInTheDocument();
+    expect(boxScore().getByText("Mahomes")).toBeInTheDocument();
+    expect(boxScore().queryByText("Lamar")).not.toBeInTheDocument();
     expect(teamTotals()).toHaveLength(1);
     expect(teamTotals()[0]).toHaveTextContent("Chiefs total");
     // And back: switching re-groups in place, nothing is lost.
     fireEvent.click(screen.getByRole("button", { name: "Both" }));
-    expect(screen.getByText("Lamar")).toBeInTheDocument();
+    expect(boxScore().getByText("Lamar")).toBeInTheDocument();
     expect(teamTotals()).toHaveLength(2);
   });
 
@@ -104,8 +116,8 @@ describe("the box-score team filter", () => {
     fireEvent.click(screen.getByRole("button", { name: "Home" }));
     expect(screen.getByRole("button", { name: "Home" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getAllByTestId("box-score-team-section").map((s) => s.textContent)).toEqual(["Ravens"]);
-    expect(screen.getByText("Lamar")).toBeInTheDocument();
-    expect(screen.queryByText("Mahomes")).not.toBeInTheDocument();
+    expect(boxScore().getByText("Lamar")).toBeInTheDocument();
+    expect(boxScore().queryByText("Mahomes")).not.toBeInTheDocument();
     expect(teamTotals()).toHaveLength(1);
     expect(teamTotals()[0]).toHaveTextContent("Ravens total");
   });
