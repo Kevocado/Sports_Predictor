@@ -5,7 +5,10 @@
 // declares it. So ours' import line is not a preference, it is a door that is no
 // longer there; theirs' is the only one that resolves.
 import { BoxScore, FixtureExplainer, spread } from "../predictor-ui";
-import type { Explanation } from "../predictor-ui";
+// `FlowState` comes from the package too, for the same reason: the flow's states
+// are the package's vocabulary, and this file picks between them rather than
+// inventing a parallel set of names for the same three values.
+import type { Explanation, FlowState } from "../predictor-ui";
 // The v2 panel's figures, derived rather than fetched, from the SHARED adapter:
 // the panel renders no figure of its own, so this mapping is where the
 // explanation meets this site's prediction response. The pick translation the
@@ -136,6 +139,46 @@ export function pickProbability(
   return prediction?.home_win_prob ?? snapshot;
 }
 
+/**
+ * The fixture's name, for the states where the flow has a sentence to put under it.
+ *
+ * **This is the empty-heading fix, and it is measured rather than assumed.**
+ * `FixtureFlow` (vendored, `src/predictor-ui/` — unchanged by this PR) builds
+ * its pre-game rows as exactly ONE heading: `${home_team} vs ${away_team}` and
+ * nothing else. Every sentence that used to sit under it moved into the instant
+ * block as a figure, one of them, which left the live pre-kickoff modal with a
+ * bare `CLE vs PIT` heading above the AI button and no text under it at all.
+ * The `finished` branch is a different story and still carries real rows (the
+ * result, and the pick's rightness once the verdict has reconciled), and
+ * `in-play` carries the score and the standing — so the name is NOT deleted from
+ * the flow; it is withheld only from the one state that renders it alone.
+ *
+ * The rule this implements: **the heading appears only where a row can follow
+ * it.** Pre-game there is no row to follow, so the bundle carries no name and
+ * `FixtureFlow` renders an empty flow — the honest reading the package's own
+ * header describes ("A state with nothing to say renders an empty flow"). That
+ * is also what it already does for a sport with no home and away side, so this
+ * is the same path rather than a new one.
+ *
+ * It costs nothing else. `InstantBlock` names the pick through
+ * `bundleFacts.fullTeamName`, which falls back to the pick's own label when the
+ * bundle has no `home_team` to match it against — and this site's label is
+ * already the full team name — so the block's verdict line, its tiles, its bar
+ * and its record are unchanged. The `score`, `result` and `pick.was_right` rows
+ * that the two other states word never read the name from these two fields on
+ * this path either: `resultSentence` names the side off `score`, which is where
+ * the name comes from on a final. `GameDetailModal.leftovers.test.tsx` asserts
+ * all of it on the live payloads, per state and per sport.
+ */
+export function flowName(
+  game: Pick<GameSummary, "home_team" | "away_team">,
+  state: FlowState,
+): { home_team?: string; away_team?: string } {
+  // Pre-game: no row under the heading, so no heading. See above.
+  if (state === "pre-game") return {};
+  return { home_team: game.home_team, away_team: game.away_team };
+}
+
 /** The away side of the same pair, from the same source, for the bar's two segments. */
 function pickProbabilities(
   game: GameSummary,
@@ -208,6 +251,12 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
   const [h2h, setH2h] = useState<HeadToHeadData | null>(null);
   const isFinal = game.home_score != null && game.away_score != null;
 
+  // Which of the package's three flow states this fixture is in. Only two are
+  // reachable from here, and the choice is what `flowName` below keys on: a
+  // `finished` flow words a sentence under its heading, a pre-game one has
+  // nothing to word.
+  const flowState: FlowState = isFinal ? "finished" : "pre-game";
+
   // The flow's facts: what this site already has, no request. The pick is the
   // leading side of the site's own probabilities — reading the numbers, not
   // grading them — and every field the flow can word is present only when the
@@ -241,8 +290,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
         ? { home: game.home_score, away: game.away_score }
         : undefined;
     return {
-      home_team: game.home_team,
-      away_team: game.away_team,
+      ...flowName(game, flowState),
       market_line: finite(game.spread_line) ?? null,
       home_win_prob: hw,
       away_win_prob: aw,
@@ -260,8 +308,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
             ? "home_win"
             : "away_win",
     };
-  }, [game, prediction, verdict, weekPrediction]);
-  const flowState = isFinal ? "finished" : "pre-game";
+  }, [game, prediction, verdict, weekPrediction, flowState]);
 
   // The record: this week's picks made before kickoff, from the function the
   // week navigator already uses, over the rows the list page already fetched.
