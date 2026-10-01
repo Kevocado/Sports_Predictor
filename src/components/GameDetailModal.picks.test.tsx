@@ -147,6 +147,40 @@ describe("the picks panel renders", () => {
   });
 });
 
+describe("the picks never render before the injury list has answered (CodeRabbit Major on Sports#24)", () => {
+  const outEntry = {
+    player_id: "00-5", player_name: "T. Kelce", recent_team: "KC", report_status: "Out",
+    report_season: 2026, report_week: 12, source: "NFL official injury report",
+  };
+
+  it("holds the whole panel back while /out is pending, so an out player is never ranked for a moment", async () => {
+    // outPlayers starts as [] and props can land first. Without a resolved flag the
+    // panel rendered with NOBODY out, ranking the out player until /out answered.
+    let resolveOut!: (v: unknown[]) => void;
+    const pending = new Promise<unknown[]>((r) => { resolveOut = r; });
+    render(<GameDetailModal game={game()} api={api({ playerOut: vi.fn(() => pending as never) })} onClose={() => {}} sport="nfl" />);
+    // Give props time to land. If the panel rendered, it did so with an empty out list.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByTestId("picks-list")).toBeNull();
+    // Once /out answers, the panel renders WITHOUT the out player in any row.
+    resolveOut([outEntry]);
+    await screen.findByTestId("picks-list");
+    for (const row of screen.getAllByTestId("picks-row")) expect(row.textContent!).not.toContain("T. Kelce");
+  });
+
+  it("still renders, saying availability was not checked, when /out fails", async () => {
+    render(<GameDetailModal game={game()} api={api({ playerOut: vi.fn(() => Promise.reject(new Error("503"))) })} onClose={() => {}} sport="nfl" />);
+    await screen.findByTestId("picks-list");
+  });
+
+  it("does not wait for /out on CFB, which has no injury feed", async () => {
+    const outSpy = vi.fn(() => new Promise(() => {}));
+    render(<GameDetailModal game={game()} api={api({ playerOut: outSpy as never })} onClose={() => {}} sport="cfb" />);
+    await screen.findByTestId("picks-list");
+    expect(outSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("an out player, in the DOM", () => {
   const outEntry = {
     player_id: "00-5", player_name: "T. Kelce", recent_team: "KC", report_status: "Out",

@@ -255,6 +255,10 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
   // is safe to show. `picksError` is what keeps them apart.
   const [outPlayers, setOutPlayers] = useState<OutPlayerEntry[]>([]);
   const [outUnavailable, setOutUnavailable] = useState(false);
+  // Whether the injury list has ANSWERED (a list, an error, or "no feed for this sport").
+  // `outPlayers` starts as [] and the props can land first, so a picks panel keyed only
+  // on the props ranked an out player until /out answered. The panel waits for this.
+  const [outResolved, setOutResolved] = useState(false);
   const [propsTrack, setPropsTrack] = useState<PlayerPropsTrackRecord | null>(null);
   const [verdict, setVerdict] = useState<GameVerdict | null>(null);
   const [homeForm, setHomeForm] = useState<TeamForm | null>(null);
@@ -337,7 +341,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
     let cancelled = false;
     setPrediction(null); setPredictionError(null); setAllProps(null); setPropsLoading(true); setVerdict(null);
     setHomeForm(null); setAwayForm(null); setH2h(null);
-    setOutPlayers([]); setOutUnavailable(false); setPropsTrack(null);
+    setOutPlayers([]); setOutUnavailable(false); setOutResolved(false); setPropsTrack(null);
     // The team filter belongs to the fixture, not the session: reopening the
     // default (Both) with every game, or Away would hide half the next box score.
     setTeamFilter("both");
@@ -366,6 +370,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
     if (sport === "cfb") {
       setOutPlayers([]);
       setOutUnavailable(true);
+      setOutResolved(true);
     } else if (typeof api.playerOut !== "function") {
       // A client without the route at all. `playerOut` was added to `SportApi`
       // alongside NFL#24, and this modal is handed whatever api the page has --
@@ -375,10 +380,11 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
       // exactly the "no check ran" case, which is what the sentence already says.
       setOutPlayers([]);
       setOutUnavailable(true);
+      setOutResolved(true);
     } else {
       api.playerOut(game.season, game.week)
-        .then((r) => { if (!cancelled) { setOutPlayers(Array.isArray(r) ? r : []); setOutUnavailable(false); } })
-        .catch(() => { if (!cancelled) { setOutPlayers([]); setOutUnavailable(true); } });
+        .then((r) => { if (!cancelled) { setOutPlayers(Array.isArray(r) ? r : []); setOutUnavailable(false); setOutResolved(true); } })
+        .catch(() => { if (!cancelled) { setOutPlayers([]); setOutUnavailable(true); setOutResolved(true); } });
     }
 
     // The graded record, for the provenance line under each row. It fails soft
@@ -514,7 +520,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
   // record has had its chance: showing rows with no provenance and then adding
   // one would put a figure on screen that a moment later reads differently.
   const picksPanel = useMemo(() => {
-    if (!allProps || propsLoading) return null;
+    if (!allProps || propsLoading || !outResolved) return null;
     // Deliberately NOT gated on the track record having loaded. A
     // `/track-record` that will not answer leaves the graded context missing,
     // and the honest row then reads "no graded record yet" -- which is true,
@@ -539,7 +545,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
       game,
     });
     return built.categories.length > 0 ? built : null;
-  }, [allProps, propsTrack, propsLoading, outPlayers, sport, game.home_team, game.away_team]);
+  }, [allProps, propsTrack, propsLoading, outResolved, outPlayers, sport, game.home_team, game.away_team]);
 
   // The availability sentence, worded from WHICH case we are in rather than
   // whether a list is empty. An empty `out` array is ambiguous on its own --
