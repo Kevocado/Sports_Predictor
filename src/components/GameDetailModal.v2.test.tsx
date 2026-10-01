@@ -118,6 +118,9 @@ function mockApi(over: Partial<SportApi> = {}): SportApi {
     games: vi.fn(),
     gamePrediction: vi.fn().mockResolvedValue(prediction()),
     playerProps: vi.fn().mockResolvedValue([]),
+    // Phase 2: the out list has its own route on NFL. Absent here means
+    // "no check ran", which the panel words as such rather than as nobody being out.
+    playerOut: vi.fn().mockResolvedValue([]),
     trackRecord: vi.fn(), retrain: vi.fn(),
     gameVerdict: vi.fn().mockResolvedValue(null),
     predictionsForWeek: vi.fn(), currentWeek: vi.fn(),

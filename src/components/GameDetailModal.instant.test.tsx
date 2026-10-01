@@ -110,6 +110,9 @@ function offlineApi(over: Partial<SportApi> = {}): SportApi {
     games: fail(),
     gamePrediction: fail(),
     playerProps: fail(),
+    // Phase 2: the out list has its own route on NFL. Absent here means
+    // "no check ran", which the panel words as such rather than as nobody being out.
+    playerOut: vi.fn().mockResolvedValue([]),
     trackRecord: fail(),
     retrain: fail(),
     gameVerdict: fail(),

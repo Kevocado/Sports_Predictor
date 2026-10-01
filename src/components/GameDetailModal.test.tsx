@@ -32,6 +32,9 @@ function mockApi(overrides: Partial<SportApi> = {}): SportApi {
     games: vi.fn(),
     gamePrediction: vi.fn().mockResolvedValue({ home_win_prob: 0.6, away_win_prob: 0.4, home_cover_prob: null, away_cover_prob: null, over_prob: null, under_prob: null } satisfies GamePrediction),
     playerProps: vi.fn().mockResolvedValue([]),
+    // Phase 2: the out list has its own route on NFL. Absent here means
+    // "no check ran", which the panel words as such rather than as nobody being out.
+    playerOut: vi.fn().mockResolvedValue([]),
     trackRecord: vi.fn(),
     retrain: vi.fn(),
     gameVerdict: vi.fn().mockResolvedValue(null),
@@ -46,6 +49,14 @@ function mockApi(overrides: Partial<SportApi> = {}): SportApi {
     headToHead: vi.fn().mockResolvedValue({ game_id: "", meetings: [] }),
     ...overrides,
   };
+}
+
+
+// Phase 2 added the picks panel above the box score, which names the same
+// players. These assertions are about the box score, so they are scoped to it
+// rather than loosened to getAllByText.
+function boxScore() {
+  return within(screen.getByRole("region", { name: "Predicted box score" }));
 }
 
 describe("filterPlayerPropsForGame", () => {
@@ -195,7 +206,7 @@ describe("GameDetailModal", () => {
   it("shows only this game's player props after fetch", async () => {
     const api = mockApi({ playerProps: vi.fn().mockResolvedValue([prop("home-player","Ravens"), prop("other","Bengals")]) });
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByText("home-player")).toBeInTheDocument());
+    await waitFor(() => expect(boxScore().getByText("home-player")).toBeInTheDocument());
     expect(screen.queryByText("other")).not.toBeInTheDocument();
   });
 

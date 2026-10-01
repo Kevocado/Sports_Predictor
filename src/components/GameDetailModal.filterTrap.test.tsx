@@ -58,6 +58,9 @@ function mockApi(props: PlayerPropPrediction[]): SportApi {
       home_cover_prob: null, away_cover_prob: null, over_prob: null, under_prob: null,
     }),
     playerProps: vi.fn().mockResolvedValue(props),
+    // Phase 2: the out list has its own route on NFL. Absent here means
+    // "no check ran", which the panel words as such rather than as nobody being out.
+    playerOut: vi.fn().mockResolvedValue([]),
     trackRecord: vi.fn(), retrain: vi.fn(),
     gameVerdict: vi.fn().mockResolvedValue(null),
     predictionsForWeek: vi.fn(), currentWeek: vi.fn(),
@@ -82,19 +85,28 @@ function press(label: string) {
   fireEvent.click(screen.getByRole("button", { name: label }));
 }
 
+
+// Phase 2 added the picks panel above the box score, and it names players too --
+// so a page-wide `getByText("Lamar")` is now ambiguous. These assertions are
+// about the BOX SCORE, so they are scoped to it rather than loosened to
+// getAllByText (which would pass whether or not the box score kept the row).
+function boxScore() {
+  return within(screen.getByRole("region", { name: "Predicted box score" }));
+}
+
 describe("the team filter is never the way out of a dead end", () => {
   it("keeps the filter on screen in an empty Away scope, and Both brings the rows back", async () => {
     // Only the home team has projections: pressing Away lands on a scope with
     // nothing in it.
     await renderModal(homeRoster);
-    await screen.findByText("Lamar");
+    await boxScore().findByText("Lamar");
     expect(filterButtonNames()).toEqual(["Away", "Both", "Home"]);
 
     press("Away");
     expect(screen.getByRole("button", { name: "Away" })).toHaveAttribute("aria-pressed", "true");
     // The scope really is empty, and the empty state says so honestly, naming
     // the team it is about.
-    expect(screen.queryByText("Lamar")).not.toBeInTheDocument();
+    expect(boxScore().queryByText("Lamar")).not.toBeInTheDocument();
     expect(screen.getByText(/No Chiefs player projections for this game yet\./)).toBeInTheDocument();
     // The way out is still on screen — this is the trap, so assert it loudly.
     expect(
@@ -106,18 +118,18 @@ describe("the team filter is never the way out of a dead end", () => {
     press("Both");
     expect(screen.getByRole("button", { name: "Both" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getAllByTestId("box-score-team-section").map((s) => s.textContent)).toEqual(["Ravens"]);
-    expect(screen.getByText("Lamar")).toBeInTheDocument();
-    expect(screen.getByText("Zay")).toBeInTheDocument();
-    expect(screen.getByText("Henry")).toBeInTheDocument();
+    expect(boxScore().getByText("Lamar")).toBeInTheDocument();
+    expect(boxScore().getByText("Zay")).toBeInTheDocument();
+    expect(boxScore().getByText("Henry")).toBeInTheDocument();
   });
 
   it("keeps the filter on screen in an empty Home scope too", async () => {
     // Mirror image: away projections only, so Home is the empty scope.
     await renderModal(awayRoster);
-    await screen.findByText("Mahomes");
+    await boxScore().findByText("Mahomes");
 
     press("Home");
-    expect(screen.queryByText("Mahomes")).not.toBeInTheDocument();
+    expect(boxScore().queryByText("Mahomes")).not.toBeInTheDocument();
     expect(screen.getByText(/No Ravens player projections for this game yet\./)).toBeInTheDocument();
     expect(
       filterButtonNames(),
@@ -125,7 +137,7 @@ describe("the team filter is never the way out of a dead end", () => {
     ).toEqual(["Away", "Both", "Home"]);
 
     press("Both");
-    expect(screen.getByText("Mahomes")).toBeInTheDocument();
+    expect(boxScore().getByText("Mahomes")).toBeInTheDocument();
     expect(screen.getAllByTestId("box-score-team-section").map((s) => s.textContent)).toEqual(["Chiefs"]);
   });
 
