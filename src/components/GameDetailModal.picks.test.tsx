@@ -109,42 +109,6 @@ describe("the picks panel renders", () => {
     }
   });
 
-  it("shows a TD row's confidence bucket context on the row itself", async () => {
-    await openModal(api());
-    const tdSection = screen.getAllByTestId("picks-category-heading")[0].closest("section")!;
-    const first = within(tdSection).getAllByTestId("picks-row")[0];
-    const text = first.textContent!;
-    expect(text).toMatch(/bucket/i);
-    expect(text).toMatch(/50-60%|60-70%|70%\+/);
-    expect(text).toContain("346");
-  });
-
-  it("states the measured asymmetry where the TD number is", async () => {
-    await openModal(api());
-    expect(screen.getByTestId("picks-list").textContent).toContain("14.8%");
-  });
-
-  it("renders a yardage row's ± MAE, taken from the market's own graded record", async () => {
-    await openModal(api());
-    const qbSection = screen.getAllByTestId("picks-category-heading")[1].closest("section")!;
-    expect(within(qbSection).getAllByTestId("picks-row")[0].textContent).toMatch(/±\s*66\.8/);
-  });
-
-  it("says 'no error estimate yet' when the market has no MAE, never '± 0'", async () => {
-    // `mean_absolute_error: null` with `n_resolved: 0` is exactly how BOTH
-    // backends serve a market with nothing resolved -- carries and receptions
-    // are in this state live on each -- so this is a reachable payload, not a
-    // contrived one.
-    const noMae: TrackRecord = {
-      ...track,
-      player_props: { ...track.player_props, rushing_yards: { n_resolved: 0, mean_absolute_error: null, mean_signed_error: null } },
-    };
-    await openModal(api({ trackRecord: vi.fn(() => Promise.resolve(noMae)) }));
-    const rbSection = screen.getAllByTestId("picks-category-heading")[2].closest("section")!;
-    const text = within(rbSection).getAllByTestId("picks-row")[0].textContent!;
-    expect(text).toContain("no error estimate yet");
-    expect(text).not.toMatch(/±\s*0(?!\.)/);
-  });
 });
 
 describe("the picks never render before the injury list has answered (CodeRabbit Major on Sports#24)", () => {
@@ -234,14 +198,6 @@ describe("CFB: no availability feed at all", () => {
     expect(outSpy).not.toHaveBeenCalled();
   });
 
-  it("flags every row 'no availability check'", async () => {
-    render(<GameDetailModal game={game()} api={api()} onClose={() => {}} sport="cfb" />);
-    await screen.findByTestId("picks-list");
-    const rows = screen.getAllByTestId("picks-row");
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) expect(row.textContent).toContain("no availability check");
-  });
-
   it("claims no CFB player is available", async () => {
     render(<GameDetailModal game={game()} api={api()} onClose={() => {}} sport="cfb" />);
     await screen.findByTestId("picks-list");
@@ -293,10 +249,20 @@ describe("absence of props", () => {
     expect(screen.getByTestId("picks-availability").textContent).not.toMatch(/no availability check/i);
   });
 
-  it("still renders the panel when /track-record fails, showing no graded record", async () => {
+  it("still renders the panel when /track-record fails (the rows never needed it)", async () => {
     const noTrack = api({ trackRecord: vi.fn(() => Promise.reject(new Error("boom"))) });
     await openModal(noTrack);
     const tdSection = screen.getAllByTestId("picks-category-heading")[0].closest("section")!;
-    expect(within(tdSection).getAllByTestId("picks-row")[0].textContent).toContain("no graded record yet");
+    expect(within(tdSection).getAllByTestId("picks-row").length).toBeGreaterThan(0);
+  });
+
+  it("shows only the player and the prediction on every row", async () => {
+    await openModal(api());
+    for (const row of screen.getAllByTestId("picks-row")) {
+      const text = row.textContent ?? "";
+      for (const bit of ["uncalibrated", "Brier", "graded", "bucket", "MAE", "±", "no error estimate", "no availability check", "resolved"]) {
+        expect(text, `a pick row must not contain "${bit}"`).not.toContain(bit);
+      }
+    }
   });
 });

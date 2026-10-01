@@ -540,12 +540,13 @@ describe.each(["nfl", "cfb"])("GameDetailModal's instant block (%s)", (sport) =>
     expect(within(block).getByTestId("record-fill")).toBeInTheDocument();
   });
 
-  it("shows the rebuilt badge and does not count the pick", () => {
+  it("shows the 'made after kickoff' badge, and says the pick counts", () => {
     blockNetwork();
     renderModal(sport, { weekPrediction: snapshot({ rebuilt: true }), weekPredictions: weekRows });
     const block = screen.getByTestId("instant-block");
-    expect(within(block).getByText(/Rebuilt after kickoff/i)).toBeInTheDocument();
-    expect(within(block).getByText(/not counted/i)).toBeInTheDocument();
+    expect(within(block).getByText("Made after kickoff")).toBeInTheDocument();
+    expect(within(block).getByText(/Counted in the track record/i)).toBeInTheDocument();
+    expect(within(block).queryByText(/not counted/i)).toBeNull();
     // The quiet chip is the OTHER branch; both at once would be two answers to
     // one question.
     expect(within(block).queryByText("Made before kickoff")).toBeNull();

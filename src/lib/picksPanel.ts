@@ -31,15 +31,7 @@
 import type { OutPlayer, PickRow } from "../predictor-ui";
 import type { PlayerPropPrediction, PlayerPropsTrackRecord } from "../types";
 
-/** Shown on every CFB row. Decision 5: the flag belongs on the row, because a
- *  reader who does not see it will read the list as "these players are playing".
- *  It states the absence of a check and nothing about any player's status. */
-export const CFB_AVAILABILITY_NOTE = "no availability check";
 
-/** Shown on a TD row when the backend has resolved nothing to grade. It must not
- *  become a hit rate of anything -- there is no such thing as a 0% record on an
- *  arm that has never been scored. */
-export const NO_GRADED_RECORD_YET = "no graded record yet";
 
 /** Said where CFB's out list is empty *because there is no feed to populate it*.
  *  The two clauses are load-bearing: the first names what is missing and the
@@ -48,21 +40,7 @@ export const CFB_NO_AVAILABILITY_LINE =
   "No availability check for this sport: there is no injury report or depth-chart feed to check against, " +
   "so no player above has been confirmed or ruled out. That is the absence of a check, not a claim that nobody is out.";
 
-/** The asymmetry, stated on every TD row rather than in a footnote, and phrased
- *  in the units the reader is looking at.
- *
- *  Measured 2026-10-01 on the served weeks: median anytime-TD probability
- *  0.1482, with only ~8.5% of rows at or above 0.50, against a measured
- *  anytime-TD base rate of 0.2837. The arm is under-confident, so its scores sit
- *  systematically below the truth and a low score is the model's habit rather
- *  than a reading of the player. Without this sentence a 14.8% bar reads as a
- *  near-certain miss, which is the opposite of what the number means.
- *
- *  "at or above" rather than "or better": `better` is a comparative, and a
- *  comparative here would be a claim about the arm this panel refuses to make. */
-const ASYMMETRY_NOTE =
-  "raw score, uncalibrated, and this arm scores low: across the weeks served the median is 14.8% " +
-  "and only 8.5% of rows reach 50% or above, so a low score is the model's habit, not a verdict on the player";
+
 
 /** Said where NFL's out list is empty because the feed ran and listed nobody.
  *  Deliberately different wording from `CFB_NO_AVAILABILITY_LINE`: NFL's route
@@ -142,116 +120,6 @@ export interface PicksPanel {
   availability: string;
 }
 
-// ---------------------------------------------------------------------------
-// Provenance, assembled from measured fields.
-// ---------------------------------------------------------------------------
-
-/** Brier score to two decimals, or a dash when the backend reports none. */
-function brier(x: number | null | undefined): string | null {
-  return typeof x === "number" && Number.isFinite(x) ? x.toFixed(2) : null;
-}
-
-function pct(x: number): string {
-  return `${Math.round(x * 1000) / 10}%`;
-}
-
-/**
- * A TD row's provenance, and the only honest shape for an uncalibrated arm.
- *
- * Graded (the backend has resolved rows): the bucket context and the Brier
- * score, with the count of resolved rows they were measured over, plus the
- * statement that the score itself is uncalibrated. The Brier score is the one
- * figure here that is directly comparable to a coin flip (0.25), so it is worth
- * showing; the bucket hit rates are shown as the graded behaviour of the arm
- * rather than as a forecast.
- *
- * Ungraded: `NO_GRADED_RECORD_YET`, alone. It is tempting to fall back to the
- * buckets, and this used to: with `n_resolved: 0` every bucket is `n: 0,
- * hit_rate: null`, so the fallback printed "0% of 0 graded rows" -- a hit rate
- * of zero, which is a claim about accuracy that no data supports. "no graded
- * record yet" is what the situation is.
- */
-export function tdProvenance(track: PlayerPropsTrackRecord, sport: Sport): string {
-  const td = track.anytime_td;
-  const parts: string[] = [ASYMMETRY_NOTE];
-
-  if (!td || td.n_resolved <= 0) {
-    parts.push(NO_GRADED_RECORD_YET);
-  } else {
-    const b = brier(td.brier_score);
-    parts.push(`graded${b ? ` · Brier ${b}` : ""} over ${td.n_resolved} resolved props`);
-    // The bucket context, in the reader's own units: what happened to the rows
-    // the model had already put in each confidence bucket. `graded` is
-    // deliberate -- these are outcomes of past calls, not a forecast about this
-    // one, and the bucket labels are the backend's own so this row and the
-    // track-record page cannot be read as two different numbers.
-    const buckets = (td.confidence_buckets ?? []).filter((x) => x.n > 0 && x.hit_rate != null);
-    parts.push(
-      buckets.length > 0
-        ? `graded by confidence bucket: ${buckets.map((x) => `${x.label} scored ${pct(x.hit_rate!)}`).join(", ")}`
-        : "no confidence bucket has enough graded rows to report a rate",
-    );
-  }
-
-  if (sport === "cfb") parts.push(CFB_AVAILABILITY_NOTE);
-  return parts.join(" · ");
-}
-
-/**
- * A yardage row's provenance: the market's own graded error, when one exists.
- *
- * The ± the component draws comes from `margin`, not from this sentence -- this
- * exists to name where the number is from. With no MAE the margin is absent and
- * `PicksList` says "no error estimate yet"; this says the same thing in words
- * rather than leaving the reader to infer it from a missing figure.
- */
-function yardageProvenance(
-  track: PlayerPropsTrackRecord,
-  market: Market,
-  position: string,
-  sport: Sport,
-): string {
-  const rec = track[market];
-  const mae = positionMae(rec, position);
-  const parts: string[] = [];
-  if (rec && rec.n_resolved > 0 && typeof mae === "number" && Number.isFinite(mae)) {
-    parts.push(`± is the market's own graded error over ${rec.n_resolved} resolved props`);
-  } else {
-    parts.push("no error estimate yet — this market has no resolved props to measure against");
-  }
-  if (sport === "cfb") parts.push(CFB_AVAILABILITY_NOTE);
-  return parts.join(" · ");
-}
-
-/**
- * One position's MAE inside a market, reading BOTH of the backends' shapes.
- *
- * NFL emits `by_position` as a LIST of `{position, n_resolved,
- * mean_absolute_error}`; CFB emits `mae_by_position` as a bare
- * `Record<string, number>` with no count beside it (`tracking/store.py`, both at
- * their merged SHAs). Reading only one shape returns `undefined` for the other
- * sport, which would render a perfectly good ± as "no error estimate yet" on
- * half the rows -- a false statement about the model in the pessimistic
- * direction, so both are read here.
- */
-function positionMae(
-  rec: PlayerPropsTrackRecord[Market] | undefined,
-  position: string,
-): number | null {
-  if (!rec) return null;
-  const list = rec.by_position;
-  if (Array.isArray(list)) {
-    const row = list.find((x) => x.position === position);
-    const v = row?.mean_absolute_error;
-    return typeof v === "number" && Number.isFinite(v) ? v : null;
-  }
-  const map = rec.mae_by_position;
-  if (map && typeof map === "object") {
-    const v = map[position];
-    return typeof v === "number" && Number.isFinite(v) ? v : null;
-  }
-  return null;
-}
 
 // ---------------------------------------------------------------------------
 // The panel.
@@ -268,7 +136,7 @@ function datedFor(entry: { report_season?: number; report_week?: number; source?
   return "the week of this fixture";
 }
 
-export function buildPicksPanel({ sport, props, out, track, game }: PicksPanelInput): PicksPanel {
+export function buildPicksPanel({ sport, props, out, game }: PicksPanelInput): PicksPanel {
   // This game's players only. A week's `/props` carries every team in the
   // league; ranking a third team's quarterback under this fixture's heading
   // would be the same category error as putting a rebounds row under points.
@@ -324,7 +192,6 @@ export function buildPicksPanel({ sport, props, out, track, game }: PicksPanelIn
       detail: "Anytime TD",
       value: p.anytime_td_prob,
       kind: "probability",
-      provenance: tdProvenance(track, sport),
     }));
   if (tdRows.length > 0) categories.push({ category: TD_CATEGORY, rows: tdRows });
 
@@ -339,23 +206,14 @@ export function buildPicksPanel({ sport, props, out, track, game }: PicksPanelIn
       .filter((x): x is { p: PlayerPropPrediction; value: number } => typeof x.value === "number" && Number.isFinite(x.value))
       .sort((a, b) => b.value - a.value || b.p.anytime_td_prob - a.p.anytime_td_prob)
       .slice(0, MAX_ROWS)
-      .map<PickRow>(({ p, value }) => {
-        const mae = positionMae(track[spec.market], p.position);
-        const row: PickRow = {
-          key: `${spec.market}-${p.player_id}`,
-          name: p.player_name,
-          team: p.recent_team,
-          detail: spec.detail,
-          value,
-          kind: "projection",
-          provenance: yardageProvenance(track, spec.market, p.position, sport),
-        };
-        // Absent, never zero: `PicksList` renders an absent margin as "no error
-        // estimate yet", and a `0` would render as "± 0" -- a claim of perfect
-        // accuracy that no backend has measured.
-        if (typeof mae === "number" && Number.isFinite(mae)) row.margin = mae;
-        return row;
-      });
+      .map<PickRow>(({ p, value }) => ({
+        key: `${spec.market}-${p.player_id}`,
+        name: p.player_name,
+        team: p.recent_team,
+        detail: spec.detail,
+        value,
+        kind: "projection",
+      }));
     if (rows.length > 0) categories.push({ category: spec.category, rows });
   }
 
