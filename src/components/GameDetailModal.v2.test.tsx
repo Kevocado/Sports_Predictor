@@ -158,6 +158,7 @@ async function show(
   over: Partial<GamePrediction> = {},
   factors?: Factor[],
   thisGame: GameSummary = game,
+  { expectBar = true }: { expectBar?: boolean } = {},
 ) {
   const explain = vi.fn().mockResolvedValue(v2(pick, factors));
   const out = render(
@@ -171,7 +172,17 @@ async function show(
   // Flow-first since the rollout: the summary the assertions below read sits
   // behind the button, so every test asks for it. One funnel, so one press.
   fireEvent.click(screen.getByRole("button", { name: /ai summary/i }));
-  await screen.findByText(/Baltimore are the pick/);
+  await screen.findByTestId("fixture-summary");
+  // Then wait for the BAR, which is what nearly every case in this file asserts
+  // on. The summary resolves on the injected `explain` promise and the bar waits
+  // on the site's own `gamePrediction`; they are different promises, so "the
+  // summary is up" is not "the figures are up", and asserting on the segments
+  // between them is a race CI lost before it was written down.
+  //
+  // `expectBar: false` for the one case whose subject is the ABSENCE of a bar —
+  // it cannot wait for the thing it is proving is not there, and a wait that
+  // times out there would be a second way of saying the same thing.
+  if (expectBar) await screen.findAllByTestId("pbar-fill");
   return out;
 }
 
@@ -188,7 +199,7 @@ describe("which figures the bar is drawn from", () => {
     // number, but it is not a pick made before kickoff — and a bar whose pick is
     // accented states that a pick exists. So there is no bar, rather than a bar
     // wearing a number the record would not judge.
-    const { container } = await show({ label: startedGame.home_team }, {}, undefined, startedGame);
+    const { container } = await show({ label: startedGame.home_team }, {}, undefined, startedGame, { expectBar: false });
     expect(fills(container)).toHaveLength(0);
   });
 });

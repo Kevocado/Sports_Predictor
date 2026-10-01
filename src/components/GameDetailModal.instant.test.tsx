@@ -246,6 +246,32 @@ async function askForTheSummary() {
   return screen.findByTestId("fixture-summary");
 }
 
+/** The block, with the site's own prediction landed.
+ *
+ *  The block is on screen from the FIRST frame — it has no state and no effect,
+ *  so it renders before anything resolves. That is the point of it, and it is
+ *  also why awaiting the block is not awaiting its figures: with a prediction
+ *  still in flight the block draws a verdict chip and a record strip and NO
+ *  bar, and an assertion about the bar written right after `findByTestId` on the
+ *  block passes or fails on how fast the api's promise resolved. Two of these
+ *  cases were green locally and red in CI for exactly that reason.
+ *
+ *  So the wait is on the figure the case is about. A prediction this site has
+ *  always produces a moneyline tile, whatever the kickoff; the cases that need
+ *  the bar wait for its segments.
+ */
+async function blockWithFigures(): Promise<HTMLElement> {
+  return (await screen.findByTestId("tile-moneyline")).closest<HTMLElement>(
+    '[data-testid="instant-block"]',
+  ) as HTMLElement;
+}
+
+/** The block, once the bar's two segments are painted. */
+async function blockWithBar(): Promise<HTMLElement> {
+  await screen.findAllByTestId("pbar-fill");
+  return screen.getByTestId("instant-block");
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -377,7 +403,7 @@ describe.each(["nfl", "cfb"])("GameDetailModal's instant block (%s)", (sport) =>
       weekPredictions: weekRows,
       explain: vi.fn().mockResolvedValue(aiSummary()),
     });
-    const block = await screen.findByTestId("instant-block");
+    const block = await blockWithBar();
     expect(accentedAt(block)).toBe(1);
     expect(fills(block)[0]).not.toBe(ACCENT);
     expect(barName(block)).toBe("Ravens 38%, Chiefs 62%, the pick is Chiefs");
@@ -437,7 +463,7 @@ describe.each(["nfl", "cfb"])("GameDetailModal's instant block (%s)", (sport) =>
       weekPredictions: weekRows,
     });
 
-    const block = await screen.findByTestId("instant-block");
+    const block = await blockWithFigures();
     expect(within(block).getByText("72%")).toBeInTheDocument();
     expect(screen.queryByText(/68%/)).toBeNull();
     expect(within(block).getByText("Made before kickoff")).toBeInTheDocument();
@@ -458,7 +484,10 @@ describe.each(["nfl", "cfb"])("GameDetailModal's instant block (%s)", (sport) =>
       weekPredictions: weekRows,
       api: offlineApi({ gamePrediction: vi.fn().mockResolvedValue(fresh) }),
     });
-    await screen.findByTestId("instant-block");
+    // Awaited on a cover row, which comes off today's fresh run: the block and
+    // this section's heading are both on screen before the prediction lands, so
+    // waiting on either would make the rows below a race.
+    await screen.findByText("Ravens covers spread");
 
     // The section, and the two win-probability bars that headed it. Those bars
     // are the duplicate: the block's tile and bar already state that one pair,
@@ -531,7 +560,11 @@ describe.each(["nfl", "cfb"])("GameDetailModal's instant block (%s)", (sport) =>
       api: offlineApi({ gamePrediction: vi.fn().mockResolvedValue(fresh) }),
       weekPredictions: weekRows,
     });
-    const block = await screen.findByTestId("instant-block");
+    // Awaited on the spread tile, because that is the figure this case needs and
+    // the block is on screen before it exists: the tile comes off today's fresh
+    // run, which lands a tick after the first paint.
+    await screen.findByTestId("tile-spread");
+    const block = screen.getByTestId("instant-block");
     expect(within(block).getByText(/no pick/i)).toBeInTheDocument();
     expect(within(block).queryByTestId("tile-moneyline")).toBeNull();
     expect(within(block).getByTestId("tile-spread")).toBeInTheDocument();
