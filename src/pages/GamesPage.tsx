@@ -4,7 +4,7 @@ import { useSport } from "../context/SportContext";
 import { sortByConfidence } from "../lib/confidenceSort";
 import { TeamLogo } from "../components/TeamName";
 import { ErrorState, MatchCard, RoundNavigator, Skeleton } from "../predictor-ui";
-import { hasStarted, kickoffZones, nextUpIds, toCardModel, weekTally } from "../lib/weekCards";
+import { hasStarted, kickoffZones, nextUpIds, toCardModel, weekPreKickoffLine, weekRecordLine, weekTally } from "../lib/weekCards";
 import { parseKickoff } from "../predictor-ui";
 import { GameDetailModal } from "../components/GameDetailModal";
 import { cfbExplain, nflExplain } from "../api/client";
@@ -155,6 +155,14 @@ export function GamesPage() {
   const nextIds = nextUpIds(games, isCurrentWeek);
 
   const retry = () => setReloadKey((k) => k + 1);
+  // The week's two figures, in words this site owns. `RoundNavigator`'s own
+  // record line says "picks made before kickoff correct", which is the
+  // pre-reversal rule: the count it describes is now every counted pick, so
+  // those words would call a post-kickoff pick a pre-game one. Hence `record`
+  // is not passed to it at all (see lib/weekCards.ts::weekRecordLine).
+  const tally = weekTally(weekPredictions);
+  const recordLine = weekRecordLine(tally);
+  const preKickoffLine = weekPreKickoffLine(tally);
   const pillClass = (on: boolean) =>
     `rounded-pr px-3 py-1 text-xs font-semibold transition-colors ${on ? "bg-pr-accent text-pr-accent-ink" : "text-pr-text-dim hover:text-pr-text"}`;
 
@@ -168,8 +176,17 @@ export function GamesPage() {
         onPrev={() => setWeek((w) => Math.max(1, w - 1))}
         onNext={() => setWeek((w) => w + 1)}
         onJumpToCurrent={!isCurrentWeek && currentWeek ? () => { setSeason(currentWeek.season); setWeek(currentWeek.week); } : undefined}
-        record={weekTally(weekPredictions)}
       />
+      {/* The record line, in the same row as the week heading and to its right so
+          it is not mistaken for a filter control. Stated only once the week has
+          settled a pick, which is why `weekRecordLine` returns null on an empty
+          tally rather than printing 0/0. */}
+      {recordLine && (
+        <p data-testid="week-record" className="-mt-2 mb-4 text-sm text-pr-text-dim">
+          {recordLine}
+          {preKickoffLine && <span className="text-pr-text-faint"> · {preKickoffLine}</span>}
+        </p>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div role="group" aria-label="Order games" className="flex gap-1 rounded-pr border border-pr-rule bg-pr-panel p-1">

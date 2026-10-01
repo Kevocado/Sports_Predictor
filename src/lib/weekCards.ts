@@ -60,9 +60,13 @@ function pickFrom(game: GameSummary, homeProb: number): { pick: CardModel["pick"
  * One NFL/CFB game as a family MatchCard: away left, home right (US order).
  *
  * The honesty rule: a game that has started is judged only on the pick
- * snapshotted before kickoff (the week row), never on today's model; a pick
- * rebuilt after kickoff is labelled and never counted; with no snapshot there
- * is no pick. Games still to come show the current model's pick.
+ * snapshotted before kickoff (the week row), never on today's model; with no
+ * snapshot there is no pick. Games still to come show the current model's pick.
+ *
+ * A pick recorded after its own kickoff gets the `rebuilt` STATUS, which renders
+ * as "Made after kickoff" (`predictor-ui/StatusBadge.tsx`). That is disclosure,
+ * not exclusion: `weekTally` counts it, and the track record counts it. The one
+ * thing the card must never do is call it something other than what it is.
  */
 export function toCardModel(
   game: GameSummary,
@@ -120,13 +124,65 @@ export function kickoffZones(gamedays: string[], timeZone?: string): string {
   return zones.join("/");
 }
 
-/** The week's record: resolved picks made before kickoff; rebuilt ones counted apart. */
-export function weekTally(week: WeekPrediction[]): { hits: number; settled: number; rebuilt: number } {
+/**
+ * The week's record line, in words this repo owns.
+ *
+ * The tally is NOT handed to `RoundNavigator`, and the reason is that
+ * component's line is copy the hub owns: "N/M picks made before kickoff
+ * correct". Passing it a count that includes a pick made after kickoff would
+ * make those words false on this site -- the exact substitution the 2026-10-01
+ * reversal exists to prevent, which is a post-kickoff number presented as a
+ * pre-game one. So the words live here, where they change with the rule.
+ */
+export function weekRecordLine(tally: WeekTally): string | null {
+  if (tally.settled === 0) return null;
+  return `${tally.hits}/${tally.settled} picks counted correct`;
+}
+
+/**
+ * The secondary figure, beside the first: the same rows filtered to the picks
+ * made before their own kickoff, with its own n.
+ *
+ * Stated even when it equals the headline's `n`, because a reader who sees
+ * "5/5 picks counted correct" cannot tell from that alone whether every one of
+ * the five was made in time -- and that is the question this figure answers.
+ */
+export function weekPreKickoffLine(tally: WeekTally): string | null {
+  if (tally.settled === 0) return null;
+  const { hits, settled } = tally.preKickoff;
+  return `${hits} of ${settled} made before kickoff`;
+}
+
+/**
+ * The week's record, in the two figures the whole site now uses.
+ *
+ * `hits`/`settled` count EVERY resolved pick, whenever it was made: the same
+ * population as the track record's headline. `preKickoff` is the subset made
+ * before kickoff, with its own n, which is the honest read of live performance.
+ *
+ * The `rebuilt` flag on a row still means what it always meant -- this pick was
+ * snapshotted at or after its own game's kickoff -- and it is a fact about TIMING
+ * and nothing else. Before 2026-10-01 (predictor-hub #66) this function left those
+ * rows out of the count, which meant a re-run model could make a past game's pick
+ * stop counting and the record emptied out on every model change.
+ *
+ * There is deliberately no `rebuilt` key on the return: a tally that reports a
+ * post-kickoff count as a peer of `settled` is one line away from a caller
+ * rendering it as "excluded". The subset is named for what it is.
+ */
+export interface WeekTally {
+  hits: number;
+  settled: number;
+  preKickoff: { hits: number; settled: number };
+}
+
+export function weekTally(week: WeekPrediction[]): WeekTally {
   const resolved = week.filter((w) => w.status === "resolved" && w.verdict);
-  const counted = resolved.filter((w) => !w.rebuilt);
+  const hit = (w: WeekPrediction) => w.verdict!.moneyline.hit;
+  const inTime = resolved.filter((w) => !w.rebuilt);
   return {
-    hits: counted.filter((w) => w.verdict!.moneyline.hit).length,
-    settled: counted.length,
-    rebuilt: resolved.length - counted.length,
+    hits: resolved.filter(hit).length,
+    settled: resolved.length,
+    preKickoff: { hits: inTime.filter(hit).length, settled: inTime.length },
   };
 }

@@ -101,9 +101,10 @@ function VerdictBadge({ label, hit }: { label: string; hit: boolean }) {
   );
 }
 
-// weekPrediction: the week's row for this game (the pick snapshotted before
-// kickoff, and whether it was rebuilt after). A final is judged on that pick,
-// never on today's model.
+// weekPrediction: the week's row for this game — the stored pick, and whether
+// it was recorded at or after this game's own kickoff (`rebuilt`). A final is
+// judged on that stored pick, never on today's model, and a pick made after
+// kickoff is disclosed and counted rather than withheld.
 // explain: fetches the plain-English summary. Optional on purpose — a site
 // deployed before the explainer exists, or a game it has no summary for, must
 // still open this modal and show everything else in it.
@@ -310,9 +311,11 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
       home_win_prob: hw,
       away_win_prob: aw,
       pick,
-      // A pick snapshotted at or after kickoff is shown and never counted, and
-      // the badge that says so belongs to the block. The bundle carries the flag
-      // and nothing words it a second time.
+      // A pick snapshotted at or after kickoff is DISCLOSED and still counted
+      // (predictor-hub #66, decided 2026-10-01): `rebuilt` here means "made at
+      // or after this game's kickoff" and nothing else. The badge that says when
+      // it was made belongs to the block, so the bundle carries the flag and
+      // nothing words it a second time.
       ...(weekPrediction?.rebuilt ? { pick_timing: "rebuilt" as const } : {}),
       score,
       result: !score
@@ -325,14 +328,31 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
     };
   }, [game, prediction, verdict, weekPrediction, flowState]);
 
-  // The record: this week's picks made before kickoff, from the function the
-  // week navigator already uses, over the rows the list page already fetched.
+  // The record: this week's COUNTED picks, and the pre-kickoff subset beside
+  // them, from the same `weekTally` the week navigator uses, over the rows the
+  // list page already fetched.
+  //
+  // The LABEL is this site's copy, because `RecordStrip` is the hub's component
+  // and the strip it fills is wordless apart from the label. The label used to
+  // say "Picks made before kickoff correct", which was true only under the
+  // pre-2026-10-01 rule that left a post-kickoff pick out of the count; the
+  // count includes those picks now, so the label says what the count is and
+  // states the subset beside it.
+  //
   // `null` rather than a zeroed tally while the rows are absent, so the strip
   // never flashes 0/0 — "0/0" is a claim about a record that does not exist.
   const record = useMemo(
     () =>
       weekPredictions
-        ? { label: `Picks made before ${MOMENT} correct`, ...weekTally(weekPredictions) }
+        ? (() => {
+            const { hits, settled, preKickoff } = weekTally(weekPredictions);
+            const sub = `${preKickoff.hits} of ${preKickoff.settled} made before ${MOMENT}`;
+            return {
+              label: `Picks counted correct · ${sub}`,
+              hits,
+              settled,
+            };
+          })()
         : null,
     [weekPredictions],
   );

@@ -91,13 +91,38 @@ describe("GamesPage", () => {
     await waitFor(() => expect(screen.queryByText(/Couldn't find the current week/)).not.toBeInTheDocument());
   });
 
-  it("shows the week's pre-kickoff record from the tracked verdicts", async () => {
+  it("shows the week's record as every counted pick, with the pre-kickoff subset beside it", async () => {
     predictionsForWeek.mockImplementation(async () => [
       { game_id: "g1", status: "resolved", home_win_prob: 0.62, away_win_prob: 0.38, verdict: { game_id: "g1", resolved: true, moneyline: { hit: true, predicted: "Ravens" }, ats: null, totals: null } },
       { game_id: "g2", status: "pending", verdict: null },
     ]);
     render(<GamesPage />);
-    expect(await screen.findByText("1/1 picks made before kickoff correct")).toBeInTheDocument();
+    // The tally counts every counted pick. Its LABEL is the site's, because
+    // `RoundNavigator` is the hub's component and its line says "picks made
+    // before kickoff correct" -- words that would be false of a count that
+    // includes a pick made after its kickoff.
+    expect(await screen.findByText("1/1 picks counted correct")).toBeInTheDocument();
+    // ...and the pre-kickoff subset is on the same surface with its own n, even
+    // when it happens to equal the headline's `n`: a reader cannot otherwise
+    // tell whether all of the one was made in time.
+    expect(screen.getByTestId("week-record")).toHaveTextContent("1 of 1 made before kickoff");
+  });
+
+  it("counts a pick made after its kickoff in the week's tally, and discloses it", async () => {
+    predictionsForWeek.mockImplementation(async () => [
+      { game_id: "g1", status: "resolved", home_win_prob: 0.62, away_win_prob: 0.38, verdict: { game_id: "g1", resolved: true, moneyline: { hit: true, predicted: "Ravens" }, ats: null, totals: null } },
+      { game_id: "g2", status: "resolved", rebuilt: true, home_win_prob: 0.4, away_win_prob: 0.6, verdict: { game_id: "g2", resolved: true, moneyline: { hit: false, predicted: "Jets" }, ats: null, totals: null } },
+    ]);
+    render(<GamesPage />);
+    // 2 counted, 1 right -- the late pick is in the count. Before the swap this
+    // read 1/1, which is the figure a model change could empty out.
+    expect(await screen.findByText("1/2 picks counted correct")).toBeInTheDocument();
+    // The subset is 1 of 1: g2's pick is the only late one, so nothing else is
+    // in it. Asserted off the line's whole text, since the two figures are one
+    // element split across a span.
+    expect(screen.getByTestId("week-record")).toHaveTextContent("1 of 1 made before kickoff");
+    // ...and nothing on this surface says the late pick is held out.
+    expect(document.body.textContent).not.toMatch(/not\s+counted/i);
   });
 
   it("marks exactly one upcoming game as Next up", async () => {

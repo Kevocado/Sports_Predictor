@@ -89,10 +89,11 @@ const snapshot = (over: Partial<WeekPrediction> = {}): WeekPrediction => ({
  * The week's rows, seeded rather than fetched — a parity test that asks the
  * network for its own fixtures proves nothing about the network being unused.
  *
- * `weekTally` (`lib/weekCards.ts:124-131`) counts resolved rows carrying a
- * verdict, less the rebuilt ones: 4 settled, 3 of them right. The fifth row is a
- * rebuild after kickoff and is NOT counted, which is the whole point of the
- * `rebuilt` field, so the strip reads 3/4 and never 4/5.
+ * `weekTally` counts every resolved row carrying a verdict, whenever it was
+ * made: 5 settled, 4 of them right. The fifth row's pick was made after its own
+ * kickoff (`rebuilt: true`), which discloses WHEN it was made and nothing else —
+ * it is counted like any other pick (predictor-hub #66), so the strip reads 4/5
+ * and states "4 of 5 made before kickoff" beside it.
  */
 const weekRows: WeekPrediction[] = [
   { game_id: "a", status: "resolved", verdict: final(true) },
@@ -425,8 +426,11 @@ describe.each(["nfl", "cfb"])("GameDetailModal's instant block (%s)", (sport) =>
     // so the strip renders and the block says the pick is absent.
     renderModal(sport, { weekPredictions: weekRows });
     const block = screen.getByTestId("instant-block");
-    expect(within(block).getByText("Picks made before kickoff correct")).toBeInTheDocument();
-    expect(within(block).getByText("3/4")).toBeInTheDocument();
+    // The label is the site's copy, and it says what the count is.
+    expect(within(block).getByText(/Picks counted correct/)).toBeInTheDocument();
+    // 5 counted, 4 right. The old tally read 3/4 because it withheld the late
+    // pick; that withholding is the exclusion this reversal removed.
+    expect(within(block).getByText("4/5")).toBeInTheDocument();
     expect(within(block).getByText(/no pick/i)).toBeInTheDocument();
     // No moneyline tile and no bar, because there is no pick to state and a bar
     // that accents something claims there is one.
@@ -529,14 +533,27 @@ describe.each(["nfl", "cfb"])("GameDetailModal's instant block (%s)", (sport) =>
     expect(document.body.textContent ?? "").not.toMatch(/Win probabilities|The model picks|The pick was made/);
   });
 
-  it("carries the record, and counts no pick made after kickoff", () => {
+  it("carries the record, and counts a pick made after kickoff like any other", () => {
     blockNetwork();
     renderModal(sport, { weekPrediction: snapshot(), weekPredictions: weekRows });
     const block = screen.getByTestId("instant-block");
-    expect(within(block).getByText("Picks made before kickoff correct")).toBeInTheDocument();
-    // 4 settled, 3 right. The rebuilt fifth row is excluded, so this reads 3/4
-    // and not 4/5: a pick made after kickoff is shown and never counted.
-    expect(within(block).getByText("3/4")).toBeInTheDocument();
+    // The strip's LABEL is the site's, because `RecordStrip` is the hub's
+    // component and its own label says "picks made before kickoff correct" --
+    // words that would be false of a count including the fifth row, whose pick
+    // was made after its own kickoff.
+    expect(within(block).getByText(/Picks counted correct/)).toBeInTheDocument();
+    expect(within(block).queryByText(/Picks made before kickoff correct/)).toBeNull();
+    // 5 counted, 4 right. The old tally said 3/4, which is the exclusion this
+    // reversal removed (predictor-hub #66): a re-run model must not make a past
+    // game's pick stop counting, or the record empties out on every change.
+    expect(within(block).getByText("4/5")).toBeInTheDocument();
+    // ...with the pre-kickoff subset stated in the same label, since that is the
+    // honest read of live performance and the reader is owed it: 4 of the 5
+    // settled picks were made before their own kickoff, 3 of them right.
+    expect(within(block).getByText(/3 of 4 made before kickoff/)).toBeInTheDocument();
+    // ...and nothing anywhere on the block claims it is held out, which is the
+    // exclusion claim the reversal removed.
+    expect(within(block).queryByText(/not\s+counted/i)).toBeNull();
     expect(within(block).getByTestId("record-fill")).toBeInTheDocument();
   });
 
@@ -579,7 +596,7 @@ describe.each(["nfl", "cfb"])("GameDetailModal's instant block (%s)", (sport) =>
     blockNetwork();
     renderModal(sport, { weekPrediction: snapshot(), weekPredictions: [] });
     const block = screen.getByTestId("instant-block");
-    expect(within(block).getByText("Picks made before kickoff correct")).toBeInTheDocument();
+    expect(within(block).getByText(/Picks counted correct/)).toBeInTheDocument();
     expect(within(block).queryByTestId("record-fill")).toBeNull();
     expect(within(block).getByText("—")).toBeInTheDocument();
     expect(within(block).queryByText("0/0")).toBeNull();
