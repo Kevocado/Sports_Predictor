@@ -481,10 +481,37 @@ describe("the flow stands alone when the explainer is unreachable", () => {
     // The explainer rejects: a dead container, a proxy 502, a timeout. The
     // modal must still say what it knows from its own data, and must not
     // spend a request it was never asked to make.
+    //
+    // **On the fixture being a FINAL and not the pre-game one above.** This case
+    // used to assert `Ravens vs Chiefs`, which was the pre-game flow's ONLY row
+    // and so its only evidence that the flow rendered anything. Since the empty
+    // pre-game heading came out (see `flowName` in GameDetailModal.tsx and
+    // GameDetailModal.leftovers.test.tsx, which pins the pre-game case for both
+    // sports), a pre-game fixture has no text to assert here at all and the test
+    // name would be describing nothing. A final is the state where the flow DOES
+    // word something from local facts — the result — so the case tests what it
+    // says it tests, on real rendered text, and the unreachable-explainer
+    // condition is unchanged.
     const explain = vi.fn().mockRejectedValue(new Error("unreachable"));
-    render(<GameDetailModal game={game} api={mockApi()} onClose={() => {}} explain={explain} />);
-    expect(await screen.findByTestId("fixture-flow")).toBeInTheDocument();
-    expect(screen.getByText("Ravens vs Chiefs")).toBeInTheDocument();
+    const finalGame: GameSummary = { ...game, gameday: "2020-09-07T20:00:00Z", home_score: 24, away_score: 17 };
+    render(
+      <GameDetailModal
+        game={finalGame}
+        api={mockApi({
+          gameVerdict: vi.fn().mockResolvedValue({
+            game_id: finalGame.game_id, resolved: true,
+            moneyline: { hit: true, predicted: "Ravens" }, ats: null, totals: null,
+            actual_home_score: 24, actual_away_score: 17,
+          }),
+        })}
+        onClose={() => {}}
+        explain={explain}
+      />,
+    );
+    // Awaited on the flow's own sentence, which lands with the reconciled verdict
+    // rather than on the first paint.
+    const flowEl = await screen.findByText("The result is a win for Ravens.");
+    expect(flowEl.closest('[data-testid="fixture-flow"]')).toBeInTheDocument();
     expect(explain).not.toHaveBeenCalled();
     // The button offers the summary; no alert, no empty panel.
     expect(screen.getByRole("button", { name: /ai summary/i })).toBeInTheDocument();
