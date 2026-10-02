@@ -120,6 +120,33 @@ const CFB_TD_CATEGORY = "Anytime TD";
  *  figure or a rush-or-receive probability: an over/under CALL on a line. */
 const NFL_QB_PASSING_TD_CATEGORY = "QB passing TDs";
 
+/** The provenance the shared `PicksList` draws after a rendered `detail`, in the
+ *  caller's own words. This panel sets it on the QB passing-TD rows and nowhere
+ *  else, and the reason it cannot be the component's default is the reason the
+ *  row needs one at all.
+ *
+ *  `DEFAULT_DETAIL_LABEL` is "model call", and that noun is correct for what
+ *  `value` is -- the model's own probability -- while being wrong for what
+ *  `detail` IS on this row. The detail here is a THRESHOLD the call was made
+ *  against: `model_line(mu)`, the nearest half point to the model's own
+ *  projection, floored at 0.5. "Over 2.5 · model call" says the model called
+ *  the over and stops one word short of saying where 2.5 came from, and a bare
+ *  `2.5` under a totals heading is the exact shape of a sportsbook price. There
+ *  is no odds feed anywhere in these repos, so nothing else on the page would
+ *  tell a reader that apart -- a reader who assumes a price is reading a line
+ *  the model chose for itself, and acting on it as though a book had quoted it.
+ *
+ *  "model line" is the plan's wording
+ *  (`predictor-hub/docs/superpowers/plans/2026-10-02-nfl-td-finish.md`) and the
+ *  one phrase here that is true of the number: it names the figure a line AND
+ *  says the model chose it. It claims no edge, no price and no guarantee, so it
+ *  needs no odds feed behind it.
+ *
+ *  Per row, not a prop on `PicksList`, because only these rows are lines: the TD
+ *  rows restate their own heading and the yardage rows are projections, and
+ *  neither reaches the qualifier. */
+const NFL_QB_TD_DETAIL_LABEL = "model line";
+
 /** The floor a quarterback's OWN rush-or-receive probability has to reach before
  *  this panel will list him under "Rush or receiving TD".
  *
@@ -176,22 +203,28 @@ export interface PicksPanel {
 
 
 // ---------------------------------------------------------------------------
-// What the READER sees, and what is in the panel's data, are not the same
-// thing, and it matters here.
+// What the READER sees, and what is in the panel's data, are the same thing
+// here, and it took two changes in two repos to get here.
 //
-// The shared `PicksList` renders a row's name, its team, its value and -- for a
-// probability -- a bar. It does NOT render `row.detail`: it uses it only to name
-// a player in a type error. So the CALL this panel puts in `detail` ("Over 2.5")
-// is data, not pixels, and on screen the QB passing-TD row reads
-// "A. Rodgers · BAL  67%" with no line named.
+// `PicksList` renders a row's name, its team, its value and -- for a
+// probability -- a bar, and it draws `row.detail` ONLY when
+// `rowShowsDetail(row, category)` says so: a `kind: "probability"` row whose
+// detail adds a word its own heading does not already carry
+// (`predictor-ui` PR #72, vendored at 7745af88d34b). The QB passing-TD row is
+// the only row in this panel that clears both halves, which is why it is the
+// only row a reader sees a `detail` on:
 //
-// That is the same state every other category is in -- "Pass yds", "Rush yds"
-// and "Rec yds" are equally undrawn -- so this change introduces no new
-// inconsistency. Drawing `detail` means changing `predictor-ui` in the hub and
-// re-syncing, which is a separate decision about every site's rows at once, not
-// one to make inside an NFL pop-out. Recorded rather than silently accepted:
-// the plan's "rows rendered as `Over 2.5 · 64%`" is satisfied in the panel's
-// data and NOT yet on the page.
+//   * "Rush or receiving TD" and "Anytime TD" are probability rows whose detail
+//     IS the heading, restated -- nothing new to say, so nothing is drawn.
+//   * "Pass yds", "Rush yds" and "Rec yds" are `kind: "projection"`. Their
+//     detail is a label for a magnitude the heading already names, and a
+//     projection states no call, so they draw nothing either -- which is why
+//     they need no `detailLabel` and get none.
+//
+// So the one string this panel has to be right about is the qualifier on the
+// QB passing-TD row, and it is set PER ROW for exactly that reason: a list can
+// hold two kinds of row and only one of them is a line. See
+// `NFL_QB_TD_DETAIL_LABEL` for why the component's default is wrong here.
 //
 // The panel.
 // ---------------------------------------------------------------------------
@@ -303,6 +336,16 @@ export function buildPicksPanel({ sport, props, out, game }: PicksPanelInput): P
   // `model_line(mu)` -- the nearest half point to the model's own projection --
   // so it is derived from the same number the percentage beside it came from,
   // and the row says only which side the model is on.
+  //
+  // `detailLabel` is set here and nowhere else because these are the only rows
+  // a reader ever sees a `detail` on, and the two gates that keep it that way
+  // are DIFFERENT ones -- worth being exact about, because
+  // `detailAddsToHeading` is not one of them for the yardage rows: it answers
+  // `true` for `detailAddsToHeading("Pass yds", "QB passing yards")`, since the
+  // tokens share nothing. The yardage rows are stopped by `rowShowsDetail`'s
+  // `kind` gate before the token test is reached at all; the TD rows by the
+  // token test. So a change that widened either gate would leak a qualifier onto
+  // a row that states no call.
   if (sport === "nfl") {
     const qbTdRows = ranked
       .filter((p) => p.position === "QB")
@@ -322,6 +365,7 @@ export function buildPicksPanel({ sport, props, out, game }: PicksPanelInput): P
         name: p.player_name,
         team: p.recent_team,
         detail: `${side === "over" ? "Over" : "Under"} ${line}`,
+        detailLabel: NFL_QB_TD_DETAIL_LABEL,
         value: prob,
         kind: "probability",
       }));
