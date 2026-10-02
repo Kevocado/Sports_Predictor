@@ -89,7 +89,61 @@ export function positionCategories(): PositionCategory[] {
  *  is structurally NaN in CFB's source data. */
 type Market = "passing_yards" | "rushing_yards" | "receiving_yards";
 
-const TD_CATEGORY = "Anytime TD";
+// ---------------------------------------------------------------------------
+// The two touchdown categories, and why they are not the same list.
+// ---------------------------------------------------------------------------
+//
+// Kevin, 2026-10-01, binding: **anytime TD is rushing + receiving only**, and
+// passing TDs are a market of their own. A quarterback therefore reaches the TD
+// category only if his OWN rushing or receiving makes him likely, and his
+// passing arm is never part of that number.
+//
+// The two backends do not agree on the label yet, and the title follows the
+// number rather than the other way round. This was measured, not assumed:
+//
+//   * NFL_Predictor `origin/main` (NFL#26, e1c7d5e8) -- `features/player_usage.py`
+//     line 39 records `ANYTIME_TD_LABEL_VERSION = 2`, whose definition is
+//     `anytime_td_actual(rushing_tds, receiving_tds)` and no `passing_tds`. So
+//     NFL's `anytime_td_prob` IS a rush-or-receive probability, and the honest
+//     title for it is "Rush or receiving TD".
+//   * CFB_Predictor `origin/main` (dfd3e21) -- `features/player_usage.py::build_player_training_frame`
+//     still sums `rushing_tds + receiving_tds + passing_tds`. Renaming CFB's
+//     category would put a label on a number that does not mean it, so CFB
+//     keeps "Anytime TD" and this panel's QB gate below is NFL-only too.
+//
+// One constant cannot serve both, and the sport is the thing that decides which.
+
+const NFL_TD_CATEGORY = "Rush or receiving TD";
+const CFB_TD_CATEGORY = "Anytime TD";
+
+/** The second TD heading, and the only market here whose number is not a yardage
+ *  figure or a rush-or-receive probability: an over/under CALL on a line. */
+const NFL_QB_PASSING_TD_CATEGORY = "QB passing TDs";
+
+/** The floor a quarterback's OWN rush-or-receive probability has to reach before
+ *  this panel will list him under "Rush or receiving TD".
+ *
+ *  Kevin's rule is "only if his own rushing makes him likely", and `likely` is
+ *  the operative word -- a quarterback whose rush-or-receive number sits at the
+ *  base rate is not on this board because of his legs, and showing him there is
+ *  the category error the whole split exists to remove.
+ *
+ *  Both ends of the range are numbers already measured and recorded in this
+ *  repo rather than ones invented here: the header of this file puts the median
+ *  served TD probability at **0.1482** across the live weeks (with only ~8.5% of
+ *  rows at or above 0.50), and both backends' `/track-record` treats a pick as
+ *  *called* at **0.50** (`hit_rate_when_called`, and the "50-60%" bucket in
+ *  every graded week). 0.20 sits above the base rate and far below the called
+ *  bar, so a genuine rushing receiver is not filtered out and a pure passer is.
+ *
+ *  This is the frontend's own eligibility floor. The load-bearing guarantee is
+ *  upstream -- NFL's label does not contain passing TDs at all, so his arm
+ *  cannot raise `anytime_td_prob` in the first place. The floor is what keeps
+ *  that true on the page even if a payload ever grew a passing-contaminated
+ *  number, and it is applied to QBs ONLY: applying it to every position would
+ *  thin out the RB/WR list, which Kevin did not ask for and which would change
+ *  CFB's panel. */
+export const QB_RUSH_OR_RECEIVE_TD_MIN = 0.2;
 
 /** The three-row ceiling, restated so this file cannot be the thing that drifts
  *  from the component's. It is a cap and never a quota: the rows are sliced, so
@@ -122,6 +176,23 @@ export interface PicksPanel {
 
 
 // ---------------------------------------------------------------------------
+// What the READER sees, and what is in the panel's data, are not the same
+// thing, and it matters here.
+//
+// The shared `PicksList` renders a row's name, its team, its value and -- for a
+// probability -- a bar. It does NOT render `row.detail`: it uses it only to name
+// a player in a type error. So the CALL this panel puts in `detail` ("Over 2.5")
+// is data, not pixels, and on screen the QB passing-TD row reads
+// "A. Rodgers · BAL  67%" with no line named.
+//
+// That is the same state every other category is in -- "Pass yds", "Rush yds"
+// and "Rec yds" are equally undrawn -- so this change introduces no new
+// inconsistency. Drawing `detail` means changing `predictor-ui` in the hub and
+// re-syncing, which is a separate decision about every site's rows at once, not
+// one to make inside an NFL pop-out. Recorded rather than silently accepted:
+// the plan's "rows rendered as `Over 2.5 · 64%`" is satisfied in the panel's
+// data and NOT yet on the page.
+//
 // The panel.
 // ---------------------------------------------------------------------------
 
@@ -178,22 +249,84 @@ export function buildPicksPanel({ sport, props, out, game }: PicksPanelInput): P
 
   const categories: { category: string; rows: PickRow[] }[] = [];
 
-  // Anytime TD: for EVERY position the model projects (NFL and CFB's
-  // `predict_props` emit `anytime_td_prob` for all of them), so this list is
-  // cross-position and ranked on the probability itself.
+  // Touchdowns, and the heading depends on WHICH sport's number this is: see the
+  // two constants above. Both backends' `predict_props` emit `anytime_td_prob`
+  // for every position, so the list is cross-position and ranked on the
+  // probability itself.
+  const tdCategory = sport === "cfb" ? CFB_TD_CATEGORY : NFL_TD_CATEGORY;
   const tdRows = ranked
     .filter((p) => typeof p.anytime_td_prob === "number" && Number.isFinite(p.anytime_td_prob))
+    // Kevin's rule, as a filter rather than a hope. NFL's `anytime_td_prob`
+    // cannot contain a passing TD (the label is rushing + receiving), so a
+    // quarterback here is a quarterback whose own legs or hands earn him -- and
+    // this drops the ones whose number is at the base rate, which is the half
+    // of the rule a rename alone would not enforce. NFL only: CFB's label still
+    // sums passing TDs, so gating CFB's quarterbacks on a rush-or-receive floor
+    // would filter rows on a definition that repo has not adopted.
+    .filter((p) => sport === "cfb" || p.position !== "QB" || p.anytime_td_prob >= QB_RUSH_OR_RECEIVE_TD_MIN)
     .sort((a, b) => b.anytime_td_prob - a.anytime_td_prob)
     .slice(0, MAX_ROWS)
     .map<PickRow>((p) => ({
       key: `td-${p.player_id}`,
       name: p.player_name,
       team: p.recent_team,
-      detail: "Anytime TD",
+      detail: tdCategory,
       value: p.anytime_td_prob,
       kind: "probability",
     }));
-  if (tdRows.length > 0) categories.push({ category: TD_CATEGORY, rows: tdRows });
+  if (tdRows.length > 0) categories.push({ category: tdCategory, rows: tdRows });
+
+  // The QB passing-TD call, as its own heading beside the TD one rather than a
+  // line inside it.
+  //
+  // NFL ONLY, twice over, and both are load-bearing:
+  //
+  //  1. CFB's `/props` carries no `passing_td_*` field at all -- its
+  //     `models/player_props.py` has no `passing_tds` model -- so on today's
+  //     payload the field check below is already enough. It is stated anyway,
+  //     because "the payload happens not to have the field" is a fact about
+  //     today and the gate is a fact about this panel: CFB must not grow the
+  //     category even if a future CFB_Predictor starts emitting one.
+  //  2. The row needs a CALL to print ("Over 2.5"), and a call needs a line and a
+  //     side. A row carrying only `passing_td_prob` would render a bare
+  //     percentage under a heading that promises a pick, so a row without a
+  //     finite line and a side this panel can name is dropped rather than
+  //     half-drawn.
+  //
+  // `passing_td_prob` is the CALLED SIDE's probability: NFL's
+  // `models/qb_passing_td.py::passing_td_call` sets `call_prob =
+  // max(over_prob, under_prob)` and `side` to whichever is higher, in one place
+  // from one call, so ranking on `passing_td_prob` ranks on the number the row
+  // displays.
+  //
+  // The line itself is NEVER called a sportsbook line and never an edge. It is
+  // `model_line(mu)` -- the nearest half point to the model's own projection --
+  // so it is derived from the same number the percentage beside it came from,
+  // and the row says only which side the model is on.
+  if (sport === "nfl") {
+    const qbTdRows = ranked
+      .filter((p) => p.position === "QB")
+      .map((p) => ({ p, prob: p.passing_td_prob, side: p.passing_td_side, line: p.passing_td_line }))
+      .filter(
+        (x): x is { p: PlayerPropPrediction; prob: number; side: "over" | "under"; line: number } =>
+          typeof x.prob === "number" &&
+          Number.isFinite(x.prob) &&
+          (x.side === "over" || x.side === "under") &&
+          typeof x.line === "number" &&
+          Number.isFinite(x.line),
+      )
+      .sort((a, b) => b.prob - a.prob)
+      .slice(0, MAX_ROWS)
+      .map<PickRow>(({ p, prob, side, line }) => ({
+        key: `qb-passing-td-${p.player_id}`,
+        name: p.player_name,
+        team: p.recent_team,
+        detail: `${side === "over" ? "Over" : "Under"} ${line}`,
+        value: prob,
+        kind: "probability",
+      }));
+    if (qbTdRows.length > 0) categories.push({ category: NFL_QB_PASSING_TD_CATEGORY, rows: qbTdRows });
+  }
 
   // One heading per position, each carrying that position's OWN yardage market
   // and nothing else. A category with no rows is not a category, so a position
