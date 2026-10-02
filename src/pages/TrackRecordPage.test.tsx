@@ -37,7 +37,25 @@ const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, ""
 
 // --- fixtures ---------------------------------------------------------------
 
-/** NFL's `/track-record`, as `_summarize_games` and `_summarize_player_props` emit it. */
+/**
+ * NFL's `/track-record` AFTER #25, as `get_track_record` now emits it.
+ *
+ * The shapes that matter here and did not exist before that PR:
+ *
+ *  - `n_resolved` counts EVERY counted pick (the earliest recorded one per
+ *    (game, market)), whenever it was made. It is the headline.
+ *  - `pre_kickoff` is the same summariser over the subset whose own timestamps
+ *    prove they were made before kickoff, with its own `n`. That is the figure
+ *    BESIDE the headline, not a second copy of it.
+ *  - `n_rebuilt` is retained on NFL and now means "counted picks made at or
+ *    after their own kickoff" -- the reconciliation, not an exclusion.
+ *  - `all_picks` is retained under its published name and its `n_resolved`
+ *    EQUALS the headline's. Carried here precisely so the page can be shown not
+ *    rendering it as a third figure: two sections showing one number is the
+ *    "same pick as two different numbers" defect this repo is guarding against.
+ *  - `per_pick` rows carry `made_before_kickoff` beside their own
+ *    `snapshotted_at`, so the page never has to work out when a pick was made.
+ */
 const NFL_RECORD: TrackRecord = {
   games: {
     n_resolved: 6,
@@ -48,6 +66,31 @@ const NFL_RECORD: TrackRecord = {
     pct_moneyline_correct: 0.667,
     pct_ats_correct: 0.5,
     pct_totals_correct: 0.333,
+    // The secondary figure. 4 of the 6 counted picks were made before their own
+    // kickoff; ATS and totals are graded on smaller subsets of those four, so
+    // this block is NOT the headline with the same denominators.
+    pre_kickoff: {
+      n_resolved: 4,
+      n_moneyline: 4,
+      n_ats: 3,
+      n_totals: 2,
+      pct_moneyline_correct: 0.5,
+      pct_ats_correct: 0.667,
+      pct_totals_correct: 0.5,
+    },
+    // Same population as the headline now, by construction. Present so the test
+    // can assert the page does not print it as a figure of its own.
+    all_picks: {
+      n_resolved: 6,
+      pct_moneyline_correct: 0.667,
+      pct_ats_correct: 0.5,
+      pct_totals_correct: 0.333,
+    },
+    per_pick: [
+      { game_id: "401547", gameday: "2026-09-06T17:00:00Z", market: "moneyline", pick: "KC", actual: "KC", hit: true, made_before_kickoff: true, snapshotted_at: "2026-09-06T14:00:00Z", rebuilt: false },
+      { game_id: "401548", gameday: "2026-09-13T17:00:00Z", market: "moneyline", pick: "BAL", actual: "NE", hit: false, made_before_kickoff: true, snapshotted_at: "2026-09-13T14:00:00Z", rebuilt: false },
+      { game_id: "401549", gameday: "2026-09-20T17:00:00Z", market: "moneyline", pick: "DET", actual: "DET", hit: true, made_before_kickoff: false, snapshotted_at: "2026-09-20T19:30:00Z", rebuilt: true },
+    ],
     weekly: [
       // B2's own arithmetic, and the two counts DELIBERATELY different. The
       // "Games" column's only job is to keep volume apart from the moneyline
@@ -155,9 +198,9 @@ const NFL_RECORD: TrackRecord = {
 };
 
 /**
- * CFB's `/track-record`, which has not had B2-B5: still `weekly_trend`, no
- * per-market counts, no points forecasts, no `vs_market`, and a
- * `mae_by_position` map with no count beside it.
+ * CFB's `/track-record` AFTER #27, which has still not had B2-B5: still
+ * `weekly_trend`, no per-market counts, no points forecasts, no `vs_market`, and
+ * a `mae_by_position` map with no count beside it.
  *
  * DUMPED, NOT TYPED. This is the output of CFB_Predictor's own
  * `_summarize_games` / `_summarize_player_props`, run over frames with its real
@@ -185,10 +228,39 @@ const NFL_RECORD: TrackRecord = {
 const CFB_RECORD = {
   games: {
     n_resolved: 12,
-    n_rebuilt: 0,
     pct_moneyline_correct: 0.5833333333333334,
     pct_ats_correct: 0.5,
     pct_totals_correct: null,
+    // #27 REMOVED `n_rebuilt` on CFB rather than renaming it into a lie, and
+    // ADDED the two figures the swap needs: the headline (this block) over every
+    // counted pick, `pre_kickoff` over the subset made before kickoff, and
+    // `n_pre_kickoff` for that subset's n at the top. So a CFB payload has no
+    // `n_rebuilt` at all, which is why the page's timing note cannot depend on
+    // it existing.
+    n_pre_kickoff: 9,
+    pre_kickoff: {
+      n_resolved: 9,
+      pct_moneyline_correct: 0.4444444444444444,
+      pct_ats_correct: 0.25,
+      pct_totals_correct: null,
+      weekly_trend: [
+        { week: 1, pct_moneyline_correct: 1.0, n_games: 3 },
+        { week: 2, pct_moneyline_correct: 0.5, n_games: 3 },
+        { week: 3, pct_moneyline_correct: 0.0, n_games: 3 },
+      ],
+    },
+    // CFB lists every RECORDED pick here, counted or not, and says which is
+    // counted on the row (`counted`). So a CFB per-pick table is longer than
+    // the headline's population, and the page has to render that flag rather
+    // than imply every row scored.
+    per_pick: [
+      { game_id: "cfb1", gameday: "2026-09-05T19:00:00Z", market: "moneyline", pick: "ALA", actual: "ALA", hit: true, made_before_kickoff: true, snapshotted_at: "2026-09-05T15:00:00Z", counted: true },
+      { game_id: "cfb2", gameday: "2026-09-12T19:00:00Z", market: "moneyline", pick: "FSU", actual: "FSU", hit: true, made_before_kickoff: true, snapshotted_at: "2026-09-12T15:00:00Z", counted: true },
+      { game_id: "cfb3", gameday: "2026-09-19T19:00:00Z", market: "moneyline", pick: "UGA", actual: "AUB", hit: false, made_before_kickoff: true, snapshotted_at: "2026-09-19T15:00:00Z", counted: true },
+      // A rerun, kept as history: recorded, not the counted pick, and made after
+      // its own kickoff. Two facts the page must not collapse into one.
+      { game_id: "cfb3", gameday: "2026-09-19T19:00:00Z", market: "moneyline", pick: "AUB", actual: "AUB", hit: true, made_before_kickoff: false, snapshotted_at: "2026-09-19T21:40:00Z", counted: false },
+    ],
     weekly_trend: [
       { week: 1, pct_moneyline_correct: 1.0, n_games: 5 },
       { week: 2, pct_moneyline_correct: 0.5, n_games: 4 },
@@ -301,10 +373,19 @@ function rowWith(table: HTMLElement, ...wanted: string[]): HTMLElement {
 
 async function renderPage() {
   const result = render(<TrackRecordPage />);
-  // Every test waits on a value inside a section, so a section that stops
+  // Waits on a value INSIDE the headline section, and on its own bar rather
+  // than the label: since the reversal there are two accuracy cards labelled
+  // "Moneyline accuracy" -- the headline and the pre-kickoff subset -- so
+  // waiting on the label would resolve on whichever rendered first and would
+  // stop being a check that the headline rendered at all. A section that stops
   // rendering fails here by timing out rather than by passing quietly.
-  await screen.findByText("Moneyline accuracy");
+  await screen.findByTestId("accuracy-bar-moneyline");
   return result;
+}
+
+/** One of the HEADLINE's accuracy cards, never the pre-kickoff subset's. */
+function headlineCard(label: string): HTMLElement {
+  return within(document.getElementById("tr-headline")!).getByText(label).parentElement!;
 }
 
 // --- 1. the headline --------------------------------------------------------
@@ -315,7 +396,7 @@ describe("headline", () => {
     // 6 resolved, 4 ATS grades, 3 total grades. Three different denominators,
     // and the ATS card must not say 6.
     const [ml, ats, totals] = ["Moneyline accuracy", "Spread (ATS) accuracy", "Total (O/U) accuracy"].map(
-      (label) => screen.getByText(label).parentElement!,
+      headlineCard,
     );
     expect(within(ml).getByText("6 games graded")).toBeInTheDocument();
     expect(within(ats).getByText("4 games graded")).toBeInTheDocument();
@@ -324,21 +405,124 @@ describe("headline", () => {
     expect(within(totals).queryByText("6 games graded")).not.toBeInTheDocument();
   });
 
-  it("says the record is pre-kickoff, out loud, not as a footnote", async () => {
+  // The swap (predictor-hub #66, decided 2026-10-01). The headline is EVERY
+  // counted pick, whenever it was made; the figure beside it is the pre-kickoff
+  // subset with its own n. Honesty moved from exclusion to disclosure, so the
+  // note under the headline now states WHEN the late picks were made and never
+  // claims they are held out of the record.
+  it("counts every counted pick in the headline, and says when the late ones were made", async () => {
     await renderPage();
+    // 6 counted picks, of which 2 were made at or after their own kickoff. The
+    // headline's n is 6 -- the FULL population, which is what `n_resolved`
+    // reports now -- and the note discloses the 2 without excluding them.
     const note = screen.getByTestId("rebuilt-note");
-    expect(note).toHaveTextContent("2 picks rebuilt after kickoff are shown on their games but not counted here.");
+    expect(note).toHaveTextContent("6");
+    expect(note).toHaveTextContent("2");
+    expect(note).toHaveTextContent(/made after kickoff/i);
+    expect(note.textContent).not.toMatch(/not counted/i);
     // A footnote is a smaller, dimmer thing than this; assert the size class.
     expect(note.className).toContain("text-sm");
     expect(note.className).not.toContain("text-xs");
   });
 
-  it("says so even when nothing was rebuilt, rather than hiding the rule", async () => {
-    trackRecord.mockResolvedValue({ ...NFL_RECORD, games: { ...NFL_RECORD.games, n_rebuilt: 0 } });
+  it("never claims a post-kickoff pick is held out of the record, on any payload", async () => {
+    // Read off the RENDERED page, not off this file's copy: the claim is what a
+    // reader would see, and a sentence that moved into a helper is still
+    // rendered. Both payloads, because CFB has no `n_rebuilt` at all after #27
+    // and the note must not depend on that key existing.
     await renderPage();
-    expect(screen.getByTestId("rebuilt-note")).toHaveTextContent(
-      "Every pick in this record was made before its game started.",
-    );
+    expect(document.body.textContent).not.toMatch(/not\s+counted/i);
+    expect(document.body.textContent).not.toMatch(/for\s+reference/i);
+    trackRecord.mockResolvedValue(CFB_RECORD);
+    await renderPage();
+    expect(document.body.textContent).not.toMatch(/not\s+counted/i);
+  });
+
+  it("prints the headline's n beside the headline, never the pre-kickoff subset's", async () => {
+    await renderPage();
+    // The single most dangerous half of this swap: a page that kept the old
+    // headline and only added a secondary would show 4 here (the pre-kickoff
+    // subset) where the API now reports 6 (every counted pick).
+    const tile = screen.getByText("Games resolved").parentElement!;
+    expect(within(tile).getByText("6")).toBeInTheDocument();
+    expect(within(tile).queryByText("4")).not.toBeInTheDocument();
+    expect(within(tile).getByText(/counted|every/i)).toBeInTheDocument();
+  });
+
+  it("shows the pre-kickoff subset beside it, with its own n", async () => {
+    await renderPage();
+    const section = document.getElementById("tr-pre-kickoff")!;
+    // Its own n, its own denominator: 4 games, 3 ATS grades, 2 total grades.
+    expect(within(section).getByText("4 games graded")).toBeInTheDocument();
+    expect(within(section).getByText("3 games graded")).toBeInTheDocument();
+    expect(within(section).getByText("2 games graded")).toBeInTheDocument();
+    // Its own accuracies, so the two figures cannot be the same number wearing
+    // two labels: the headline's moneyline is 67%, the subset's is 50%.
+    const subsetMoneyline = within(section)
+      .getByText("Moneyline accuracy")
+      .parentElement!;
+    expect(within(subsetMoneyline).getByText("50%")).toBeInTheDocument();
+    expect(within(headlineCard("Moneyline accuracy")).getByText("67%")).toBeInTheDocument();
+    // The subset's own n, as a tile, rather than a second reading of the
+    // headline's.
+    expect(within(section).getByText("Picks made before kickoff")).toBeInTheDocument();
+    expect(within(section).getByText("4")).toBeInTheDocument();
+  });
+
+  it("does not print all_picks as a figure of its own, because it IS the headline now", async () => {
+    // NFL retained `all_picks` under its published name and its `n_resolved`
+    // now EQUALS the headline's. Rendering it beside the headline would put one
+    // number on the page twice -- which is the "same pick as two different
+    // numbers" defect, and worse, invites the two copies drifting apart.
+    await renderPage();
+    // The identity is in the FIXTURE, so it is provable even though the page
+    // never reads the block.
+    expect(NFL_RECORD.games.all_picks!.n_resolved).toBe(NFL_RECORD.games.n_resolved);
+    // ...and no section on the page is titled for it any more.
+    expect(document.body.textContent).not.toMatch(/all tracked picks/i);
+  });
+
+  it("discloses the timing of every pick row from the row's own field", async () => {
+    await renderPage();
+    const table = screen.getByRole("table", { name: /per-pick detail/i });
+    const rows = [...table.querySelectorAll<HTMLElement>("tbody tr")];
+    expect(rows).toHaveLength(3);
+    // Two made in time, one made after its own kickoff -- read off
+    // `made_before_kickoff` on the row, which is the field both backends send.
+    // A page that inferred this from `snapshotted_at` vs `gameday` would be
+    // re-deriving on the frontend what the backend derived from the same two
+    // columns, and the spec forbids exactly that.
+    expect(within(rows[0]).getByText(/made before kickoff/i)).toBeInTheDocument();
+    expect(within(rows[1]).getByText(/made before kickoff/i)).toBeInTheDocument();
+    expect(within(rows[2]).getByText(/made after kickoff/i)).toBeInTheDocument();
+    expect(within(rows[2]).queryByText(/made before kickoff/i)).toBeNull();
+    // Each row carries the moment it was made, so the claim above is checkable.
+    expect(within(rows[2]).getByText(/Sep 20, 2026/)).toBeInTheDocument();
+  });
+
+  it("marks a recorded-but-uncounted row as history, on CFB's longer list", async () => {
+    // CFB's `per_pick` lists every recorded row, `counted` or not. So a page
+    // that assumes every listed row scored would let a reader tally four rows
+    // and "arrive" at a headline of twelve. The flag is on the row.
+    trackRecord.mockResolvedValue(CFB_RECORD);
+    await renderPage();
+    const table = screen.getByRole("table", { name: /per-pick detail/i });
+    const rows = [...table.querySelectorAll<HTMLElement>("tbody tr")];
+    expect(rows).toHaveLength(4);
+    expect(within(rows[0]).getByText(/counted/i)).toBeInTheDocument();
+    expect(within(rows[3]).getByText(/made after kickoff/i)).toBeInTheDocument();
+    expect(within(rows[3]).getByText(/history|not the counted pick/i)).toBeInTheDocument();
+    // ...and the two claims on that row are separate facts, both stated.
+    expect(within(rows[3]).getByText(/miss|hit/i)).toBeInTheDocument();
+  });
+
+  it("never labels a post-kickoff row as a pre-game prediction", async () => {
+    await renderPage();
+    // The words that would make the claim. A reader must never come away
+    // thinking a number computed after the whistle was live at tip-off.
+    const body = document.body.textContent ?? "";
+    expect(body).not.toMatch(/(made|recorded|snapshotted)\s+before[^.]*but[^.]*(after|later)/i);
+    expect(body).not.toMatch(/before the game started[^.]*(excluded|held out|refused)/i);
   });
 
   it("marks the 50% break-even point on every accuracy card", async () => {
@@ -355,8 +539,7 @@ describe("headline", () => {
     // match the text would be tidier and would be a second, lossy copy of the
     // same number.
     expect(barWidths(container, "accuracy-bar-moneyline")).toEqual(["66.7%"]);
-    const moneyline = screen.getByText("Moneyline accuracy").parentElement!;
-    expect(within(moneyline).getByText("67%")).toBeInTheDocument();
+    expect(within(headlineCard("Moneyline accuracy")).getByText("67%")).toBeInTheDocument();
   });
 });
 
@@ -823,7 +1006,7 @@ describe("absent values", () => {
     } as unknown as TrackRecord);
 
     const { container } = render(<TrackRecordPage />);
-    await screen.findByText("Moneyline accuracy");
+    await screen.findByTestId("accuracy-bar-moneyline");
     // pydantic hands over null, JSON.parse can hand over NaN through a
     // non-JSON path, and a divide-by-zero can produce one in the page. None of
     // them may reach the screen as text.
@@ -840,11 +1023,18 @@ describe("a backend that has not shipped the newer blocks", () => {
     trackRecord.mockResolvedValue(CFB_RECORD);
     await renderPage();
     // The headline still works: moneyline's denominator IS the resolved count.
-    expect(screen.getByText("12 games graded")).toBeInTheDocument();
+    expect(within(headlineCard("Moneyline accuracy")).getByText("12 games graded")).toBeInTheDocument();
     // The ATS card has no count to print and says so rather than borrowing
     // the moneyline's.
-    const ats = screen.getByText("Spread (ATS) accuracy").closest("div")!;
-    expect(within(ats).getByText("grade count not reported")).toBeInTheDocument();
+    expect(within(headlineCard("Spread (ATS) accuracy")).getByText("grade count not reported")).toBeInTheDocument();
+    // And the pre-kickoff subset reads off CFB's own `n_pre_kickoff` block:
+    // #27 REMOVED `n_rebuilt` on CFB, so a note built on that key alone would
+    // have nothing to say on half the site.
+    const preTile = within(document.getElementById("tr-pre-kickoff")!)
+      .getByText("Picks made before kickoff")
+      .parentElement!;
+    expect(within(preTile).getByText("9")).toBeInTheDocument();
+    expect(screen.getByTestId("rebuilt-note")).toHaveTextContent("3");
     // And each absent block says so, instead of rendering nothing at all.
     // EXACTLY three: the week list, the points forecasts and the whole
     // vs-market block. The position table is NOT one of them -- CFB sends a
@@ -872,8 +1062,11 @@ describe("the section nav", () => {
     await renderPage();
     const nav = screen.getByRole("navigation", { name: /track record sections/i });
     const hrefs = [...nav.querySelectorAll("a")].map((a) => a.getAttribute("href")!);
+    // `#tr-pre-kickoff` is where `#tr-all-picks` was, and the per-pick detail is
+    // its OWN top-level section now rather than a nested one with no nav entry.
+    // A nested section with no entry is a section nobody can jump to.
     expect(hrefs).toEqual([
-      "#tr-headline", "#tr-all-picks", "#tr-week", "#tr-props", "#tr-yards", "#tr-position", "#tr-points", "#tr-market",
+      "#tr-headline", "#tr-pre-kickoff", "#tr-picks", "#tr-week", "#tr-props", "#tr-yards", "#tr-position", "#tr-points", "#tr-market",
     ]);
     for (const href of hrefs) {
       const id = href.slice(1);

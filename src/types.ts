@@ -239,8 +239,25 @@ export interface VsMarket {
 // longer describes.
 // ---------------------------------------------------------------------------
 export interface GamesTrackRecord {
+  /**
+   * EVERY COUNTED PICK in the record: one per (game, market), the earliest
+   * recorded one, whenever it was made.
+   *
+   * Its MEANING changed on 2026-10-01 (predictor-hub #66, spec
+   * `2026-10-01-track-record-counts-every-pick.md`) and its NAME did not, so
+   * nothing a site reads today breaks. It used to be the pre-kickoff record,
+   * with a pick recorded after its own kickoff excluded; Kevin's decision was
+   * that a re-run model must not make a past game stop counting, or the record
+   * empties out on every model change. `pre_kickoff` below is the subset, with
+   * its own n, and it is what a reader quotes for live performance.
+   */
   n_resolved: number;
-  // Picks rebuilt after kickoff: reported, never counted. Absent from older API builds.
+  /**
+   * Counted picks made at or after their own kickoff -- the reconciliation
+   * between the two figures, NOT an exclusion. NFL retains the key (#25); CFB
+   * removed it (#27) rather than rename it into a lie, so it is optional and
+   * nothing may depend on it being present.
+   */
   n_rebuilt?: number;
   pct_moneyline_correct: number | null;
   pct_ats_correct: number | null;
@@ -258,14 +275,45 @@ export interface GamesTrackRecord {
   margin?: PointForecast;
   vs_market?: VsMarket;
   /**
-   * The same three accuracies as the headline, over EVERY resolved row -- rebuilt INCLUDED.
-   * The headline is the pre-kickoff record and rebuilt picks never count toward it, because a
-   * hit rate is only meaningful if the pick existed before the result. What B8 adds is that
-   * nothing is hidden and everything is counted, in two figures instead of one.
+   * The pre-kickoff subset, as a block of the same keys: the same summariser run
+   * over the counted picks whose OWN timestamps prove they were made before their
+   * game's kickoff. Its `n_resolved` is therefore exactly the size of that subset.
+   *
+   * This is the figure BESIDE the headline, and B8's two figures swapped roles
+   * when the rule was reversed: before, the headline was pre-kickoff and this
+   * block did not exist; now the headline is every counted pick and this is the
+   * honest read of live performance. Absent from an API build older than NFL #25.
+   */
+  pre_kickoff?: GamesSummary;
+  /**
+   * `pre_kickoff.n_resolved` at the top level, which CFB publishes (#27) and NFL
+   * does not. Optional for exactly that reason.
+   */
+  n_pre_kickoff?: number;
+  /**
+   * RETAINED UNDER ITS PUBLISHED NAME, and now meaning "every counted pick" --
+   * which is the SAME population as the headline, so `all_picks.n_resolved`
+   * equals `n_resolved`.
+   *
+   * Not rendered as a figure of its own: printing one number twice on a page
+   * invites the two copies drifting apart, which is the same defect as the same
+   * pick reading two different values on two surfaces. Declared because the wire
+   * still carries it, so a payload's shape stays described somewhere.
    */
   all_picks?: AllPicksRecord;
-  /** One row per resolved (game, market) pick, hit and miss alike, never filtered. */
+  /** One row per recorded (game, market) pick, hit and miss alike, never filtered. */
   per_pick?: PerPickRow[];
+}
+/** The keys `pre_kickoff` repeats. Not the whole block: the subset also carries
+ *  `weekly` / `vs_market` on NFL, which this page reads from the headline. */
+export interface GamesSummary {
+  n_resolved: number;
+  n_moneyline?: number;
+  n_ats?: number;
+  n_totals?: number;
+  pct_moneyline_correct: number | null;
+  pct_ats_correct: number | null;
+  pct_totals_correct: number | null;
 }
 export interface AllPicksRecord {
   n_resolved: number;
@@ -280,9 +328,24 @@ export interface PerPickRow {
   pick: string;
   actual: string;
   hit: boolean;
-  rebuilt: boolean;
-  /** The time the pick was made. The plan's standing constraint is that every pick is
-   *  displayed with the time it was made; until B8 this was stored and exposed nowhere. */
+  /**
+   * WHEN THIS PICK WAS MADE, derived by the backend from this row's own
+   * `snapshotted_at` and `commence_time` compared as UTC instants -- never from
+   * a stored flag, and never on the frontend.
+   *
+   * It is the disclosure that replaced exclusion, so it is the field a surface
+   * must render: a pick recorded after kickoff is counted, and saying WHEN is the
+   * only thing a reader cannot recover from the number itself. Absent from an
+   * older API build, which is why it is optional here.
+   */
+  made_before_kickoff?: boolean;
+  /** NFL retains `rebuilt` as the exact negation of `made_before_kickoff` (#25);
+   *  CFB does not send it (#27). Never read it for anything a reader sees. */
+  rebuilt?: boolean;
+  /** CFB lists every RECORDED pick, not only the counted one, and says which is
+   *  counted here (#27). NFL lists counted picks only, and omits the flag. */
+  counted?: boolean;
+  /** The time the pick was made, beside the flag above so a reader can check it. */
   snapshotted_at: string;
 }
 export interface ConfidenceBucket { label: string; n: number; hit_rate: number | null; }

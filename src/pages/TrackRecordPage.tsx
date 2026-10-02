@@ -25,6 +25,13 @@
 //     only ever fail on a key the page already knew. The name claimed the
 //     opposite of what the test could do. A block whose keys grow is rendered
 //     by `Object.entries`; a label map chooses the wording and nothing else.
+//  6. Work out on the frontend what a payload already states. `per_pick` rows
+//     carry `made_before_kickoff`, derived server-side from each row's own
+//     `snapshotted_at` against `commence_time` as UTC instants; this page reads
+//     it. It never re-derives it from the timestamps, and it never counts rows
+//     to produce a figure the backend published -- a second definition of "when
+//     was this pick made" is a second answer, and two answers is the defect the
+//     counted-picks reversal (2026-10-01, predictor-hub #66) was made to stop.
 //
 // The shapes are in ../types.ts, which is transcribed from the tracker rather
 // than from the design spec, and the two do not fully agree. Read that comment
@@ -36,7 +43,9 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import type {
+  GamesSummary,
   GamesTrackRecord,
+  PerPickRow,
   PointForecast,
   TrackRecord,
   VsMarket,
@@ -185,23 +194,44 @@ function headlineCount(games: GamesTrackRecord, market: (typeof GRADED_MARKETS)[
 
 // --- sections ---------------------------------------------------------------
 
+/**
+ * How many of this record's picks were made after their own kickoff.
+ *
+ * READ OFF THE PAYLOAD, never derived here: NFL sends `n_rebuilt` (#25) and CFB
+ * does not (#27), so this prefers the field and falls back to the difference the
+ * two `n_resolved` figures imply. There is no third source -- and in particular
+ * no counting of `per_pick` rows here -- because a count a reader sees beside the
+ * headline has to be the backend's own number.
+ */
+function latePicks(games: GamesTrackRecord): number | null {
+  if (games.n_rebuilt != null) return games.n_rebuilt;
+  const pre = games.pre_kickoff?.n_resolved ?? games.n_pre_kickoff;
+  if (pre == null) return null;
+  return Math.max(0, games.n_resolved - pre);
+}
+
 function HeadlineSection({ games }: { games: GamesTrackRecord }) {
-  const rebuilt = games.n_rebuilt ?? 0;
+  const late = latePicks(games);
   return (
     <Section
       id="tr-headline"
       title="Record"
-      blurb="How good the model has been, in aggregate. Every rate below counts only picks made before the game started, and every rate carries the number of games behind it."
+      blurb="How good the model has been, in aggregate. Every rate below counts every recorded pick, whenever it was made, and every rate carries the number of games behind it."
     >
-      {/* Stated out loud, always, in the body text and not as a footnote: a
-          reader who sees "67%" and does not see this line does not know that
-          some picks exist elsewhere on the site and are not in that 67%. */}
+      {/* Disclosure, not exclusion (predictor-hub #66, decided 2026-10-01). The
+          line used to say late picks were held out of the record, which stopped being
+          true when the rule was reversed: they are counted, and the honest
+          report of a counted pick is WHEN it was made. The pre-kickoff subset is
+          published beside the headline, with its own n, so nothing is hidden by
+          counting more. */}
       <p data-testid="rebuilt-note" className="max-w-3xl rounded-pr border border-pr-rule bg-pr-panel px-3 py-2 text-sm text-pr-text-dim">
-        {rebuilt === 0
-          ? "Every pick in this record was made before its game started."
-          : `${plural(rebuilt, "pick")} rebuilt after kickoff ${
-              rebuilt === 1 ? "is" : "are"
-            } shown on ${rebuilt === 1 ? "its" : "their"} ${rebuilt === 1 ? "game" : "games"} but not counted here.`}
+        {late == null
+          ? "Every pick in this record is counted here. The pre-kickoff figure beside it covers the picks made before their games started."
+          : late === 0
+            ? "Every pick in this record was made before its game started."
+            : `${plural(games.n_resolved, "counted pick")} in this record, of which ${plural(late, "pick")} ${
+                late === 1 ? "was" : "were"
+              } made after kickoff and ${late === 1 ? "is" : "are"} counted like any other. The figure beside this one is the pre-kickoff subset.`}
       </p>
 
       {games.n_resolved === 0 ? (
@@ -224,7 +254,10 @@ function HeadlineSection({ games }: { games: GamesTrackRecord }) {
           <StatTile
             label="Games resolved"
             value={games.n_resolved.toLocaleString("en-US")}
-            sub="graded, before kickoff"
+            // "graded, before kickoff" was the pre-reversal sub and is now a
+            // claim the number no longer makes: `n_resolved` counts every
+            // counted pick, whenever it was made.
+            sub="counted picks, whenever they were made"
           />
         </div>
       )}
@@ -238,8 +271,75 @@ function formatPickTime(iso: string): string {
   return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}, ${d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
 }
 
-/** One accuracy card for the all-picks figure, mirroring AccuracyCard. */
-function AllPicksCard({
+/**
+ * The pre-kickoff subset: the SECOND figure, beside the headline.
+ *
+ * B8's two figures swapped roles on 2026-10-01 (predictor-hub #66). The headline
+ * is now every counted pick and this section is the subset made before kickoff,
+ * read off `pre_kickoff` -- which is the same summariser over a smaller frame, so
+ * its `n` is the exact size of that subset rather than a figure reconciled here.
+ *
+ * `all_picks` is deliberately NOT rendered. NFL retained it (#25) under its
+ * published name and its `n_resolved` now EQUALS the headline's, so printing it
+ * would put one number on the page twice; two copies of one number drift apart,
+ * which is the same defect as one pick reading two values on two surfaces.
+ */
+function PreKickoffSection({ games }: { games: GamesTrackRecord }) {
+  const pre = games.pre_kickoff;
+
+  // A backend older than NFL #25 sends no `pre_kickoff` at all. That is a fact
+  // about the RESPONSE, not about the model, and this section says so.
+  if (!pre) {
+    return (
+      <Section
+        id="tr-pre-kickoff"
+        title="Made before kickoff"
+        blurb="This response does not split the record by when each pick was made."
+      >
+        <p className="text-sm text-pr-text-faint">No pre-kickoff split in this response.</p>
+      </Section>
+    );
+  }
+
+  const n = pre.n_resolved;
+  return (
+    <Section
+      id="tr-pre-kickoff"
+      title="Made before kickoff"
+      blurb="The same markets, over the picks whose own timestamps prove they were made before their own game's kickoff. This is the honest read of live performance; the record above is the fuller one."
+    >
+      {/* Two across from the narrowest width. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <PreKickoffCard
+          label="Moneyline accuracy"
+          accuracy={pre.pct_moneyline_correct}
+          graded={subsetCount(pre, "n_moneyline")}
+          testId="accuracy-bar-pre-kickoff-moneyline"
+        />
+        <PreKickoffCard
+          label="Spread (ATS) accuracy"
+          accuracy={pre.pct_ats_correct}
+          graded={subsetCount(pre, "n_ats")}
+          testId="accuracy-bar-pre-kickoff-ats"
+        />
+        <PreKickoffCard
+          label="Total (O/U) accuracy"
+          accuracy={pre.pct_totals_correct}
+          graded={subsetCount(pre, "n_totals")}
+          testId="accuracy-bar-pre-kickoff-totals"
+        />
+      </div>
+      <StatTile
+        label="Picks made before kickoff"
+        value={n.toLocaleString("en-US")}
+        sub="counted in the record above like every other pick"
+      />
+    </Section>
+  );
+}
+
+/** One accuracy card for the pre-kickoff figure, mirroring `AccuracyCard`. */
+function PreKickoffCard({
   label,
   accuracy,
   graded,
@@ -260,101 +360,83 @@ function AllPicksCard({
   );
 }
 
-function AllPicksSection({ games }: { games: GamesTrackRecord }) {
-  const all = games.all_picks;
-  const headlineN = games.n_resolved ?? 0;
-  const allPicksN = all?.n_resolved ?? 0;
+/**
+ * The count behind a subset accuracy, from that subset's OWN denominators.
+ *
+ * The same rule as the headline's: ATS grades on the subset with a spread line
+ * and both cover probabilities, so the subset's `n_resolved` is not its
+ * denominator. CFB sends no per-market counts at all, so the fallback reports
+ * the subset's own n for the moneyline -- the one market both backends grade on
+ * every row -- and says so for the others rather than borrowing it.
+ */
+function subsetCount(pre: GamesSummary, key: keyof GamesSummary): string {
+  const reported = pre[key];
+  if (typeof reported === "number") return gradedCount(reported);
+  if (key === "n_moneyline") return gradedCount(pre.n_resolved);
+  return "grade count not reported";
+}
 
-  // If the backend has not shipped B8, all_picks is absent.
-  if (!all) {
-    return (
-      <Section
-        id="tr-all-picks"
-        title="All tracked picks"
-        blurb="All picks data not yet recorded by this backend."
-      >
-        <p className="text-sm text-pr-text-faint">No all-picks record in this response.</p>
-      </Section>
-    );
-  }
-
-  const allPicksPct = all.pct_moneyline_correct;
-
-  // The "why they differ" line: the two n_resolved values are the reason.
-  const differNote = allPicksN !== headlineN
-    ? `${plural(allPicksN - headlineN, "pick")} counted in all-picks were made after kickoff and are not in the headline. Headline: ${headlineN} resolved, All picks: ${allPicksN} resolved.`
-    : "Both figures are identical — every pick was made before kickoff.";
-
+/**
+ * Per-pick detail: one row per recorded (game, market) pick, hit and miss alike,
+ * never filtered and never collapsed.
+ *
+ * Timing is read off each row's own `made_before_kickoff` and NEVER worked out
+ * here from `snapshotted_at` against `gameday`. Both backends derive that flag
+ * server-side by comparing the same two columns as UTC instants and failing
+ * closed when either will not parse; re-deriving it on the frontend would put a
+ * second, differently-failing definition of "when was this pick made" on the
+ * page, which is the disagreement this whole change is trying to prevent.
+ *
+ * `counted` is rendered where the backend sends it (CFB, #27) because CFB's
+ * `per_pick` lists every RECORDED row, not only the scored one. Without that
+ * column a reader tallying the list would "arrive" at a headline it does not
+ * match, and the mismatch would look like the page's arithmetic being wrong.
+ */
+function PerPickSection({ games }: { games: GamesTrackRecord }) {
+  const rows = games.per_pick ?? [];
+  const showsCounted = rows.some((r) => r.counted !== undefined);
   return (
     <Section
-      id="tr-all-picks"
-      title="All tracked picks"
-      blurb={differNote}
+      id="tr-picks"
+      title="Per-pick detail"
+      blurb="One row per recorded (game, market) pick. Hit and miss are both listed, never filtered or collapsed by default, and each row says when its pick was made."
     >
-      {/* Two across from the narrowest width. */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <AllPicksCard
-          label="Moneyline accuracy"
-          accuracy={allPicksPct}
-          graded={gradedCount(all.n_resolved)}
-          testId={`accuracy-bar-all-picks-moneyline`}
-        />
-        <AllPicksCard
-          label="Spread (ATS) accuracy"
-          accuracy={all.pct_ats_correct}
-          graded={gradedCount(all.n_resolved)}
-          testId={`accuracy-bar-all-picks-ats`}
-        />
-        <AllPicksCard
-          label="Total (O/U) accuracy"
-          accuracy={all.pct_totals_correct}
-          graded={gradedCount(all.n_resolved)}
-          testId={`accuracy-bar-all-picks-totals`}
-        />
-      </div>
-      <StatTile
-        label="Games resolved"
-        value={allPicksN.toLocaleString("en-US")}
-        sub="all tracked picks (pre-kickoff and rebuilt after kickoff)"
-      />
-      <StatTile
-        label="Pre-kickoff games resolved"
-        value={headlineN.toLocaleString("en-US")}
-        sub="headline accuracy only counts picks made before game start"
-      />
-
-      {/* Per-pick table: one row per resolved (game, market) pick, hit and miss alike. */}
-      {((games.per_pick ?? []).length > 0) ? (
-        <Section
-          id="tr-all-picks-per-pick"
-          title="Per-pick detail"
-          blurb="One row per resolved (game, market) pick. Hit and miss are both listed, never filtered or collapsed by default."
-        >
-          <StatTable
-            rows={games.per_pick ?? []}
-            rowKey={(r) => `${r.game_id}-${r.market}`}
-            caption="Per-pick detail: hit, market, and time made"
-            columns={[
-              { key: "game_id", label: "Game", numeric: false, value: (r) => r.game_id },
-              { key: "gameday", label: "Gameday", numeric: false, value: (r) => r.gameday },
-              { key: "market", label: "Market", numeric: false, value: (r) => r.market },
-              { key: "pick", label: "Pick", numeric: false, value: (r) => r.pick },
-              { key: "actual", label: "Actual", numeric: false, value: (r) => r.actual },
-              { key: "hit", label: "Hit", numeric: false, value: (r) => (r.hit ? "hit" : "miss") },
-              { key: "rebuilt", label: "Rebuilt", numeric: false, value: (r) => (r.rebuilt ? "after kickoff" : "before kickoff") },
-              {
-                key: "snapshotted_at",
-                label: "Time made",
+      <StatTable
+        rows={rows}
+        rowKey={(r) => `${r.game_id}-${r.market}-${r.snapshotted_at}`}
+        caption="Per-pick detail: hit, market, and time made"
+        columns={[
+          { key: "game_id", label: "Game", numeric: false, value: (r) => r.game_id },
+          { key: "gameday", label: "Gameday", numeric: false, value: (r) => r.gameday },
+          { key: "market", label: "Market", numeric: false, value: (r) => r.market },
+          { key: "pick", label: "Pick", numeric: false, value: (r) => r.pick },
+          { key: "actual", label: "Actual", numeric: false, value: (r) => r.actual },
+          { key: "hit", label: "Hit", numeric: false, value: (r) => (r.hit ? "hit" : "miss") },
+          {
+            // The row's own field. `rebuilt` is NFL's exact negation of it and
+            // is never read here, so CFB (which sends no `rebuilt`) and NFL
+            // render this identically.
+            key: "made",
+            label: "When made",
+            numeric: false,
+            value: (r) => (r.made_before_kickoff ? "Made before kickoff" : "Made after kickoff"),
+          },
+          ...(showsCounted
+            ? [{
+                key: "counted",
+                label: "In the record",
                 numeric: false,
-                value: (r) => formatPickTime(r.snapshotted_at),
-              },
-            ]}
-          />
-        </Section>
-      ) : (
-        // No resolved picks to display.
-        <p className="text-sm text-pr-text-faint">No resolved picks to display.</p>
-      )}
+                value: (r: PerPickRow) => (r.counted ? "counted" : "history, not the counted pick"),
+              }]
+            : []),
+          {
+            key: "snapshotted_at",
+            label: "Time made",
+            numeric: false,
+            value: (r) => formatPickTime(r.snapshotted_at),
+          },
+        ]}
+      />
     </Section>
   );
 }
@@ -974,7 +1056,8 @@ export function TrackRecordPage() {
   // than a screen.
   const sections: [string, string][] = [
     ["tr-headline", "Record"],
-    ["tr-all-picks", "All picks"],
+    ["tr-pre-kickoff", "Pre-kickoff"],
+    ["tr-picks", "Per-pick"],
     ["tr-week", "By week"],
     ["tr-props", "Player props"],
     ["tr-yards", "Yardage"],
@@ -997,10 +1080,12 @@ export function TrackRecordPage() {
           they have scrolled past it. */}
       <HeadlineSection games={games} />
 
-      {/* The all-picks figure sits beneath the headline, showing the full
-          record alongside the pre-kickoff headline, with a line explaining
-          why they differ (the two n_resolved values). */}
-      <AllPicksSection games={games} />
+      {/* The pre-kickoff subset sits beneath the headline, with its own n. The
+          per-pick detail is its own top-level section because it is a different
+          question -- one row at a time, with the moment each pick was made -- and
+          a nested section with no nav entry is a section nobody can jump to. */}
+      <PreKickoffSection games={games} />
+      <PerPickSection games={games} />
 
       <nav className="tr-nav" aria-label="Track record sections">
         <div className="tr-nav-scroll">

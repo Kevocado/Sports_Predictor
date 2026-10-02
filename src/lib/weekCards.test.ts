@@ -63,12 +63,40 @@ describe("toCardModel", () => {
   });
 });
 
+// The swap (predictor-hub #66). The week's tally is the same count as the
+  // track record's headline: every counted pick, whenever it was made. The
+  // pick made after its own kickoff is COUNTED now and DISCLOSED, so the tally
+  // carries both numbers and the figure beside it is the pre-kickoff subset.
 describe("weekTally", () => {
-  it("counts only resolved pre-kickoff picks", () => {
+  it("counts every resolved pick, whenever it was made", () => {
     const pending: WeekPrediction = { game_id: "p", status: "pending", verdict: null };
     const untracked: WeekPrediction = { game_id: "u", status: "untracked", verdict: null };
-    expect(weekTally([resolved(true), resolved(false), resolved(true), pending, untracked])).toEqual({ hits: 2, settled: 3, rebuilt: 0 });
-    expect(weekTally([])).toEqual({ hits: 0, settled: 0, rebuilt: 0 });
+    expect(weekTally([resolved(true), resolved(false), resolved(true), pending, untracked])).toEqual({
+      hits: 2, settled: 3, preKickoff: { hits: 2, settled: 3 },
+    });
+    expect(weekTally([])).toEqual({ hits: 0, settled: 0, preKickoff: { hits: 0, settled: 0 } });
+  });
+
+  it("counts a pick made after kickoff, and reports the pre-kickoff subset beside it", () => {
+    // THE regression this swap is about. A re-run model must not make a past
+    // game's pick stop counting, or the week's tally (and with it the record)
+    // empties out on every model change. Two reads of one row:
+    //   settled: 2   -- both counted
+    //   preKickoff.settled: 1 -- and one of them was made in time
+    const late: WeekPrediction = { ...resolved(true), rebuilt: true };
+    expect(weekTally([resolved(true), late])).toEqual({
+      hits: 2, settled: 2, preKickoff: { hits: 1, settled: 1 },
+    });
+    // And the shape itself is the assertion: the returned object HAS a
+    // pre-kickoff subset, so a page cannot read `settled` as the pre-kickoff
+    // figure. A tally of `{hits, settled, rebuilt}` invites exactly that.
+    expect(Object.keys(weekTally([]))).toEqual(["hits", "settled", "preKickoff"]);
+  });
+
+  it("reports zero of the subset when every counted pick was made after kickoff", () => {
+    const a: WeekPrediction = { ...resolved(true), rebuilt: true };
+    const b: WeekPrediction = { ...resolved(false), game_id: "b", rebuilt: true };
+    expect(weekTally([a, b])).toEqual({ hits: 1, settled: 2, preKickoff: { hits: 0, settled: 0 } });
   });
 });
 
@@ -100,10 +128,18 @@ describe("review fixes", () => {
     expect(m.status).toBe("nopick");
   });
 
-  it("labels a pick rebuilt after kickoff and does not count it", () => {
-    const rebuilt: WeekPrediction = { ...resolved(true), rebuilt: true };
-    expect(toCardModel(final, pred, rebuilt, false, TZ, now).status).toBe("rebuilt");
-    expect(weekTally([resolved(true), rebuilt])).toEqual({ hits: 1, settled: 1, rebuilt: 1 });
+  it("labels a pick made after kickoff as made after kickoff, and still counts it", () => {
+    // The badge says WHEN the pick was made, which is the one fact a reader
+    // cannot recover from the number itself. It says nothing about being held
+    // out, because the pick is counted: `rebuilt` here means "made at or after
+    // this game's kickoff" and NOTHING else.
+    const late: WeekPrediction = { ...resolved(true), rebuilt: true };
+    expect(toCardModel(final, pred, late, false, TZ, now).status).toBe("rebuilt");
+    // 2 counted, 1 of them made in time. The old tally said {hits: 1,
+    // settled: 1, rebuilt: 1}, which is the exclusion this reversal removed.
+    expect(weekTally([resolved(true), late])).toEqual({
+      hits: 2, settled: 2, preKickoff: { hits: 1, settled: 1 },
+    });
   });
 
   it("marks a game that has kicked off but has no score as Live, never Next up", () => {
