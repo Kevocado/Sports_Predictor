@@ -365,29 +365,55 @@ describe("QB passing TDs: the model's own over/under call on its own line", () =
     }
   });
 
-  it("keeps the rows to the player, the team and the prediction -- nothing else", () => {
+  it("keeps the rows to the player, the team, the prediction and its provenance word -- nothing else", () => {
     const panel = buildPicksPanel({ sport: "nfl", props: nflSlate, out: nflOut, track: nflTrack.player_props, game });
     const cat = panel.categories.find((c) => c.category === "QB passing TDs")!;
     for (const row of cat.rows) {
-      expect(Object.keys(row).sort()).toEqual(["detail", "key", "kind", "name", "team", "value"]);
+      // Seven fields, and the seventh is WORDS not a number. It was six until
+      // the qualifier was added: with `detail` drawn and unlabelled the row read
+      // "Over 2.5 · model call", which names the call but not where 2.5 came
+      // from -- and an unqualified 2.5 is the shape of a sportsbook price. The
+      // exact key SET is pinned rather than a count, so a seventh field of any
+      // other kind still fails here.
+      expect(Object.keys(row).sort()).toEqual(["detail", "detailLabel", "key", "kind", "name", "team", "value"]);
+      // The plan's wording, as a LITERAL in the test rather than the constant,
+      // so renaming the constant cannot quietly change what the reader is told.
+      expect(row.detailLabel).toBe("model line");
       // No provenance, no record, no Brier, no n, no error estimate, no ±.
       const prose = JSON.stringify(row);
-      for (const bit of ["brier", "hit_rate", "n_resolved", "graded", "uncalibrated", "MAE", "±", "provenance", "margin", "record", "bucket", "model_line"]) {
+      for (const bit of ["brier", "hit_rate", "n_resolved", "graded", "uncalibrated", "MAE", "±", "provenance", "margin", "record", "bucket"]) {
         expect(prose, `a passing-TD row must not carry "${bit}"`).not.toContain(bit);
       }
+      // `model_line` is the FIELD NAME NFL_Predictor sends, and it stays out of
+      // the row: it is an enum this panel has no use for and it reads as a
+      // slug. What the reader gets is the two words "model line".
+      expect(prose).not.toContain("model_line");
     }
   });
 
   it("never names the line a book, a market or a price -- it is derived from the projection", () => {
     const panel = buildPicksPanel({ sport: "nfl", props: nflSlate, out: nflOut, track: nflTrack.player_props, game });
     const cat = panel.categories.find((c) => c.category === "QB passing TDs")!;
-    const prose = [cat.category, ...cat.rows.map((r) => `${r.name} ${r.team} ${r.detail}`)].join(" | ").toLowerCase();
-    // "model line" is the one honest description and it is deliberately NOT on
-    // the row: the panel's other headings say what the number is, and Kevin's
-    // rule is that a row carries the player and the prediction.
-    for (const w of ["line", "book", "sportsbook", "market", "price", "odds", "edge", "over/", "total", "vegas", "consensus", "against the line"]) {
+    // `detailLabel` IS in the scan. It is the one string this change added to
+    // the page, so a scan that omitted it would be scanning the panel as it was
+    // before the change -- green by not looking. With it included, "line" below
+    // is a live risk rather than a formality, which is why the allowance is the
+    // exact phrase and not the bare word.
+    const prose = [cat.category, ...cat.rows.flatMap((r) => [r.name, r.team, r.detail, r.detailLabel ?? ""])].join(" | ").toLowerCase();
+    // "model line" is the one honest description and it is on the row: it says
+    // the number IS a line and that the model chose it, which is exactly the
+    // provenance there is no odds feed to supply. Every other name for it is a
+    // claim this repo cannot make.
+    for (const w of ["book", "sportsbook", "market", "price", "odds", "edge", "over/", "total", "vegas", "consensus", "against the line", "line movement", "spread", "moneyline", "juice", "sharp"]) {
       expect(prose, `a passing-TD row must not describe the line as "${w}"`).not.toMatch(new RegExp(`\\b${w.replace("/", "\\/").replace(" ", "\\s+")}`));
     }
+    // The bare noun is only allowed as part of the provenance phrase. Every
+    // occurrence of "line" on this panel has to be the "model" in front of it,
+    // so "the line is 2.5" / "over the line" / "line: 2.5" all fail here.
+    const bareLine = prose.replace(/model line/g, "");
+    expect(bareLine, `"line" may appear only inside "model line"; bare use reads as a market price`).not.toMatch(/\bline\b/);
+    // And the phrase is present, so the allowance above is not vacuous.
+    expect(prose).toContain("model line");
   });
 
   it("drops a QB row with no call rather than drawing a bare percentage under the heading", () => {
@@ -557,12 +583,24 @@ describe("an out player leaves the ranking entirely", () => {
 });
 
 describe("a row is the player and the prediction, nothing else (Kevin, 2026-10-01)", () => {
-  it("carries exactly six fields on EVERY row, including the two new TD categories", () => {
+  it("carries six fields on every row, plus a provenance WORD on the QB passing-TD rows only", () => {
     const panel = buildPicksPanel({ sport: "nfl", props: nflSlate, out: nflOut, track: nflTrack.player_props, game });
+    const SIX = ["detail", "key", "kind", "name", "team", "value"];
+    const SEVEN = ["detail", "detailLabel", "key", "kind", "name", "team", "value"];
     for (const c of panel.categories) {
-      for (const r of c.rows) {
-        expect(Object.keys(r).sort()).toEqual(["detail", "key", "kind", "name", "team", "value"]);
-      }
+      // The qualifier is per row, so the expectation is per CATEGORY too: a
+      // change that set it on a TD or yardage row fails here rather than being
+      // caught by a count. Those rows never reach the qualifier in the
+      // component -- a projection is not a call, and a detail that restates its
+      // own heading says nothing the heading has not said -- so passing one
+      // would be a field nothing ever reads.
+      const expected = c.category === "QB passing TDs" ? SEVEN : SIX;
+      for (const r of c.rows) expect(Object.keys(r).sort(), `${c.category} / ${r.name}`).toEqual(expected);
+    }
+    // Both shapes really are present, so the branch above is doing work.
+    expect(panel.categories.find((c) => c.category === "QB passing TDs")!.rows[0].detailLabel).toBe("model line");
+    for (const c of panel.categories.filter((c) => c.category !== "QB passing TDs")) {
+      for (const r of c.rows) expect(r.detailLabel, `${c.category} must not carry a qualifier`).toBeUndefined();
     }
   });
 
@@ -577,12 +615,26 @@ describe("a row is the player and the prediction, nothing else (Kevin, 2026-10-0
     const prose = [
       panel.title,
       panel.availability,
-      ...panel.categories.flatMap((c) => [c.category, ...c.rows.flatMap((r) => [r.name, r.team ?? "", r.detail])]),
+      ...panel.categories.flatMap((c) => [c.category, ...c.rows.flatMap((r) => [r.name, r.team ?? "", r.detail, r.detailLabel ?? ""])]),
       ...panel.out.flatMap((o) => [o.name, o.team ?? "", o.source, o.dated]),
     ].join(" | ").toLowerCase();
-    for (const word of ["lock", "guaranteed", "guarantee", "best bet", "edge", "value", "valued", "odds", "line movement", "moneyline", "sharp", "juice", "sportsbook", "against the spread"]) {
+    for (const word of ["lock", "guaranteed", "guarantee", "best bet", "edge", "value", "valued", "odds", "line movement", "moneyline", "sharp", "juice", "sportsbook", "against the spread", "bookmaker", "book line", "closing line", "consensus pick"]) {
       expect(prose, `reader-visible wording must not contain "${word}"`).not.toMatch(new RegExp(`\\b${word.replace(/ /g, "\\s+")}\\b`));
     }
+    // "line" is not on the ban list, because "model line" is the one true
+    // description of the number and it is now reader-visible. So it is checked
+    // in its BARE form: strip the phrase and the noun must not survive
+    // anywhere in the panel. This is the whole-panel version of the rule the
+    // QB category test applies locally -- one unqualified "2.5" anywhere on
+    // this panel is a price a reader could act on.
+    expect(
+      prose.replace(/model line/g, ""),
+      `"line" may appear anywhere in this panel only as part of "model line"`,
+    ).not.toMatch(/\bline\b/);
+    // The phrase itself is present, so the allowance is not vacuous: a panel
+    // that quietly dropped the qualifier would fail the bare check by
+    // accident, and this line says so.
+    expect(prose).toContain("model line");
     // The scan has to have seen the new rows, or passing it means nothing about
     // them. Fifteen rows: three per category across five categories.
     expect(panel.categories).toHaveLength(5);

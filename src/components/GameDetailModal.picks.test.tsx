@@ -156,9 +156,18 @@ describe("the picks panel renders", () => {
     const section = screen.getAllByTestId("picks-category-heading")
       .find((h) => h.textContent === "QB passing TDs")!.closest("section")!;
     const text = (within(section).getAllByTestId("picks-row").map((r) => r.textContent ?? "").join(" | ")).toLowerCase();
-    for (const w of ["line", "book", "sportsbook", "market", "price", "odds", "edge", "over/", "total"]) {
-      expect(text, `a passing-TD row must not call the line "${w}"`).not.toMatch(new RegExp(`\\b${w.replace("/", "\\/")}`));
+    for (const w of ["book", "sportsbook", "bookmaker", "market", "price", "odds", "edge", "over/", "total", "vegas", "consensus", "spread", "moneyline", "juice", "sharp", "against the line", "closing line", "line movement"]) {
+      expect(text, `a passing-TD row must not call the line "${w}"`).not.toMatch(new RegExp(`\\b${w.replace("/", "\\/").replace(/ /g, "\\s+")}`));
     }
+    // The bare noun was on the ban list until the provenance word landed, and
+    // removing it outright would have let "over the line" straight back in. So
+    // it is checked in its bare form instead: "line" is allowed here ONLY as the
+    // second word of "model line".
+    const bareLine = text.replace(/model line/g, "");
+    expect(bareLine, `"line" may appear on a passing-TD row only inside "model line"`).not.toMatch(/\bline\b/);
+    // And the phrase is really there, so the allowance is not doing the work on
+    // its own.
+    expect(text).toContain("model line");
   });
 
 });
@@ -287,12 +296,161 @@ describe("CFB: no availability feed at all", () => {
   });
 });
 
+describe("the provenance qualifier on a rendered detail (predictor-ui PR #72 + Sports#28)", () => {
+  // The shared `PicksList` draws a row's `detail` only on a `kind: "probability"`
+  // row whose detail adds a word its own heading lacks, and it appends the
+  // row's `detailLabel` (default "model call") after it. NFL's QB passing-TD row
+  // is the ONLY row in this panel that clears that gate, so it is the only row a
+  // reader ever sees a qualifier on -- which makes "model line" the single
+  // string standing between this panel and a sportsbook price.
+
+  /** The `picks-detail` element on the row naming `player`, or null. */
+  function detailOn(player: string): HTMLElement | null {
+    const row = screen.getAllByTestId("picks-row").find((r) => r.textContent?.includes(player));
+    if (!row) return null;
+    return within(row).queryByTestId("picks-detail");
+  }
+
+  function sectionFor(heading: string): HTMLElement {
+    return screen.getAllByTestId("picks-category-heading").find((h) => h.textContent === heading)!.closest("section")!;
+  }
+
+  it('reads exactly "Over 2.5 · model line" on the over row, never "model call"', async () => {
+    // M. Stafford is the over call at a 2.5 line in the fixture. The whole
+    // point of the label is that "2.5" cannot appear under a totals heading
+    // unqualified, so this is asserted on the EXACT rendered string rather than
+    // on a substring: a qualifier that drifts to anything else, including
+    // another plausible noun, fails here.
+    await openModal(api());
+    const detail = detailOn("M. Stafford");
+    expect(detail, "the QB passing-TD row must draw its detail").not.toBeNull();
+    expect(detail!.textContent).toBe("Over 2.5 · model line");
+    expect(detail!.textContent).not.toContain("model call");
+  });
+
+  it("labels every QB passing-TD row the same way, on both sides", async () => {
+    await openModal(api());
+    const rows = within(sectionFor("QB passing TDs")).getAllByTestId("picks-row");
+    expect(rows.map((r) => within(r).getByTestId("picks-detail").textContent)).toEqual([
+      "Under 3.5 · model line",
+      "Under 2.5 · model line",
+      "Over 2.5 · model line",
+    ]);
+    // The default must not appear anywhere on the page, so the label is not
+    // applied to some rows and missed on others.
+    expect(screen.getByTestId("picks-list").textContent).not.toContain("model call");
+  });
+
+  it("draws no qualifier at all on the yardage rows, because they are projections", async () => {
+    await openModal(api());
+    // Proved, not assumed. `rowShowsDetail` gates on `kind` first, and a
+    // projection is a magnitude rather than a call, so the qualifier branch is
+    // never reached -- which means a yardage row can never be labelled a call.
+    for (const heading of ["QB passing yards", "RB rushing yards", "WR/TE receiving yards"]) {
+      const section = sectionFor(heading);
+      const rows = within(section).getAllByTestId("picks-row");
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(row.getAttribute("data-kind"), `${heading} rows must be projections`).toBe("projection");
+        expect(within(row).queryByTestId("picks-detail"), `${heading} must draw no qualifier`).toBeNull();
+      }
+      // The restatement ("Pass yds" under "QB passing yards") is a real defect
+      // the gate exists to stop, so it is asserted too: the heading is drawn
+      // once, not four times.
+      const occurrences = (section.textContent!.match(new RegExp(heading.replace(" ", "\\s"), "gi")) ?? []).length;
+      expect(occurrences, `${heading} must not be redrawn on its own rows`).toBe(1);
+      expect(section.textContent!.toLowerCase()).not.toContain("model line");
+      expect(section.textContent!.toLowerCase()).not.toContain("model call");
+    }
+  });
+
+  it("draws no qualifier on the TD rows, whose detail restates their own heading", async () => {
+    // "Rush or receiving TD" is a `kind: "probability"` row -- so the `kind`
+    // gate does NOT save it -- whose `detail` is the heading verbatim. The
+    // second half of `rowShowsDetail` is what stops three copies of the heading
+    // printing under itself, each with a qualifier glued on.
+    await openModal(api());
+    const section = sectionFor("Rush or receiving TD");
+    expect(within(section).getAllByTestId("picks-row").length).toBeGreaterThan(0);
+    expect(within(section).queryAllByTestId("picks-detail")).toEqual([]);
+    const occurrences = (section.textContent!.match(/Rush or receiving TD/gi) ?? []).length;
+    expect(occurrences, "the TD heading must appear once, not once per row").toBe(1);
+    expect(section.textContent).not.toContain("model call");
+  });
+
+  it("renders a qualifier on exactly three rows in the whole panel -- the three QB calls", async () => {
+    await openModal(api());
+    // The single assertion that would catch a label leaking onto any other
+    // category: this NFL panel has twelve rows and three of them state a call.
+    const details = screen.getAllByTestId("picks-detail");
+    expect(details).toHaveLength(3);
+    for (const d of details) expect(d.textContent).toMatch(/ · model line$/);
+    expect(screen.getAllByTestId("picks-row")).toHaveLength(12);
+    expect(screen.getAllByTestId("picks-category-heading")).toHaveLength(5);
+  });
+
+  it("leaves CFB's panel with no qualifier anywhere, because CFB has no passing-TD category", async () => {
+    render(<GameDetailModal game={game()} api={api()} onClose={() => {}} sport="cfb" />);
+    await screen.findByTestId("picks-list");
+    // CFB's `Anytime TD` is the same shape of row -- probability, detail equal
+    // to its heading -- so it is the live case for the second gate, on the sport
+    // that has no line to describe. Not one row on this panel draws a detail.
+    expect(screen.queryAllByTestId("picks-detail")).toEqual([]);
+    const panel = screen.getByTestId("picks-list").textContent!.toLowerCase();
+    expect(panel).not.toContain("model line");
+    expect(panel).not.toContain("model call");
+    // And its headings are the four CFB ones, unchanged: no NFL category was
+    // added and none was renamed.
+    expect(screen.getAllByTestId("picks-category-heading").map((h) => h.textContent)).toEqual([
+      "Anytime TD",
+      "QB passing yards",
+      "RB rushing yards",
+      "WR/TE receiving yards",
+    ]);
+    const occurrences = (screen.getByTestId("picks-list").textContent!.match(/Anytime TD/g) ?? []).length;
+    expect(occurrences, "CFB's TD heading must appear once, not once per row").toBe(1);
+  });
+});
+
 describe("no odds, no edge, no guarantee anywhere in the panel", () => {
   it("reads clean of the banned vocabulary", async () => {
     await openModal(api());
     const panel = document.querySelector("[data-testid='picks-list']")!.textContent!.toLowerCase();
     for (const w of ["lock", "guaranteed", "guarantee", "best bet", "edge", "value", "odds", "moneyline"]) {
       expect(panel, `must not contain "${w}"`).not.toMatch(new RegExp(`\\b${w}\\b`));
+    }
+  });
+
+  it("uses the word line only inside the provenance phrase, anywhere in the picks panel", async () => {
+    // The panel-wide version of the rule the QB category test applies to one
+    // section. "line" is not on the vocabulary ban list above, because "model
+    // line" is the one true description of the number and it is now on the
+    // page. Dropping the bare ban outright would have let "over the line" and
+    // "line: 2.5" straight back through, so the noun is checked in its BARE
+    // form instead.
+    //
+    // SCOPED TO THE PICKS PANEL, deliberately. The modal's other sections are
+    // not panel and are not claimed here: "Other model markets" really does say
+    // "total points line", and that one is HONEST -- `total_line` comes off the
+    // fixture (`schedules.py`), so it is a quoted market line and naming it as
+    // one is the correct provenance. It is also what makes this panel's wording
+    // worth having: the same page can say "total points line" for a book line
+    // and "model line" for a threshold the model picked, and the two are no
+    // longer in the same voice. A future PR may want a panel-wide check; it
+    // would have to make that decision first.
+    await openModal(api());
+    const panel = screen.getByTestId("picks-list").textContent!.toLowerCase();
+    const bareLine = panel.replace(/model line/g, "");
+    // `\bline\b`, not `\bline`: the panel's own availability sentence is fine
+    // either way, but a scan that also matched "lineup" would be a scan whose
+    // failures a reader cannot act on.
+    expect(bareLine, `"line" may appear in the picks panel only as part of "model line"`).not.toMatch(/\bline\b/);
+    // Exactly three occurrences: one per QB call, and no more. This is the
+    // count that fails if the qualifier is ever dropped or renamed -- the silent
+    // regression the whole label exists to prevent.
+    expect((panel.match(/model line/g) ?? []).length).toBe(3);
+    for (const w of ["bookmaker", "book line", "closing line", "consensus line", "the line is", "over the line"]) {
+      expect(panel, `must not contain "${w}"`).not.toContain(w);
     }
   });
 });
