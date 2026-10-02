@@ -31,12 +31,23 @@ function game(over: Partial<GameSummary> = {}): GameSummary {
 
 /** This week's slate for KC vs BAL. `extra` appends rows; it is an ARRAY, not an
  *  object -- an object spread into an array literal is `over is not iterable`,
- *  which is what this was for a while. */
+ *  which is what this was for a while.
+ *
+ *  The quarterback numbers are POST-NFL#26, whose `anytime_td` label is rushing +
+ *  receiving only: Stafford 0.21 (the mobile one, real goal-line carries) and
+ *  Hurts 0.12 are what a quarterback's rush-or-receive probability looks like
+ *  now, not the 0.62-0.84 the old passing-dominated label produced. Rodgers at
+ *  0.06 is a passer whose legs do not earn him this board. The `passing_td_*`
+ *  block on each is NFL's own QB passing-TD call, transcribed from
+ *  `models/player_props.py::predict_props` after #26. */
 function props(extra: Partial<Record<string, unknown>>[] = []) {
   return [
-    { player_id: "00-1", player_name: "M. Stafford", recent_team: "KC", position: "QB", anytime_td_prob: 0.84, passing_yards: 265.7, is_starter: null },
-    { player_id: "00-2", player_name: "A. Rodgers", recent_team: "KC", position: "QB", anytime_td_prob: 0.811, passing_yards: 239.9, is_starter: null },
-    { player_id: "00-3", player_name: "J. Hurts", recent_team: "KC", position: "QB", anytime_td_prob: 0.62, passing_yards: 251.2, is_starter: null },
+    { player_id: "00-1", player_name: "M. Stafford", recent_team: "KC", position: "QB", anytime_td_prob: 0.21, passing_yards: 265.7, is_starter: null,
+      passing_td_line: 2.5, passing_td_line_source: "model_line", passing_td_side: "over", passing_td_mu: 2.94, passing_td_over_prob: 0.6, passing_td_under_prob: 0.4, passing_td_prob: 0.6, passing_td_distribution: "poisson" },
+    { player_id: "00-2", player_name: "A. Rodgers", recent_team: "KC", position: "QB", anytime_td_prob: 0.06, passing_yards: 239.9, is_starter: null,
+      passing_td_line: 3.5, passing_td_line_source: "model_line", passing_td_side: "under", passing_td_mu: 3.12, passing_td_over_prob: 0.33, passing_td_under_prob: 0.67, passing_td_prob: 0.67, passing_td_distribution: "poisson" },
+    { player_id: "00-3", player_name: "J. Hurts", recent_team: "KC", position: "QB", anytime_td_prob: 0.12, passing_yards: 251.2, is_starter: null,
+      passing_td_line: 2.5, passing_td_line_source: "model_line", passing_td_side: "under", passing_td_mu: 2.31, passing_td_over_prob: 0.38, passing_td_under_prob: 0.62, passing_td_prob: 0.62, passing_td_distribution: "poisson" },
     { player_id: "00-4", player_name: "D. Cook", recent_team: "BAL", position: "RB", anytime_td_prob: 0.41, rushing_yards: 95.4, is_starter: null },
     // Seeded across two markets: he outranks every WR/TE on TD AND on receiving
     // yards, so an implementation that gates only one of them still shows him.
@@ -98,7 +109,7 @@ describe("the picks panel renders", () => {
     await openModal(api());
     expect(screen.getByTestId("picks-title")).toHaveTextContent("Model's top calls");
     const headings = screen.getAllByTestId("picks-category-heading").map((h) => h.textContent);
-    expect(headings).toEqual(["Anytime TD", "QB passing yards", "RB rushing yards", "WR/TE receiving yards"]);
+    expect(headings).toEqual(["Rush or receiving TD", "QB passing TDs", "QB passing yards", "RB rushing yards", "WR/TE receiving yards"]);
   });
 
   it("never draws more than three rows under one heading", async () => {
@@ -106,6 +117,47 @@ describe("the picks panel renders", () => {
     for (const heading of screen.getAllByTestId("picks-category-heading")) {
       const section = heading.closest("section")!;
       expect(within(section).queryAllByTestId("picks-row").length).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it("draws both TD headings in the DOM: the rush-or-receive list and the QB passing call", async () => {
+    await openModal(api());
+    const headings = screen.getAllByTestId("picks-category-heading").map((h) => h.textContent);
+    expect(headings).toContain("Rush or receiving TD");
+    expect(headings).toContain("QB passing TDs");
+    // Three rows each, from three eligible quarterbacks and four eligible
+    // rush/receivers respectively. If either heading is rendered empty the
+    // cap has silently become a promise rather than a ceiling.
+    for (const heading of ["Rush or receiving TD", "QB passing TDs"]) {
+      const section = screen.getAllByTestId("picks-category-heading").find((h) => h.textContent === heading)!.closest("section")!;
+      expect(within(section).getAllByTestId("picks-row").length).toBe(3);
+    }
+  });
+
+  it("never draws a quarterback under Rush or receiving TD on his passing alone", async () => {
+    // Rodgers is a quarterback in this slate with a 0.06 rush-or-receive
+    // probability and a 67% passing-TD call. The passing number is large, and
+    // the TD heading is titled by rushing/receiving. He must not be on it.
+    await openModal(api());
+    const section = screen.getAllByTestId("picks-category-heading")
+      .find((h) => h.textContent === "Rush or receiving TD")!.closest("section")!;
+    const names = within(section).getAllByTestId("picks-row").map((r) => r.textContent ?? "");
+    expect(names.join(" | ")).not.toContain("A. Rodgers");
+    expect(names.join(" | ")).not.toContain("J. Hurts");
+    // And he IS on the passing one, so this is the split working rather than
+    // the panel quietly dropping quarterbacks everywhere.
+    const qbSection = screen.getAllByTestId("picks-category-heading")
+      .find((h) => h.textContent === "QB passing TDs")!.closest("section")!;
+    expect(within(qbSection).getAllByTestId("picks-row").map((r) => r.textContent ?? "").join(" | ")).toContain("A. Rodgers");
+  });
+
+  it("draws no sportsbook wording on the passing-TD rows: the model line is never a price", async () => {
+    await openModal(api());
+    const section = screen.getAllByTestId("picks-category-heading")
+      .find((h) => h.textContent === "QB passing TDs")!.closest("section")!;
+    const text = (within(section).getAllByTestId("picks-row").map((r) => r.textContent ?? "").join(" | ")).toLowerCase();
+    for (const w of ["line", "book", "sportsbook", "market", "price", "odds", "edge", "over/", "total"]) {
+      expect(text, `a passing-TD row must not call the line "${w}"`).not.toMatch(new RegExp(`\\b${w.replace("/", "\\/")}`));
     }
   });
 
@@ -173,7 +225,20 @@ describe("an out player, in the DOM", () => {
 
   it("does not backfill his slot with a fourth row", async () => {
     await openModal(api({ playerOut: vi.fn(() => Promise.resolve([outEntry])) }));
-    expect(screen.queryAllByTestId("picks-row").length).toBeLessThanOrEqual(9);
+    // Kelce is the top TD row before the gate and the only TE on the board, so
+    // both of his lists have room to grow if a replacement is swapped in. The
+    // bound is now per heading rather than a flat nine, because the panel has
+    // five headings after the TD split and a flat total would have to be
+    // rewritten every time one is added -- which is how a ceiling quietly goes
+    // stale.
+    const sections = screen.getAllByTestId("picks-category").map((s) => within(s).queryAllByTestId("picks-row").length);
+    expect(sections.length).toBe(5);
+    for (const count of sections) expect(count).toBeLessThanOrEqual(3);
+    // The TD list still shows three, filled from below: Cook 0.41, Swift 0.30,
+    // Hopkins 0.28 -- never four.
+    const td = screen.getAllByTestId("picks-category-heading")
+      .find((h) => h.textContent === "Rush or receiving TD")!.closest("section")!;
+    expect(within(td).getAllByTestId("picks-row").length).toBe(3);
   });
 
   it("ignores Doubtful and Questionable -- only Out removes a player", async () => {

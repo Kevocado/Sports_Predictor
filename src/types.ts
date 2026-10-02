@@ -35,7 +35,24 @@ export interface GamePrediction { home_win_prob: number; away_win_prob: number; 
 // never 0. `is_starter` is true/false from NFL's depth chart and null where no
 // depth chart exists -- CFB has none, and NFL's live payload does not carry
 // the field yet. Absent is "unknown", not "not a starter".
-export interface PlayerPropPrediction { player_id: string; player_name: string; recent_team: string; position: string; anytime_td_prob: number; passing_yards?: number; rushing_yards?: number; receiving_yards?: number; carries?: number; receptions?: number; is_starter?: boolean | null; depth_slot?: number | null; }
+// The QB passing-TD market, as NFL_Predictor flattens it onto the same props row
+// (`models/player_props.py::predict_props`, `models/qb_passing_td.py`). QB-only
+// and optional on two counts: only a QB row carries it, and an artifact
+// directory trained before the model existed omits it entirely rather than
+// sending a zero row -- so "absent" is a missing model, never a 0% call.
+//
+// `passing_td_line_source` is `"model_line"` and nothing else. The line is
+// derived from the model's own projection (nearest half point to `mu`, floored
+// at 0.5), so it is NOT a sportsbook line and there is nothing to have an edge
+// against. Nothing on a picks row may present it as a price.
+//
+// `passing_td_prob` is `call_prob`, i.e. the higher of `passing_td_over_prob`
+// and `passing_td_under_prob`, and `passing_td_side` names which of the two it
+// is -- server-side, in one place, from one call.
+//
+// CFB has none of these fields: its `models/player_props.py` has no
+// `passing_tds` model, so a CFB row cannot carry one.
+export interface PlayerPropPrediction { player_id: string; player_name: string; recent_team: string; position: string; anytime_td_prob: number; passing_yards?: number; rushing_yards?: number; receiving_yards?: number; carries?: number; receptions?: number; is_starter?: boolean | null; depth_slot?: number | null; passing_td_line?: number; passing_td_line_source?: string; passing_td_side?: string; passing_td_mu?: number; passing_td_over_prob?: number; passing_td_under_prob?: number; passing_td_prob?: number; passing_td_distribution?: string; }
 // A player the official report lists Out, as NFL_Predictor's sibling route
 // `GET /players/{season}/{week}/out` serves it.
 //
