@@ -4,7 +4,8 @@
 // that the modal and the explain call sites import the type from the panel that
 // declares it. So ours' import line is not a preference, it is a door that is no
 // longer there; theirs' is the only one that resolves.
-import { BoxScore, FixtureExplainer, PicksList, spread } from "../predictor-ui";
+import { BoxScore, FixtureExplainer, PicksList, SignalRows, spread } from "../predictor-ui";
+import type { Signal } from "../predictor-ui";
 // `FlowState` comes from the package too, for the same reason: the flow's states
 // are the package's vocabulary, and this file picks between them rather than
 // inventing a parallel set of names for the same three values.
@@ -224,6 +225,11 @@ function panelInput(game: GameSummary, prediction: GamePrediction | null, week: 
 
 export function GameDetailModal({ game, api, weekPrediction, weekPredictions, onClose, explain, sport = "nfl" }: Props) {
   const [prediction, setPrediction] = useState<GamePrediction | null>(null);
+  // Spec §3's signal rows for this fixture. `[]` is the resting state and means
+  // "nothing to show", which is also what an empty answer and a rejected request
+  // both leave behind — see the effect below for why that conflation is
+  // deliberate.
+  const [signals, setSignals] = useState<Signal[]>([]);
   // The panel's figures, derived rather than fetched. Memoised because
   // `panelFacts` allocates a new array on every call and the panel takes those
   // arrays as props — without this the tiles and segments are a fresh identity on
@@ -376,6 +382,26 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
       .then((r) => { if (!cancelled) setAllProps(r); })
       .catch(() => { if (!cancelled) setAllProps([]); })
       .finally(() => { if (!cancelled) setPropsLoading(false); });
+
+    // The signal rows (spec §4). Fetched here, on open, rather than from behind
+    // the summary button: §2 makes signals INSTANT — computed from stored data,
+    // "no model call" — and "the signals add none" of the AI's cost, so putting
+    // them behind a paid click would make a free computed row a paid one.
+    //
+    // EVERY failure is silence, and the two are deliberately indistinguishable:
+    // a missing `signals` method (NFL has no route and no band over the floor to
+    // justify one), a 404, a network error and an honest empty list all leave
+    // `[]`. Spec §2's "no data, no row" forbids a placeholder, and a signal is an
+    // enhancement on this page — it must never become its error state. Nothing
+    // here can distinguish "the sport has no such feed" from "the feed is down",
+    // and nothing needs to: both mean the same thing to a reader, which is that
+    // there is nothing to add.
+    setSignals([]);
+    if (typeof api.signals === "function") {
+      api.signals(game.game_id)
+        .then((r) => { if (!cancelled) setSignals(r?.signals ?? []); })
+        .catch(() => { if (!cancelled) setSignals([]); });
+    }
 
     // The out list, for NFL only. CFB has no injury report and no depth-chart
     // feed, so it has no such route -- asking for one there would produce a 404
@@ -591,6 +617,14 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
           <button onClick={onClose} className="rounded-full p-1.5 text-sp-text-dim transition hover:bg-sp-800 hover:text-sp-text" aria-label="Close">✕</button>
         </div>
         <div className="overflow-y-auto px-6 py-6 space-y-6">
+
+          {/* The signal rows, ABOVE the summary rather than below it: they are
+              computed from stored data and cost nothing, so they belong with the
+              instant facts. Spec §6 puts them "under the facts block" — this is
+              that block, and it sits above the one thing on this page that waits
+              for a reader and a model. `SignalRows` renders nothing for an empty
+              list; the guard keeps the wrapper from leaving a gap. */}
+          {signals.length > 0 && <SignalRows signals={signals} />}
 
           {/* In plain English — first, because it is the one-screen answer.
               The flow renders from facts this modal already holds, with no

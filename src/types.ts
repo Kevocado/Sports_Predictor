@@ -1,3 +1,8 @@
+// The vendored shared component owns `Signal`, so the contract is read from
+// there rather than restated. A local copy would be a second definition that
+// could drift from the one the renderer actually accepts.
+import type { Signal } from "./predictor-ui";
+
 export type Sport = "nfl" | "cfb";
 export interface GameSummary {
   game_id: string;
@@ -555,4 +560,20 @@ export interface SportApi {
   headToHead: (gameId: string, season: number, week: number, nSeasons?: number) => Promise<HeadToHead>;
   hubTeams: (season: number) => Promise<HubTeamsResponse>;
   hubPlayers: (season: number) => Promise<HubPlayersResponse>;
+  /** `GET /signals/{game_id}` — spec §3's signal payloads for one fixture.
+   *
+   *  Optional because the two sports differ and this is one factory. CFB serves
+   *  the route; NFL does not, and has no market that clears the floor to justify
+   *  one (49 graded rows, every band under `n = 30`). A sport with no feed is
+   *  therefore a missing method as well as a 404, so the modal has to tolerate
+   *  both — see the "no signals endpoint at all" test. */
+  signals?: (gameId: string) => Promise<SignalsResponse>;
+}
+
+/** What `GET /signals/{game_id}` answers. `signals` is empty rather than absent
+ *  when the fixture has nothing honest to say — spec §2, "no data, no row". */
+export interface SignalsResponse {
+  signals: Signal[];
+  sport?: string;
+  id?: string;
 }
