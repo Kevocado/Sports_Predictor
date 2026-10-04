@@ -18,6 +18,7 @@ import type {
   PlayerPropPrediction,
   PowerRankingsResponse,
   RetrainResponse,
+  SignalsResponse,
   SportApi,
   StandingsEntry,
   TeamForm,
@@ -103,6 +104,14 @@ export function createApiClient(baseUrl: string): SportApi {
     trackRecord: () => get<TrackRecord>("/track-record"),
     retrain: () => post<RetrainResponse>("/retrain"),
     gameVerdict: (gameId) => getOrNull<GameVerdict>(`/games/${gameId}/verdict`),
+    /** Spec §3's per-fixture signal payloads. Present on both clients because
+     *  `createApiClient` builds them both, but only CFB serves the route today:
+     *  NFL has 49 graded game rows and no band over the floor to justify one, so
+     *  its 404 is the honest answer and the modal renders no row. Deliberately
+     *  NOT `getOrNull`: a signal list has no "missing" middle state — either the
+     *  sport has the route or it does not — and swallowing the 404 into `null`
+     *  here would make the two indistinguishable to the caller. */
+    signals: (gameId) => get<SignalsResponse>(`/signals/${encodeURIComponent(gameId)}`),
     predictionsForWeek: (season, week) => get<WeekPrediction[]>(`/predictions/${season}/${week}`),
     currentWeek: () => get<CurrentWeek>("/current-week", CURRENT_WEEK_TTL_MS),
     standings: (season) => get<StandingsEntry[]>(`/standings?season=${season}`),
