@@ -3,8 +3,19 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { GamesPage } from "./GamesPage";
 import type { GamePrediction, GameSummary, SportApi, WeekPrediction } from "../types";
 
-const g1: GameSummary = { game_id: "g1", season: 2026, week: 7, gameday: "2026-10-04T17:00:00Z", home_team: "Ravens", away_team: "Chiefs", home_score: null, away_score: null };
-const g2: GameSummary = { game_id: "g2", season: 2026, week: 7, gameday: "2026-10-04T20:00:00Z", home_team: "Bills", away_team: "Jets", home_score: null, away_score: null };
+// Kickoffs are computed, not written down. These fixtures used a hardcoded
+// `2026-10-04T17:00:00Z`, which made every case below a time bomb: once that
+// instant passed, both games counted as STARTED, and a started game takes its pick
+// from the stored snapshot rather than the live one — which these fixtures do not
+// have. So the "Pick: " rows went from 2 to 0 and the count assertions failed on
+// an UNMODIFIED commit: green on 2026-10-03, red on 2026-10-04.
+//
+// An hour and three hours out, so "upcoming" stays true whenever this runs. None
+// of the assertions below read the displayed date, so nothing else moves.
+const hoursOut = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
+
+const g1: GameSummary = { game_id: "g1", season: 2026, week: 7, gameday: hoursOut(1), home_team: "Ravens", away_team: "Chiefs", home_score: null, away_score: null };
+const g2: GameSummary = { game_id: "g2", season: 2026, week: 7, gameday: hoursOut(3), home_team: "Bills", away_team: "Jets", home_score: null, away_score: null };
 const pred1: GamePrediction = { home_win_prob: 0.62, away_win_prob: 0.38, home_cover_prob: null, away_cover_prob: null, over_prob: null, under_prob: null };
 const pred2: GamePrediction = { home_win_prob: 0.55, away_win_prob: 0.45, home_cover_prob: null, away_cover_prob: null, over_prob: null, under_prob: null };
 

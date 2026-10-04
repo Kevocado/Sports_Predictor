@@ -16,15 +16,28 @@ const resolved = (hit: boolean): WeekPrediction => ({
 });
 
 describe("toCardModel", () => {
+  // `toCardModel` reads the wall clock unless it is told otherwise, and this
+  // fixture's kickoff is a hardcoded `2026-10-04T17:00:00Z`. So these two cases
+  // were silently time bombs: green until that instant, then the game counts as
+  // STARTED, the pick comes from the stored snapshot (which this fixture has
+  // none of) and the status flips to "live". That is what happened — CI was green
+  // on 2026-10-03 and red on 2026-10-04, on an unmodified commit.
+  //
+  // The fix is the parameter `toCardModel` already accepts for exactly this: a
+  // `now` before the kickoff, so the fixture means "upcoming" forever. Nothing
+  // about the assertions changes — `when` and `centre` are computed from
+  // `gameday` and the zone, not from `now`.
+  const BEFORE_KICKOFF = Date.parse("2026-10-04T12:00:00Z");
+
   it("puts away on the left, names the favourite as the pick, and orders the bar away then home", () => {
-    const m = toCardModel(upcoming, pred, undefined, false, TZ);
+    const m = toCardModel(upcoming, pred, undefined, false, TZ, BEFORE_KICKOFF);
     expect([m.left.code, m.right.code]).toEqual(["KC", "BAL"]);
     expect(m.pick).toEqual({ label: "BAL", prob: 0.62 });
     expect(m.bar?.map((s) => s.label)).toEqual(["KC", "BAL"]);
     expect(m.status).toBeUndefined();
   });
   it("marks exactly the next game 'Next up' and shows its local kickoff", () => {
-    const m = toCardModel(upcoming, pred, undefined, true, TZ);
+    const m = toCardModel(upcoming, pred, undefined, true, TZ, BEFORE_KICKOFF);
     expect(m.status).toBe("next");
     // The day on the card, the time in the scoreboard slot; the zone is said
     // once for the page (kickoffZone) instead of on every card.
