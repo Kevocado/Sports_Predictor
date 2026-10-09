@@ -3,7 +3,7 @@ import type { GamePrediction, GameSummary, WeekPrediction } from "../types";
 import { useSport } from "../context/SportContext";
 import { sortByConfidence } from "../lib/confidenceSort";
 import { TeamLogo } from "../components/TeamName";
-import { ErrorState, MatchCard, RoundNavigator, Skeleton } from "../predictor-ui";
+import { ErrorState, MatchCard, RoundNavigator, Skeleton, WeatherChip } from "../predictor-ui";
 import { hasStarted, kickoffZones, nextUpIds, toCardModel, weekPreKickoffLine, weekRecordLine, weekTally } from "../lib/weekCards";
 import { parseKickoff } from "../predictor-ui";
 import { GameDetailModal } from "../components/GameDetailModal";
@@ -239,15 +239,20 @@ export function GamesPage() {
           const started = hasStarted(game);
           const pending = started ? !weekLoaded : !predictionsSettled && !predictions[game.game_id];
           return (
-            <MatchCard
-              key={game.game_id}
-              {...model}
-              status={pending && started ? undefined : model.status}
-              left={{ ...model.left, badge: <TeamLogo sport={sport} team={game.away_team} size="md" /> }}
-              right={{ ...model.right, badge: <TeamLogo sport={sport} team={game.home_team} size="md" /> }}
-              pickPlaceholder={pending ? "Loading pick…" : undefined}
-              onOpen={() => setSelectedGame(game)}
-            />
+            <div key={game.game_id} className="flex flex-col gap-1.5">
+              <MatchCard
+                {...model}
+                status={pending && started ? undefined : model.status}
+                left={{ ...model.left, badge: <TeamLogo sport={sport} team={game.away_team} size="md" /> }}
+                right={{ ...model.right, badge: <TeamLogo sport={sport} team={game.home_team} size="md" /> }}
+                pickPlaceholder={pending ? "Loading pick…" : undefined}
+                onOpen={() => setSelectedGame(game)}
+              />
+              {/* The kickoff forecast, when the API has one for this game.
+                  WeatherChip renders nothing without conditions or for a kind it
+                  does not know, so a game with no forecast simply has no chip. */}
+              <WeatherChip conditions={game.conditions} />
+            </div>
           );
         })}
       </div>

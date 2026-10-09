@@ -68,6 +68,21 @@ describe("filterPlayerPropsForGame", () => {
   });
 });
 
+describe("GameDetailModal's kickoff conditions", () => {
+  it("shows the forecast chip when the game carries conditions", async () => {
+    const withWeather: GameSummary = { ...game, conditions: { kind: "snow", temp_f: 28, wind_mph: 12, precip_pct: 60 } };
+    render(<GameDetailModal game={withWeather} api={mockApi()} onClose={() => {}} />);
+    const chip = await screen.findByTestId("weather-chip");
+    expect(chip).toHaveTextContent("Snow · 28°F · 60% chance");
+  });
+
+  it("shows no chip when the game carries no conditions", async () => {
+    render(<GameDetailModal game={game} api={mockApi()} onClose={() => {}} />);
+    await screen.findByText("Game Detail & Model Projections");
+    expect(screen.queryByTestId("weather-chip")).toBeNull();
+  });
+});
+
 describe("GameDetailModal's predicted box score", () => {
   const roster = [
     prop("qb", "Chiefs", "QB", { passing_yards: 254.2 }),
