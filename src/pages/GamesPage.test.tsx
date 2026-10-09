@@ -154,4 +154,18 @@ describe("GamesPage", () => {
     await waitFor(() => expect(screen.queryByText("Bills")).not.toBeInTheDocument());
     expect(screen.getAllByText("Ravens").length).toBeGreaterThan(0);
   });
+
+  it("shows the kickoff forecast on a game that carries conditions", async () => {
+    games.mockImplementation(async (_s: number, w: number) =>
+      w === 7 ? [{ ...g1, conditions: { kind: "rain", temp_f: 50, wind_mph: 18, precip_pct: 70 } }, g2] : []);
+    render(<GamesPage />);
+    const chip = await screen.findByTestId("weather-chip");
+    expect(chip).toHaveTextContent("Rain · 50°F · 18 mph wind · 70% chance");
+  });
+
+  it("draws no weather chip when the game has no conditions", async () => {
+    render(<GamesPage />);
+    await waitFor(() => expect(screen.getAllByText(/^Pick: /)).toHaveLength(2));
+    expect(screen.queryByTestId("weather-chip")).toBeNull();
+  });
 });

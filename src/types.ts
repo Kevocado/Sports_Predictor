@@ -1,7 +1,7 @@
 // The vendored shared component owns `Signal`, so the contract is read from
 // there rather than restated. A local copy would be a second definition that
 // could drift from the one the renderer actually accepts.
-import type { Signal } from "./predictor-ui";
+import type { Conditions, Signal } from "./predictor-ui";
 
 export type Sport = "nfl" | "cfb";
 export interface GameSummary {
@@ -13,6 +13,11 @@ export interface GameSummary {
   away_team: string;
   home_score: number | null;
   away_score: number | null;
+  // Kickoff-hour forecast for an UPCOMING game, attached by the sport API from
+  // Open-Meteo. Absent for finals, for games past the ~16-day forecast horizon,
+  // and on any failure -- a missing chip is honest, a guessed one is not. The
+  // shape is the shared `Conditions` the vendored WeatherChip draws.
+  conditions?: Conditions | null;
   spread_line?: number | null;
   total_line?: number | null;
   home_conference?: string | null;

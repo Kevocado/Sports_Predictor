@@ -4,7 +4,7 @@
 // that the modal and the explain call sites import the type from the panel that
 // declares it. So ours' import line is not a preference, it is a door that is no
 // longer there; theirs' is the only one that resolves.
-import { BoxScore, FixtureExplainer, PicksList, SignalRows, spread } from "../predictor-ui";
+import { BoxScore, FixtureExplainer, PicksList, SignalRows, spread, WeatherChip } from "../predictor-ui";
 import type { Signal } from "../predictor-ui";
 // `FlowState` comes from the package too, for the same reason: the flow's states
 // are the package's vocabulary, and this file picks between them rather than
@@ -614,7 +614,11 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
       <div className="animate-modal-in relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-sp-border bg-sp-900 shadow-2xl">
         <div className="flex items-center justify-between border-b border-sp-border px-6 py-4">
           <span className="text-sm font-semibold text-sp-text-dim">Game Detail & Model Projections</span>
-          <button onClick={onClose} className="rounded-full p-1.5 text-sp-text-dim transition hover:bg-sp-800 hover:text-sp-text" aria-label="Close">✕</button>
+          <div className="flex items-center gap-3">
+            {/* Kickoff conditions, when the API has a forecast for this game. */}
+            <WeatherChip conditions={game.conditions} />
+            <button onClick={onClose} className="rounded-full p-1.5 text-sp-text-dim transition hover:bg-sp-800 hover:text-sp-text" aria-label="Close">✕</button>
+          </div>
         </div>
         <div className="overflow-y-auto px-6 py-6 space-y-6">
 
