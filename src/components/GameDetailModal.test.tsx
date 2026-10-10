@@ -383,6 +383,12 @@ describe("GameDetailModal and the plain-English panel", () => {
     expect(explain).toHaveBeenCalledWith("nfl", game.game_id);
   });
 
+  it("hands the loader this game's id as the fixtureId", async () => {
+    const loadContext = vi.fn().mockResolvedValue({ matchups: [] });
+    render(<GameDetailModal game={game} api={mockApi()} onClose={() => {}} explain={vi.fn()} loadContext={loadContext} />);
+    await waitFor(() => expect(loadContext).toHaveBeenCalledWith(game.game_id));
+  });
+
   it("shows the flow and the rest of the modal while the summary is still being written", async () => {
     // No skeleton: the flow is the thing on screen while the request is in
     // flight, so there is no frame where the panel is empty.

@@ -7,7 +7,7 @@ import { ErrorState, MatchCard, RoundNavigator, Skeleton, WeatherChip } from "..
 import { hasStarted, kickoffZones, nextUpIds, toCardModel, weekPreKickoffLine, weekRecordLine, weekTally } from "../lib/weekCards";
 import { parseKickoff } from "../predictor-ui";
 import { GameDetailModal } from "../components/GameDetailModal";
-import { cfbExplain, nflExplain } from "../api/client";
+import { cfbContext, cfbExplain, nflContext, nflExplain } from "../api/client";
 
 const FALLBACK_SEASON = 2026;
 const PREDICTION_CONCURRENCY = 4;
@@ -269,6 +269,7 @@ export function GamesPage() {
           onClose={() => setSelectedGame(null)}
           sport={sport}
           explain={(s, id) => (s === "cfb" ? cfbExplain(id) : nflExplain(id))}
+          loadContext={sport === "cfb" ? cfbContext : nflContext}
         />
       )}
     </div>

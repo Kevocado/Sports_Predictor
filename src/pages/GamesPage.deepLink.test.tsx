@@ -14,6 +14,8 @@ vi.mock("../context/SportContext", () => ({
 vi.mock("../api/client", () => ({
   cfbExplain: vi.fn(async () => { throw new Error("no explainer"); }),
   nflExplain: vi.fn(async () => { throw new Error("no explainer"); }),
+  cfbContext: vi.fn(async () => ({})),
+  nflContext: vi.fn(async () => ({})),
 }));
 
 // Kickoffs are computed, not written down. These fixtures used a hardcoded
