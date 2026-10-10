@@ -5,7 +5,7 @@
 // it as a second door onto the same type, and nothing consumed that door — two
 // doors onto one type is the same "local copy" mistake the declaration here was
 // originally deleted for.
-import type { Explanation } from "../predictor-ui";
+import { createContextLoader, type Explanation } from "../predictor-ui";
 import type {
   CurrentWeek,
   GamePrediction,
@@ -162,6 +162,9 @@ export const nflApi = createApiClient(NFL_BASE_URL);
 export const cfbApi = createApiClient(CFB_BASE_URL);
 export const nflExplain = createExplainer(NFL_EXPLAIN_BASE_URL);
 export const cfbExplain = createExplainer(CFB_EXPLAIN_BASE_URL);
+// Same base as the explainer above: `<base>/<id>/context`.
+export const nflContext = createContextLoader(NFL_EXPLAIN_BASE_URL);
+export const cfbContext = createContextLoader(CFB_EXPLAIN_BASE_URL);
 
 /**
  * Best-effort warm of both sport clients: current week first, then the main

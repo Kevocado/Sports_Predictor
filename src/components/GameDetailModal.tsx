@@ -9,7 +9,7 @@ import type { Signal } from "../predictor-ui";
 // `FlowState` comes from the package too, for the same reason: the flow's states
 // are the package's vocabulary, and this file picks between them rather than
 // inventing a parallel set of names for the same three values.
-import type { Explanation, FlowState } from "../predictor-ui";
+import type { Explanation, FlowState, MatchupContext } from "../predictor-ui";
 // The v2 panel's figures, derived rather than fetched, from the SHARED adapter:
 // the panel renders no figure of its own, so this mapping is where the
 // explanation meets this site's prediction response. The pick translation the
@@ -112,7 +112,7 @@ function VerdictBadge({ label, hit }: { label: string; hit: boolean }) {
 // weekPredictions: every row of the week, for the record strip. The list page
 // has already fetched them (`GamesPage.tsx:86`); the modal is handed the same
 // array rather than asking again, so opening a game costs no second week fetch.
-interface Props { game: GameSummary; api: SportApi; weekPrediction?: WeekPrediction; weekPredictions?: WeekPrediction[]; onClose: () => void; explain?: (sport: string, id: string) => Promise<Explanation>; sport?: string; }
+interface Props { game: GameSummary; api: SportApi; weekPrediction?: WeekPrediction; weekPredictions?: WeekPrediction[]; onClose: () => void; explain?: (sport: string, id: string) => Promise<Explanation>; loadContext?: (id: string) => Promise<MatchupContext>; sport?: string; }
 
 /** The moment a Sports pick must beat. Both sports here start at kickoff. */
 const MOMENT = "kickoff" as const;
@@ -223,7 +223,7 @@ function panelInput(game: GameSummary, prediction: GamePrediction | null, week: 
   };
 }
 
-export function GameDetailModal({ game, api, weekPrediction, weekPredictions, onClose, explain, sport = "nfl" }: Props) {
+export function GameDetailModal({ game, api, weekPrediction, weekPredictions, onClose, explain, loadContext, sport = "nfl" }: Props) {
   const [prediction, setPrediction] = useState<GamePrediction | null>(null);
   // Spec §3's signal rows for this fixture. `[]` is the resting state and means
   // "nothing to show", which is also what an empty answer and a rejected request
@@ -641,6 +641,8 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
               state={flowState}
               bundle={flowBundle}
               request={() => explain(sport, game.game_id)}
+              loadContext={loadContext}
+              fixtureId={game.game_id}
               // The figures the block draws — and the figures the summary draws
               // underneath it — from this site's OWN prediction response rather
               // than from the explanation. The panel is handed numbers and

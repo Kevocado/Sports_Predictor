@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createApiClient, preloadAll, NFL_BASE_URL, CFB_BASE_URL, REQUEST_TIMEOUT_MS } from "./client";
+import { cfbContext, nflContext, createApiClient, preloadAll, NFL_BASE_URL, CFB_BASE_URL, REQUEST_TIMEOUT_MS } from "./client";
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
@@ -179,5 +179,18 @@ describe("request timeout", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("matchup context loaders", () => {
+  it("use the same per-sport explain base as the explainers", async () => {
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(okJson({ matchups: [] }));
+    await nflContext("2026_05_BAL_KC");
+    await cfbContext("401635");
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
+      "/api/explain/nfl/2026_05_BAL_KC/context",
+      "/api/explain/cfb/401635/context",
+    ]);
   });
 });
