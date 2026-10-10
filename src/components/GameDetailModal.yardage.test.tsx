@@ -165,7 +165,7 @@ describe("GameDetailModal team totals", () => {
     // reword should not fail a test about the totals strip.
     const api = mockApi([{ player_id: "p", player_name: "p", recent_team: "Ravens", position: "K", anytime_td_prob: 0.1 }]);
     render(<GameDetailModal game={game} api={api} onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByText(/No modelled positions for this game|No player projection props available/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/No modelled positions for|No player projection props available/)).toBeInTheDocument());
     expect(screen.queryByTestId("box-score-team-totals")).not.toBeInTheDocument();
   });
 });

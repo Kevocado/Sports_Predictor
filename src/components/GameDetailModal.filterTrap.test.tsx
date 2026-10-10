@@ -1,17 +1,17 @@
 /** The team filter must never be the thing that traps you.
  *
- *  Finding on #20: the Away/Both/Home control used to be gated on whether the
+ *  Finding on #20: the Home/Away switch used to be gated on whether the
  *  CURRENT scope had rows. Press Away on a game whose away team has no
- *  projections and the control vanished — taking the only way back to Both
+ *  projections and the control vanished — taking the only way back to the other team
  *  with it. The filter's visibility is now a property of the GAME (does it have
  *  any player props at all), never of the scope currently selected, so an empty
  *  scope is a dead end you can walk back out of.
  *
  *  Under test:
- *  - an empty Away / Home scope still shows all three buttons;
+ *  - an empty team scope still shows both buttons;
  *  - the honest empty-state sentence is still on screen and still names the
  *    team it is about;
- *  - pressing Both brings the other team's rows back;
+ *  - pressing the other team brings the other team's rows back;
  *  - a game with no props at all has nothing to filter, so the control is
  *    hidden there (the fix is not "always show it").
  */
@@ -95,28 +95,28 @@ function boxScore() {
 }
 
 describe("the team filter is never the way out of a dead end", () => {
-  it("keeps the filter on screen in an empty Away scope, and Both brings the rows back", async () => {
-    // Only the home team has projections: pressing Away lands on a scope with
+  it("keeps the filter on screen in an empty away scope, and the home team brings the rows back", async () => {
+    // Only the home team has projections: pressing Chiefs lands on a scope with
     // nothing in it.
     await renderModal(homeRoster);
     await boxScore().findByText("Lamar");
-    expect(filterButtonNames()).toEqual(["Away", "Both", "Home"]);
+    expect(filterButtonNames()).toEqual(["Ravens", "Chiefs"]);
 
-    press("Away");
-    expect(screen.getByRole("button", { name: "Away" })).toHaveAttribute("aria-pressed", "true");
+    press("Chiefs");
+    expect(screen.getByRole("button", { name: "Chiefs" })).toHaveAttribute("aria-pressed", "true");
     // The scope really is empty, and the empty state says so honestly, naming
     // the team it is about.
     expect(boxScore().queryByText("Lamar")).not.toBeInTheDocument();
-    expect(screen.getByText(/No Chiefs player projections for this game yet\./)).toBeInTheDocument();
+    expect(screen.getByText(/No box score for Chiefs yet/)).toBeInTheDocument();
     // The way out is still on screen — this is the trap, so assert it loudly.
     expect(
       filterButtonNames(),
-      "the filter is the only way back to Both, so it must not disappear on an empty scope",
-    ).toEqual(["Away", "Both", "Home"]);
+      "the filter is the only way back to the other team, so it must not disappear on an empty scope",
+    ).toEqual(["Ravens", "Chiefs"]);
 
     // And the way out works: the home rows are back.
-    press("Both");
-    expect(screen.getByRole("button", { name: "Both" })).toHaveAttribute("aria-pressed", "true");
+    press("Ravens");
+    expect(screen.getByRole("button", { name: "Ravens" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getAllByTestId("box-score-team-section").map((s) => s.textContent)).toEqual(["Ravens"]);
     expect(boxScore().getByText("Lamar")).toBeInTheDocument();
     expect(boxScore().getByText("Zay")).toBeInTheDocument();
@@ -128,15 +128,17 @@ describe("the team filter is never the way out of a dead end", () => {
     await renderModal(awayRoster);
     await boxScore().findByText("Mahomes");
 
-    press("Home");
+    // With only away rows the switch opens on the away team, not an empty home.
+    expect(screen.getByRole("button", { name: "Chiefs" })).toHaveAttribute("aria-pressed", "true");
+    press("Ravens");
     expect(boxScore().queryByText("Mahomes")).not.toBeInTheDocument();
-    expect(screen.getByText(/No Ravens player projections for this game yet\./)).toBeInTheDocument();
+    expect(screen.getByText("No box score for Ravens yet")).toBeInTheDocument();
     expect(
       filterButtonNames(),
       "an empty Home scope must not take the control with it",
-    ).toEqual(["Away", "Both", "Home"]);
+    ).toEqual(["Ravens", "Chiefs"]);
 
-    press("Both");
+    press("Chiefs");
     expect(boxScore().getByText("Mahomes")).toBeInTheDocument();
     expect(screen.getAllByTestId("box-score-team-section").map((s) => s.textContent)).toEqual(["Chiefs"]);
   });
