@@ -84,59 +84,51 @@ function boxScore() {
   return within(screen.getByRole("region", { name: "Predicted box score" }));
 }
 
-describe("the box-score team filter", () => {
-  it("defaults to Both, showing both teams grouped by team — away section first", async () => {
+describe("the box-score team switch (one team at a time)", () => {
+  it("defaults to the home team and shows only its players", async () => {
     await renderModal();
-    expect(screen.getByRole("button", { name: "Both" })).toHaveAttribute("aria-pressed", "true");
-    // Team sections, away then home like the scoreline above the modal.
-    const sections = screen.getAllByTestId("box-score-team-section");
-    expect(sections.map((s) => s.textContent)).toEqual(["Chiefs", "Ravens"]);
-    // Both teams' players are on the page.
-    expect(boxScore().getByText("Mahomes")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ravens" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getAllByTestId("box-score-team-section").map((s) => s.textContent)).toEqual(["Ravens"]);
     expect(boxScore().getByText("Lamar")).toBeInTheDocument();
+    expect(boxScore().queryByText("Mahomes")).not.toBeInTheDocument();
+    // Home first, matching the fixture header.
+    expect(within(screen.getByTestId("box-score-team-filter")).getAllByRole("button").map((b) => b.textContent)).toEqual(["Ravens", "Chiefs"]);
   });
 
-  it("Away shows the away team only, then re-groups back to Both", async () => {
+  it("switching to the away team swaps the rows and the total, and back again", async () => {
     await renderModal();
-    fireEvent.click(screen.getByRole("button", { name: "Away" }));
-    expect(screen.getByRole("button", { name: "Away" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Chiefs" }));
+    expect(screen.getByRole("button", { name: "Chiefs" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getAllByTestId("box-score-team-section").map((s) => s.textContent)).toEqual(["Chiefs"]);
     expect(boxScore().getByText("Mahomes")).toBeInTheDocument();
     expect(boxScore().queryByText("Lamar")).not.toBeInTheDocument();
     expect(teamTotals()).toHaveLength(1);
     expect(teamTotals()[0]).toHaveTextContent("Chiefs total");
-    // And back: switching re-groups in place, nothing is lost.
-    fireEvent.click(screen.getByRole("button", { name: "Both" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ravens" }));
     expect(boxScore().getByText("Lamar")).toBeInTheDocument();
-    expect(teamTotals()).toHaveLength(2);
-  });
-
-  it("Home shows the home team only", async () => {
-    await renderModal();
-    fireEvent.click(screen.getByRole("button", { name: "Home" }));
-    expect(screen.getByRole("button", { name: "Home" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getAllByTestId("box-score-team-section").map((s) => s.textContent)).toEqual(["Ravens"]);
-    expect(boxScore().getByText("Lamar")).toBeInTheDocument();
-    expect(boxScore().queryByText("Mahomes")).not.toBeInTheDocument();
-    expect(teamTotals()).toHaveLength(1);
     expect(teamTotals()[0]).toHaveTextContent("Ravens total");
   });
 
-  it("shows each team's total once, with that team's own per-market sums", async () => {
+  it("shows the selected team's total once, with that team's own per-market sums", async () => {
     await renderModal();
-    const totals = teamTotals();
-    expect(totals).toHaveLength(2);
-    expect(totals[0]).toHaveTextContent("Chiefs total");
-    expect(totals[0]).toHaveTextContent("290"); // pass
-    expect(totals[0]).toHaveTextContent("60"); // rush
-    expect(totals[0]).toHaveTextContent("70"); // receiving
-    expect(totals[1]).toHaveTextContent("Ravens total");
-    expect(totals[1]).toHaveTextContent("240");
-    expect(totals[1]).toHaveTextContent("90");
-    expect(totals[1]).toHaveTextContent("80");
-    // Not once per position group: the per-position subtotal rows are gone, so
-    // no second encoding of either total survives on the page.
+    const [ravens] = teamTotals();
+    expect(ravens).toHaveTextContent("Ravens total");
+    expect(ravens).toHaveTextContent("240");
+    expect(ravens).toHaveTextContent("90");
+    expect(ravens).toHaveTextContent("80");
+    fireEvent.click(screen.getByRole("button", { name: "Chiefs" }));
+    const [chiefs] = teamTotals();
+    expect(chiefs).toHaveTextContent("290");
+    expect(chiefs).toHaveTextContent("60");
+    expect(chiefs).toHaveTextContent("70");
     expect(screen.queryByTestId("box-score-subtotal")).not.toBeInTheDocument();
+  });
+
+  it("each position table pins the player name and scrolls its stats", async () => {
+    await renderModal();
+    const name = boxScore().getByRole("rowheader", { name: /Lamar/ });
+    expect(name.className).toMatch(/sticky/);
+    expect(boxScore().getAllByRole("region", { name: /scroll sideways/i }).length).toBe(3);
   });
 
   it("removes the duplicated side-by-side yardage cards", async () => {

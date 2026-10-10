@@ -93,15 +93,19 @@ describe("GameDetailModal's predicted box score", () => {
 
   it("gives each position its own columns, the model's own markets and nothing more", async () => {
     const tables = await renderModal(roster);
-    // One table per (team, position): the away section first (Chiefs: QB, TE),
-    // then the home section (Ravens: RB, WR), each position in QB -> RB -> WR
-    // -> TE order within its section.
+    // One table per position, for the selected team only. The switch opens on
+    // the home team (Ravens: RB, WR), each position in QB -> RB -> WR -> TE order.
     expect(tables.map(headers)).toEqual([
-      ["Player", "Pass yds", "TD %"],
-      ["Player", "Rec yds", "Rec", "TD %"],
       // RB has no receiving market, so no Rec yds / Rec columns: see
       // boxScoreRows.ts. A column that can only ever be a dash is not shipped.
       ["Player", "Rush yds", "Carries", "TD %"],
+      ["Player", "Rec yds", "Rec", "TD %"],
+    ]);
+    // The other team is one press away, with its own tables.
+    fireEvent.click(screen.getByRole("button", { name: "Chiefs" }));
+    const away = (await screen.findAllByTestId("box-score")).map((s) => within(s).getByRole("table"));
+    expect(away.map(headers)).toEqual([
+      ["Player", "Pass yds", "TD %"],
       ["Player", "Rec yds", "Rec", "TD %"],
     ]);
   });
@@ -123,8 +127,8 @@ describe("GameDetailModal's predicted box score", () => {
     await renderModal([prop("a", "Ravens", "QB"), prop("b", "Chiefs", "WR")]);
     expect(screen.queryByRole("button", { name: "QB" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "ALL" })).not.toBeInTheDocument();
-    // Close plus the Away / Both / Home team filter: no position control.
-    expect(screen.getAllByRole("button")).toHaveLength(4);
+    // Close plus the Home / Away team switch: no position control.
+    expect(screen.getAllByRole("button")).toHaveLength(3);
   });
 
   it("lists starters before bench, in depth-chart order, when the feed has one", async () => {
@@ -152,7 +156,7 @@ describe("GameDetailModal's predicted box score", () => {
     expect(notes[0]).toHaveTextContent("Projected order");
     const rows = within(tables[0]).getAllByTestId("box-score-row");
     expect(rows.every((r) => r.dataset.starter === "projected")).toBe(true);
-    expect(rowNames(tables[1])).toEqual(["high", "low"]);
+    expect(rowNames(tables[0])).toEqual(["high", "low"]);
   });
 
   it("renders a market the model did not produce as an em-dash, never a 0", async () => {
@@ -180,13 +184,14 @@ describe("GameDetailModal's predicted box score", () => {
     expect(screen.queryByText("Projected Yardage by Market")).not.toBeInTheDocument();
     expect(screen.queryByTestId("box-score-subtotal")).not.toBeInTheDocument();
     // WR is the only position on the roster here, so both totals below are the
-    // teams' own — one row each, in the game's away-then-home order.
-    const totals = within(screen.getByTestId("box-score-team-totals")).getAllByTestId("box-score-team-total");
-    expect(totals).toHaveLength(2);
-    expect(totals[0]).toHaveTextContent("Chiefs total");
-    expect(within(totals[0]).getByText("30")).toBeInTheDocument();
-    expect(totals[1]).toHaveTextContent("Ravens total");
-    expect(within(totals[1]).getByText("100")).toBeInTheDocument();
+    // team's own, one row for the selected team (home first).
+    const totalRows = () => within(screen.getByTestId("box-score-team-totals")).getAllByTestId("box-score-team-total");
+    expect(totalRows()).toHaveLength(1);
+    expect(totalRows()[0]).toHaveTextContent("Ravens total");
+    expect(within(totalRows()[0]).getByText("100")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Chiefs" }));
+    expect(totalRows()[0]).toHaveTextContent("Chiefs total");
+    expect(within(totalRows()[0]).getByText("30")).toBeInTheDocument();
   });
 
   it("renders no table at all when the game has no props, and says so", async () => {
@@ -209,7 +214,7 @@ describe("GameDetailModal's predicted box score", () => {
     render(<GameDetailModal game={game} api={mockApi({ playerProps: vi.fn().mockResolvedValue([
       prop("k", "Ravens", "K"), prop("ol", "Chiefs", "OL"),
     ]) })} onClose={() => {}} />);
-    expect(await screen.findByText(/No modelled positions for this game/)).toBeInTheDocument();
+    expect(await screen.findByText(/No modelled positions for Ravens in this game/)).toBeInTheDocument();
     // The sentence has to survive a reword of the box score, but not one that
     // reaches for a control again.
     expect(screen.queryByText(/at this position/i)).not.toBeInTheDocument();

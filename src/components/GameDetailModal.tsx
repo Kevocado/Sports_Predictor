@@ -4,7 +4,7 @@
 // that the modal and the explain call sites import the type from the panel that
 // declares it. So ours' import line is not a preference, it is a door that is no
 // longer there; theirs' is the only one that resolves.
-import { BoxScore, FixtureExplainer, PicksList, SignalRows, spread, WeatherChip } from "../predictor-ui";
+import { BoxScore, FixtureExplainer, PicksList, SignalRows, spread, TeamToggle, WeatherChip } from "../predictor-ui";
 import type { Signal } from "../predictor-ui";
 // `FlowState` comes from the package too, for the same reason: the flow's states
 // are the package's vocabulary, and this file picks between them rather than
@@ -369,8 +369,8 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
     setHomeForm(null); setAwayForm(null); setH2h(null);
     setOutPlayers([]); setOutUnavailable(false); setOutResolved(false); setPropsTrack(null);
     // The team filter belongs to the fixture, not the session: reopening the
-    // default (Both) with every game, or Away would hide half the next box score.
-    setTeamFilter("both");
+    // default (home) with every game, or Away would hide the next game's home box score.
+    setTeamPick(null);
 
     // Fetch main game prediction
     api.gamePrediction(game.season, game.week, game.game_id)
@@ -475,20 +475,25 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
 
   const gameProps = allProps ? filterPlayerPropsForGame(allProps, game) : null;
 
-  // A4's three-state team control: Away / Both / Home, defaulting to Both.
+  // One team at a time (phone box score): Home / Away, defaulting to Home.
   // Reset per game alongside the rest of the modal state in the fetch effect
   // below — a filter left over from another fixture would hide half of this
   // one's box score.
-  const [teamFilter, setTeamFilter] = useState<"away" | "both" | "home">("both");
+  // null = the user has not chosen: home, unless only the away team has rows.
+  const [teamPick, setTeamPick] = useState<"away" | "home" | null>(null);
+  const onlyAway =
+    !!gameProps &&
+    !gameProps.some((p) => p.recent_team === game.home_team) &&
+    gameProps.some((p) => p.recent_team === game.away_team);
+  const teamFilter: "away" | "home" = teamPick ?? (onlyAway ? "away" : "home");
 
-  // The teams the filter leaves visible, away first like the scoreline above.
+  // The one team the control leaves visible.
   const visibleTeams = useMemo(
-    () => (teamFilter === "away" ? [game.away_team] : teamFilter === "home" ? [game.home_team] : [game.away_team, game.home_team]),
+    () => [teamFilter === "away" ? game.away_team : game.home_team],
     [teamFilter, game.away_team, game.home_team],
   );
   const visibleProps = useMemo(() => {
     if (!gameProps) return null;
-    if (teamFilter === "both") return gameProps;
     const team = teamFilter === "away" ? game.away_team : game.home_team;
     return gameProps.filter((prop) => prop.recent_team === team);
   }, [gameProps, teamFilter, game.away_team, game.home_team]);
@@ -550,7 +555,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
   // position instead) along with the `playerRank` import, so the memo has
   // nothing left to read. `keyYardage` still exists -- `lib/boxScoreRows.ts`
   // uses it for the box score's row order -- but not as a modal-level sort.
-  const emptyScope = teamFilter === "both" ? null : teamFilter === "away" ? game.away_team : game.home_team;
+  const emptyScope = teamFilter === "away" ? game.away_team : game.home_team;
 
   // The model's own ranked calls (Phase 2 task 4), built by `buildPicksPanel` and
   // rendered by the SHARED `PicksList`. This file holds no ranking rule of its
@@ -810,18 +815,13 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
             <div className="mb-2 flex items-center justify-between gap-3">
               <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Predicted box score</h3>
               {hasTeamFilter && (
-                <div role="group" aria-label="Filter box score by team" data-testid="box-score-team-filter" className="flex shrink-0 overflow-hidden rounded-lg border border-sp-border/60 text-xs">
-                  {(["away", "both", "home"] as const).map((f) => (
-                    <button
-                      key={f}
-                      type="button"
-                      aria-pressed={teamFilter === f}
-                      onClick={() => setTeamFilter(f)}
-                      className={`px-2.5 py-1 transition ${teamFilter === f ? "bg-sp-accent/20 font-semibold text-sp-text" : "text-sp-text-dim hover:bg-sp-800"}`}
-                    >
-                      {f === "away" ? "Away" : f === "home" ? "Home" : "Both"}
-                    </button>
-                  ))}
+                <div data-testid="box-score-team-filter" className="shrink-0">
+                  <TeamToggle
+                    label="Filter box score by team"
+                    teams={[{ key: "home", label: game.home_team }, { key: "away", label: game.away_team }]}
+                    value={teamFilter}
+                    onChange={(k) => setTeamPick(k as "away" | "home")}
+                  />
                 </div>
               )}
             </div>
@@ -844,8 +844,8 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
                   ? emptyScope
                     ? `No modelled positions for ${emptyScope} in this game. Every ${emptyScope} player the feed returned is at a position the model does not project (kicker, offensive or defensive line), and the box score only covers QB, RB, WR and TE.`
                     : "No modelled positions for this game. Every player the feed returned is at a position the model does not project (kicker, offensive or defensive line), and the box score only covers QB, RB, WR and TE."
-                  : emptyScope
-                    ? `No ${emptyScope} player projections for this game yet.`
+                  : hasTeamFilter
+                    ? `No box score for ${emptyScope} yet`
                     : "No player projection props available for this specific game yet."}
               </p>
             )}
