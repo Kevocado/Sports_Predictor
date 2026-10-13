@@ -15,7 +15,7 @@ import { POSITION_ORDER, isSkillPosition, keyYardage, type SkillPosition } from 
 /** The key of the one column that is a rate rather than a quantity. */
 export const TD_COLUMN_KEY = "td_pct";
 
-type MarketKey = "passing_yards" | "rushing_yards" | "carries" | "receiving_yards" | "receptions";
+type MarketKey = "passing_yards" | "rushing_yards" | "carries" | "receiving_yards" | "receptions" | "qb_rushing_yards";
 
 // The model predicts these markets and the anytime-TD classifier, and nothing
 // else (see models/player_props.py POSITION_MARKETS on both the NFL and the CFB
@@ -29,6 +29,7 @@ const MARKETS: Record<MarketKey, { label: string; unit: string }> = {
   carries: { label: "Carries", unit: "carries" },
   receiving_yards: { label: "Rec yds", unit: "receiving yards" },
   receptions: { label: "Rec", unit: "receptions" },
+  qb_rushing_yards: { label: "QB rush yds", unit: "rushing yards" },
 };
 
 function marketColumn(market: MarketKey): BoxScoreColumn {
@@ -57,7 +58,10 @@ const TD_COLUMN: BoxScoreColumn = {
 };
 
 export const BOX_SCORE_COLUMNS: Record<SkillPosition, BoxScoreColumn[]> = {
-  QB: [marketColumn("passing_yards"), TD_COLUMN],
+  // QB rushing is its own quantile market (see models/player_props.py
+  // POSITION_MARKETS): the column reads the `qb_rushing_yards` field, which
+  // the serving path fills from the QB-only model's q50.
+  QB: [marketColumn("passing_yards"), marketColumn("qb_rushing_yards"), TD_COLUMN],
   // RB carries RUSHING markets only, and that is not a shortcut — it is what
   // the model produces. `POSITION_MARKETS` on the NFL API is
   //   RB: ["rushing_yards", "carries"]

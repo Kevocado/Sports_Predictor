@@ -105,7 +105,7 @@ describe("GameDetailModal's predicted box score", () => {
     fireEvent.click(screen.getByRole("button", { name: "Chiefs" }));
     const away = (await screen.findAllByTestId("box-score")).map((s) => within(s).getByRole("table"));
     expect(away.map(headers)).toEqual([
-      ["Player", "Pass yds", "TD %"],
+      ["Player", "Pass yds", "QB rush yds", "TD %"],
       ["Player", "Rec yds", "Rec", "TD %"],
     ]);
   });

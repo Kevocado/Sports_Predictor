@@ -26,8 +26,8 @@ describe("the box score's columns — the model's own markets and nothing else",
   // POSITION_MARKETS on both APIs) plus the anytime-TD classifier. A column
   // for a market the model does not produce would have to be rendered as a
   // dash on every single row, so it is not rendered at all.
-  it("gives a QB the passing market and the TD chance", () => {
-    expect(labels("QB")).toEqual(["Pass yds", "TD %"]);
+  it("gives a QB the passing market, QB rushing (its own market) and the TD chance", () => {
+    expect(labels("QB")).toEqual(["Pass yds", "QB rush yds", "TD %"]);
   });
 
   it("gives an RB only the markets the model produces for a running back", () => {
@@ -56,10 +56,11 @@ describe("the box score's columns — the model's own markets and nothing else",
       expect(`${column.key} ${column.label}`).not.toMatch(/fan\s*duel|\bFD\b/i);
     }
     // The whole set of markets, across every position, is the model's:
-    // five yardage/count markets plus the anytime-TD classifier.
+    // six yardage/count markets (QB rushing is its own) plus the anytime-TD classifier.
     expect([...new Set(everyColumn.map((c) => c.key))].sort()).toEqual([
       "carries",
       "passing_yards",
+      "qb_rushing_yards",
       "receiving_yards",
       "receptions",
       "rushing_yards",
@@ -68,7 +69,7 @@ describe("the box score's columns — the model's own markets and nothing else",
   });
 
   it("uses a column per position, and none for a position it does not model", () => {
-    expect(boxScoreColumnsFor("QB").map((c) => c.label)).toEqual(["Pass yds", "TD %"]);
+    expect(boxScoreColumnsFor("QB").map((c) => c.label)).toEqual(["Pass yds", "QB rush yds", "TD %"]);
     expect(boxScoreColumnsFor("K")).toEqual([]);
   });
 });
@@ -284,7 +285,8 @@ describe("per-team subtotals", () => {
       prop({ player_id: "qb", position: "QB", passing_yards: 260 }),
     ]);
     expect(groups[0].position).toBe("QB");
-    expect(groups[0].subtotals![0].values).toEqual([260, null]);
+    // QB: passing 260, QB rushing (no projection in the fixture -> null, never a fabricated 0), TD% (null)
+    expect(groups[0].subtotals![0].values).toEqual([260, null, null]);
     expect(groups[1].subtotals![0].values).toEqual([80, null, null]);
   });
 });
