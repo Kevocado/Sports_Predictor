@@ -752,3 +752,25 @@ describe("NFL over/under calls", () => {
     expect(run("cfb").categories.some((c) => c.category === "Over/under calls")).toBe(false);
   });
 });
+
+
+describe("backup quarterbacks", () => {
+  const qb = (id: string, name: string, team: string, yds: number, is_starter: boolean | null) =>
+    ({ player_id: id, player_name: name, recent_team: team, position: "QB", anytime_td_prob: 0.05, passing_yards: yds, is_starter } as PlayerPropPrediction);
+  const rows = (props: PlayerPropPrediction[], out: any[] = []) =>
+    buildPicksPanel({ sport: "nfl", props, out, track: nflTrack.player_props, game })
+      .categories.find((c) => c.category === "QB passing yards")?.rows.map((r) => r.name) ?? [];
+
+  it("drops a team's backup QB when the depth chart names its starter", () => {
+    expect(rows([qb("a", "Starter", "KC", 190, true), qb("b", "Backup", "KC", 219, false), qb("c", "Other", "BAL", 200, true)])).toEqual(["Other", "Starter"]);
+  });
+
+  it("keeps everyone when the chart is unknown (null), because null is not 'bench'", () => {
+    expect(rows([qb("a", "A", "KC", 190, null), qb("b", "B", "KC", 219, null)])).toEqual(["B", "A"]);
+  });
+
+  it("keeps the backup when the starter is out", () => {
+    const out = [{ player_id: "a", player_name: "Starter", recent_team: "KC", report_status: "Out" }];
+    expect(rows([qb("a", "Starter", "KC", 190, true), qb("b", "Backup", "KC", 219, false)], out)).toEqual(["Backup"]);
+  });
+});

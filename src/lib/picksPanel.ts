@@ -278,7 +278,14 @@ export function buildPicksPanel({ sport, props, out, game }: PicksPanelInput): P
       .filter((e) => (e.report_status ?? "out").trim().toLowerCase() === "out")
       .map((e) => String(e.player_id)),
   );
-  const ranked = inGame.filter((p) => !outIds.has(String(p.player_id)));
+  const available = inGame.filter((p) => !outIds.has(String(p.player_id)));
+
+  // One quarterback plays. When the depth chart names an available starter for a team, that team's backup QBs
+  // leave every ranking: otherwise two QBs of one team both show 200+ projected passing yards. Only when
+  // the chart actually says (is_starter === true/false); unknown (null) benches nobody, and a starter who is out
+  // is already gone above, so his backup stays and is the QB that plays.
+  const teamsWithStarterQb = new Set(available.filter((p) => p.position === "QB" && p.is_starter === true).map((p) => p.recent_team));
+  const ranked = available.filter((p) => !(p.position === "QB" && p.is_starter === false && teamsWithStarterQb.has(p.recent_team)));
 
   // An out entry for a player who is not in this fixture's slate is not an out
   // player OF THIS FIXTURE. Naming one would attribute a removal that never
