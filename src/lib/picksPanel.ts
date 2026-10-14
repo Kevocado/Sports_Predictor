@@ -177,6 +177,11 @@ export const QB_RUSH_OR_RECEIVE_TD_MIN = 0.2;
  *  a fourth player cannot appear to backfill a removed one. */
 export const MAX_ROWS = 3;
 
+/** The side's probability a call needs before it is shown with a direction (matches the badge's 0.55 / 0.45). */
+const DIRECTION_MIN = 0.55;
+export const NFL_OVER_UNDER_CATEGORY = "Over/under calls";
+type OuMarket = "passing_yards" | "rushing_yards" | "receiving_yards" | "qb_rushing_yards" | "receptions";
+
 export type Sport = "nfl" | "cfb";
 
 export interface PicksPanelInput {
@@ -370,6 +375,46 @@ export function buildPicksPanel({ sport, props, out, game }: PicksPanelInput): P
         kind: "probability",
       }));
     if (qbTdRows.length > 0) categories.push({ category: NFL_QB_PASSING_TD_CATEGORY, rows: qbTdRows });
+
+    // Over/under calls across the markets that carry a line and a P(over): the model's most one-sided
+    // sides, each with the direction badge PicksList draws for an NFL probability row. A toss-up (side
+    // probability under DIRECTION_MIN) is not a call and is left out; so is a receptions row the model
+    // itself flags high_mu, which must never be priced.
+    const OU_MARKETS: { market: OuMarket; label: string }[] = [
+      { market: "passing_yards", label: "Pass yds" },
+      { market: "rushing_yards", label: "Rush yds" },
+      { market: "receiving_yards", label: "Rec yds" },
+      { market: "qb_rushing_yards", label: "QB rush yds" },
+      { market: "receptions", label: "Receptions" },
+    ];
+    const ouRows: PickRow[] = ranked
+      .flatMap((p) =>
+        OU_MARKETS.map(({ market, label }): PickRow | null => {
+          const pOver = p[`${market}_p_over` as const];
+          const line = p[`${market}_line` as const];
+          if (typeof pOver !== "number" || !Number.isFinite(pOver) || typeof line !== "number" || !Number.isFinite(line)) return null;
+          if (market === "receptions" && p.receptions_mu_flag === "high_mu") return null;
+          const side: "over" | "under" = pOver >= 0.5 ? "over" : "under";
+          const prob = side === "over" ? pOver : 1 - pOver;
+          if (prob < DIRECTION_MIN) return null;
+          return {
+            key: `ou-${market}-${p.player_id}`,
+            name: p.player_name,
+            team: p.recent_team,
+            detail: label,
+            value: prob,
+            kind: "probability",
+            sport: "NFL",
+            direction: side,
+            line,
+            ...(p.receptions_mu_flag ? { receptions_mu_flag: p.receptions_mu_flag } : {}),
+          };
+        }),
+      )
+      .filter((r): r is PickRow => r !== null)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, MAX_ROWS);
+    if (ouRows.length > 0) categories.push({ category: NFL_OVER_UNDER_CATEGORY, rows: ouRows });
   }
 
   // One heading per position, each carrying that position's OWN yardage market

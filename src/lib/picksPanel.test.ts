@@ -728,3 +728,27 @@ describe("positionCategories", () => {
     ]);
   });
 });
+describe("NFL over/under calls", () => {
+  const base = { anytime_td_prob: 0.1, position: "WR", recent_team: "KC" } as const;
+  const props = [
+    { ...base, player_id: "a", player_name: "Over Guy", receiving_yards: 70, receiving_yards_p_over: 0.7, receiving_yards_line: 64.5 },
+    { ...base, player_id: "b", player_name: "Under Guy", receiving_yards: 40, receiving_yards_p_over: 0.2, receiving_yards_line: 45.5 },
+    { ...base, player_id: "c", player_name: "Toss Guy", receiving_yards: 50, receiving_yards_p_over: 0.52, receiving_yards_line: 49.5 },
+    { ...base, player_id: "d", player_name: "Hi Mu", receptions: 9, receptions_p_over: 0.8, receptions_line: 7.5, receptions_mu_flag: "high_mu" },
+    { ...base, player_id: "e", player_name: "No Line", receiving_yards: 80 },
+  ] as PlayerPropPrediction[];
+  const run = (sport: "nfl" | "cfb") => buildPicksPanel({ sport, props, out: [], track: nflTrack.player_props, game });
+
+  it("shows the strongest side per market with its direction and line; toss-ups, high_mu and lineless rows are left out", () => {
+    const cat = run("nfl").categories.find((c) => c.category === "Over/under calls")!;
+    expect(cat.rows.map((r) => [r.name, r.direction, r.line, Math.round(r.value * 100)])).toEqual([
+      ["Over Guy", "over", 64.5, 70],
+      ["Under Guy", "under", 45.5, 80],
+    ].sort((a, b) => (b[3] as number) - (a[3] as number)));
+    expect(cat.rows.every((r) => r.sport === "NFL" && r.kind === "probability")).toBe(true);
+  });
+
+  it("is NFL only", () => {
+    expect(run("cfb").categories.some((c) => c.category === "Over/under calls")).toBe(false);
+  });
+});
