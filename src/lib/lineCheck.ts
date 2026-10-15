@@ -46,10 +46,24 @@ export function calibrate(p: number): number {
 export interface LineOption { market: string; label: string; kind: "yardage" | "count" }
 
 /** The stats this player can be checked on, in a stable order. */
+/** A distribution whose median is far from the same model's own point projection is not trustworthy for this player (the
+ *  two come from different fits; a serving-time input problem shows up as exactly this). Beyond this relative gap the
+ *  stat is not offered at all, rather than answering confidently from a distribution that disagrees with the projection. */
+export const MAX_MEDIAN_VS_PROJECTION_GAP = 0.3;
+const MEDIAN_INDEX = QUANTILE_LEVELS.indexOf(0.5);
+
+export function distributionAgreesWithProjection(p: PlayerPropPrediction, market: string, values: number[]): boolean {
+  const projection = (p as unknown as Record<string, number | undefined>)[market];
+  if (typeof projection !== "number" || !Number.isFinite(projection) || projection <= 0) return true;   // nothing to compare against
+  return Math.abs(values[MEDIAN_INDEX] - projection) / projection <= MAX_MEDIAN_VS_PROJECTION_GAP;
+}
+
 export function lineOptions(p: PlayerPropPrediction): LineOption[] {
   const out: LineOption[] = [];
   for (const [market, values] of Object.entries(p.line_check?.yardage ?? {})) {
-    if (Array.isArray(values) && values.length === QUANTILE_LEVELS.length) out.push({ market, label: MARKET_LABEL[market] ?? market, kind: "yardage" });
+    if (Array.isArray(values) && values.length === QUANTILE_LEVELS.length && distributionAgreesWithProjection(p, market, values)) {
+      out.push({ market, label: MARKET_LABEL[market] ?? market, kind: "yardage" });
+    }
   }
   for (const [market, table] of Object.entries(p.line_check?.counts ?? {})) {
     if (table && Object.keys(table).length > 0) out.push({ market, label: MARKET_LABEL[market] ?? market, kind: "count" });
@@ -84,6 +98,7 @@ export function checkLine(p: PlayerPropPrediction, market: string, line: number)
   if (!Number.isFinite(line) || line < 0) return { status: "invalid" };
   const yardage = p.line_check?.yardage?.[market];
   if (yardage && yardage.length === QUANTILE_LEVELS.length) {
+    if (!distributionAgreesWithProjection(p, market, yardage)) return { status: "not-priced", reason: "The model's distribution for this player disagrees with its own projection, so it is not priced." };
     const raw = pOverFromQuantiles(yardage, line);
     const pOver = calibrate(raw);
     return { status: "ok", pOver, pUnder: 1 - pOver, edge: raw >= P_OVER_CEILING ? "high" : raw <= P_OVER_FLOOR ? "low" : null };

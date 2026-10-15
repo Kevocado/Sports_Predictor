@@ -74,3 +74,16 @@ describe("calibrate", () => {
     expect(calibrate(0.0)).toBe(0.025);
   });
 });
+
+
+describe("sanity guard: a distribution that disagrees with the projection is not offered", () => {
+  it("hides a stat whose median is far from the same model's point projection", () => {
+    const bad = player({ position: "WR", receiving_yards: 86.9, line_check: { yardage: { receiving_yards: lin.map((v) => v * 0.1) } } });  // median ~25 vs 86.9
+    expect(lineOptions(bad)).toEqual([]);
+    expect(checkLine(bad, "receiving_yards", 40).status).toBe("not-priced");
+  });
+  it("keeps a stat whose median agrees, and one with no projection to compare against", () => {
+    expect(lineOptions(player({ passing_yards: 250 })).map((o) => o.market)).toEqual(["passing_yards"]);
+    expect(lineOptions(player()).map((o) => o.market)).toEqual(["passing_yards"]);
+  });
+});
