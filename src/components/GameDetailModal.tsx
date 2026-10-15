@@ -20,7 +20,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { GamePrediction, GameSummary, GameVerdict, HeadToHead as HeadToHeadData, OutPlayerEntry, PlayerPropPrediction, PlayerPropsTrackRecord, SportApi, TeamForm, WeekPrediction } from "../types";
 // The ranking itself: which rows, under which heading, and what each row says
 // about itself. `PicksList` renders; this decides the words.
-import { buildPicksPanel, NO_GRADED_RECORD } from "../lib/picksPanel";
+import { buildPicksPanel, eligiblePlayers, NO_GRADED_RECORD } from "../lib/picksPanel";
+import { LineChecker } from "./LineChecker";
 import { TeamName } from "./TeamName";
 import { MarketBar } from "./MarketBar";
 import { FormStrip } from "./FormStrip";
@@ -598,6 +599,12 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
     return built.categories.length > 0 ? built : null;
   }, [allProps, propsTrack, propsLoading, outResolved, outPlayers, sport, game.home_team, game.away_team]);
 
+  // The line checker offers the same players the ranked lists do (this game, not Out, no benched backup QB).
+  const lineCheckPlayers = useMemo(
+    () => (sport === "cfb" || !allProps || propsLoading || !outResolved ? [] : eligiblePlayers(allProps, outPlayers, game)),
+    [allProps, propsLoading, outResolved, outPlayers, sport, game.home_team, game.away_team],
+  );
+
   // The availability sentence, worded from WHICH case we are in rather than
   // whether a list is empty. An empty `out` array is ambiguous on its own --
   // "the report ran and listed nobody" and "there was no report to run" are
@@ -799,6 +806,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
               </p>
             </section>
           )}
+          {lineCheckPlayers.length > 0 && <LineChecker players={lineCheckPlayers} />}
 
           {/* Predicted box score — the model's own markets, grouped by team then
               position (A4). The three-state team control sits on the header

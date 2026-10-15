@@ -256,6 +256,22 @@ export function vsRecent(p: PlayerPropPrediction, market: Market, value: number,
   return { recentAvg: avg, recentGames: games, vsRecent: vsRecentSide };
 }
 
+/** One quarterback plays: drop a team's backup QBs when the depth chart names an available starter. Unknown (null)
+ *  benches nobody; a starter who is out must already be absent from `players`, so his backup stays. Shared by the
+ *  ranked lists and the line checker so neither offers a QB who is not playing. */
+export function benchBackupQbs(players: PlayerPropPrediction[]): PlayerPropPrediction[] {
+  const teamsWithStarterQb = new Set(players.filter((p) => p.position === "QB" && p.is_starter === true).map((p) => p.recent_team));
+  return players.filter((p) => !(p.position === "QB" && p.is_starter === false && teamsWithStarterQb.has(p.recent_team)));
+}
+
+/** Everyone the line checker may offer for this game: this game's players, minus those the official report lists Out,
+ *  minus benched backup QBs. The same gate as the ranked lists. */
+export function eligiblePlayers(props: PlayerPropPrediction[], out: { player_id: string; report_status?: string | null }[] | undefined,
+                                game: { home_team: string; away_team: string }): PlayerPropPrediction[] {
+  const outIds = new Set((out ?? []).filter((e) => (e.report_status ?? "out").trim().toLowerCase() === "out").map((e) => String(e.player_id)));
+  return benchBackupQbs(props.filter((p) => (p.recent_team === game.home_team || p.recent_team === game.away_team) && !outIds.has(String(p.player_id))));
+}
+
 export function buildPicksPanel({ sport, props, out, game }: PicksPanelInput): PicksPanel {
   // This game's players only. A week's `/props` carries every team in the
   // league; ranking a third team's quarterback under this fixture's heading
@@ -295,8 +311,7 @@ export function buildPicksPanel({ sport, props, out, game }: PicksPanelInput): P
   // leave every ranking: otherwise two QBs of one team both show 200+ projected passing yards. Only when
   // the chart actually says (is_starter === true/false); unknown (null) benches nobody, and a starter who is out
   // is already gone above, so his backup stays and is the QB that plays.
-  const teamsWithStarterQb = new Set(available.filter((p) => p.position === "QB" && p.is_starter === true).map((p) => p.recent_team));
-  const ranked = available.filter((p) => !(p.position === "QB" && p.is_starter === false && teamsWithStarterQb.has(p.recent_team)));
+  const ranked = benchBackupQbs(available);
 
   // An out entry for a player who is not in this fixture's slate is not an out
   // player OF THIS FIXTURE. Naming one would attribute a removal that never
