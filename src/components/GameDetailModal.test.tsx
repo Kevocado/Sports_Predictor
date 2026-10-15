@@ -259,8 +259,8 @@ describe("GameDetailModal", () => {
     // Both lines are on the tiles now: the spread tile's value is the line and
     // its sub is the model's own margin; the total tile's sub carries the line.
     const block = await screen.findByTestId("instant-block");
-    expect(within(block).getByTestId("tile-spread")).toHaveTextContent("Ravens +2.5");
-    expect(within(block).getByTestId("tile-total")).toHaveTextContent("line 46.5");
+    expect(await within(block).findByTestId("tile-spread")).toHaveTextContent("Ravens +2.5");
+    expect(await within(block).findByTestId("tile-total")).toHaveTextContent("line 46.5");
     // The one summary line is gone, so no figure is stated twice.
     expect(screen.queryByText("Ravens +2.5 · Total 46.5")).not.toBeInTheDocument();
   });
