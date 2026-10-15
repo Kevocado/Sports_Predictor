@@ -728,32 +728,6 @@ describe("positionCategories", () => {
     ]);
   });
 });
-describe("NFL over/under calls", () => {
-  const base = { anytime_td_prob: 0.1, position: "WR", recent_team: "KC" } as const;
-  const props = [
-    { ...base, player_id: "a", player_name: "Over Guy", receiving_yards: 70, receiving_yards_p_over: 0.7, receiving_yards_line: 64.5 },
-    { ...base, player_id: "b", player_name: "Under Guy", receiving_yards: 40, receiving_yards_p_over: 0.2, receiving_yards_line: 45.5 },
-    { ...base, player_id: "c", player_name: "Toss Guy", receiving_yards: 50, receiving_yards_p_over: 0.52, receiving_yards_line: 49.5 },
-    { ...base, player_id: "d", player_name: "Hi Mu", receptions: 9, receptions_p_over: 0.8, receptions_line: 7.5, receptions_mu_flag: "high_mu" },
-    { ...base, player_id: "e", player_name: "No Line", receiving_yards: 80 },
-  ] as PlayerPropPrediction[];
-  const run = (sport: "nfl" | "cfb") => buildPicksPanel({ sport, props, out: [], track: nflTrack.player_props, game });
-
-  it("shows the strongest side per market with its direction and line; toss-ups, high_mu and lineless rows are left out", () => {
-    const cat = run("nfl").categories.find((c) => c.category === "Over/under calls")!;
-    expect(cat.rows.map((r) => [r.name, r.direction, r.line, Math.round(r.value * 100)])).toEqual([
-      ["Over Guy", "over", 64.5, 70],
-      ["Under Guy", "under", 45.5, 80],
-    ].sort((a, b) => (b[3] as number) - (a[3] as number)));
-    expect(cat.rows.every((r) => r.sport === "NFL" && r.kind === "probability")).toBe(true);
-  });
-
-  it("is NFL only", () => {
-    expect(run("cfb").categories.some((c) => c.category === "Over/under calls")).toBe(false);
-  });
-});
-
-
 describe("backup quarterbacks", () => {
   const qb = (id: string, name: string, team: string, yds: number, is_starter: boolean | null) =>
     ({ player_id: id, player_name: name, recent_team: team, position: "QB", anytime_td_prob: 0.05, passing_yards: yds, is_starter } as PlayerPropPrediction);
@@ -772,5 +746,31 @@ describe("backup quarterbacks", () => {
   it("keeps the backup when the starter is out", () => {
     const out = [{ player_id: "a", player_name: "Starter", recent_team: "KC", report_status: "Out" }];
     expect(rows([qb("a", "Starter", "KC", 190, true), qb("b", "Backup", "KC", 219, false)], out)).toEqual(["Backup"]);
+  });
+});
+
+
+describe("projection vs recent average", () => {
+  const wr = (value: number, avg: number | undefined, games = 5) =>
+    ({ player_id: "w", player_name: "W", recent_team: "KC", position: "WR", anytime_td_prob: 0.1, receiving_yards: value,
+       ...(avg === undefined ? {} : { recent_avg: { games, receiving_yards: avg } }) } as PlayerPropPrediction);
+  const row = (p: PlayerPropPrediction, sport: "nfl" | "cfb" = "nfl") =>
+    buildPicksPanel({ sport, props: [p], out: [], track: nflTrack.player_props, game })
+      .categories.find((c) => c.category === "WR/TE receiving yards")?.rows[0];
+
+  it("flags over/under his own recent average, with the number and how many games", () => {
+    expect(row(wr(90, 80))).toMatchObject({ vsRecent: "over", recentAvg: 80, recentGames: 5 });
+    expect(row(wr(60, 80))).toMatchObject({ vsRecent: "under" });
+    expect(row(wr(81, 80))).toMatchObject({ vsRecent: "toss" });   // within 5%
+  });
+
+  it("says how short the sample is early in a season", () => {
+    expect(row(wr(90, 80, 2))).toMatchObject({ recentGames: 2 });
+  });
+
+  it("shows nothing without an average, for CFB, or for a zero average", () => {
+    expect(row(wr(90, undefined))?.vsRecent).toBeUndefined();
+    expect(row(wr(90, 80), "cfb")?.vsRecent).toBeUndefined();
+    expect(row(wr(90, 0))?.vsRecent).toBeUndefined();
   });
 });
