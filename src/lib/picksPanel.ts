@@ -241,21 +241,6 @@ function datedFor(entry: { report_season?: number; report_week?: number; source?
   return "the week of this fixture";
 }
 
-/** The model's projection is the median of its own distribution, so "over its own median" says nothing. What a
- *  reader can use is where that projection sits against the player's own recent form: his plain mean over his last
- *  few games (served as `recent_avg`). NFL only until another backend serves it. */
-const VS_RECENT_BAND = 0.05; // within 5% of his average reads as "in line"
-
-export function vsRecent(p: PlayerPropPrediction, market: Market, value: number, sport: string): Partial<PickRow> {
-  if (sport !== "nfl") return {};
-  const avg = p.recent_avg?.[market];
-  const games = p.recent_avg?.games;
-  if (typeof avg !== "number" || !Number.isFinite(avg) || avg <= 0 || !games) return {};
-  const ratio = value / avg;
-  const vsRecentSide = ratio >= 1 + VS_RECENT_BAND ? "over" : ratio <= 1 - VS_RECENT_BAND ? "under" : "toss";
-  return { recentAvg: avg, recentGames: games, vsRecent: vsRecentSide };
-}
-
 /** One quarterback plays: drop a team's backup QBs when the depth chart names an available starter. Unknown (null)
  *  benches nobody; a starter who is out must already be absent from `players`, so his backup stays. Shared by the
  *  ranked lists and the line checker so neither offers a QB who is not playing. */
@@ -428,7 +413,6 @@ export function buildPicksPanel({ sport, props, out, game }: PicksPanelInput): P
         detail: spec.detail,
         value,
         kind: "projection",
-        ...vsRecent(p, spec.market, value, sport),
       }));
     if (rows.length > 0) categories.push({ category: spec.category, rows });
   }
