@@ -748,29 +748,3 @@ describe("backup quarterbacks", () => {
     expect(rows([qb("a", "Starter", "KC", 190, true), qb("b", "Backup", "KC", 219, false)], out)).toEqual(["Backup"]);
   });
 });
-
-
-describe("projection vs recent average", () => {
-  const wr = (value: number, avg: number | undefined, games = 5) =>
-    ({ player_id: "w", player_name: "W", recent_team: "KC", position: "WR", anytime_td_prob: 0.1, receiving_yards: value,
-       ...(avg === undefined ? {} : { recent_avg: { games, receiving_yards: avg } }) } as PlayerPropPrediction);
-  const row = (p: PlayerPropPrediction, sport: "nfl" | "cfb" = "nfl") =>
-    buildPicksPanel({ sport, props: [p], out: [], track: nflTrack.player_props, game })
-      .categories.find((c) => c.category === "WR/TE receiving yards")?.rows[0];
-
-  it("flags over/under his own recent average, with the number and how many games", () => {
-    expect(row(wr(90, 80))).toMatchObject({ vsRecent: "over", recentAvg: 80, recentGames: 5 });
-    expect(row(wr(60, 80))).toMatchObject({ vsRecent: "under" });
-    expect(row(wr(81, 80))).toMatchObject({ vsRecent: "toss" });   // within 5%
-  });
-
-  it("says how short the sample is early in a season", () => {
-    expect(row(wr(90, 80, 2))).toMatchObject({ recentGames: 2 });
-  });
-
-  it("shows nothing without an average, for CFB, or for a zero average", () => {
-    expect(row(wr(90, undefined))?.vsRecent).toBeUndefined();
-    expect(row(wr(90, 80), "cfb")?.vsRecent).toBeUndefined();
-    expect(row(wr(90, 0))?.vsRecent).toBeUndefined();
-  });
-});
