@@ -47,6 +47,14 @@
     }
     handle {
         root * /usr/share/caddy
+        # index.html names the hashed bundle, so it must be revalidated on every load: without a Cache-Control it is
+        # cached heuristically from Last-Modified and a reader keeps running the previous deploy's JS (seen 2026-10-15:
+        # the "Over/under calls" section kept showing for hours after it was removed). The hashed files under
+        # /assets never change, so they are cached for a year.
+        @shell not path /assets/*
+        header @shell Cache-Control "no-cache"
+        @hashed path /assets/*
+        header @hashed Cache-Control "public, max-age=31536000, immutable"
         try_files {path} /index.html
         file_server
     }
