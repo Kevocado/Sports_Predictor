@@ -73,8 +73,8 @@ export function LineChecker({ players }: { players: PlayerPropPrediction[] }) {
         {answer?.status === "not-priced" && <p className="text-sp-text-dim">{answer.reason}</p>}
         {answer?.status === "ok" && (
           <p className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-            <span><span className="text-sp-text-dim">Over {typed}</span> <strong data-testid="lc-over" className="text-lg text-sp-text tabular-nums">{answer.edge === "high" ? "98%+" : answer.edge === "low" ? "2% or less" : pct(answer.pOver)}</strong></span>
-            <span><span className="text-sp-text-dim">Under</span> <strong data-testid="lc-under" className="text-lg text-sp-text tabular-nums">{answer.edge === "low" ? "98%+" : answer.edge === "high" ? "2% or less" : pct(answer.pUnder)}</strong></span>
+            <span><span className="text-sp-text-dim">Over {typed}</span> <strong data-testid="lc-over" className="text-lg text-sp-text tabular-nums">{answer.edge === "high" ? `${pct(answer.pOver)}+` : answer.edge === "low" ? `${pct(answer.pOver)} or less` : pct(answer.pOver)}</strong></span>
+            <span><span className="text-sp-text-dim">Under</span> <strong data-testid="lc-under" className="text-lg text-sp-text tabular-nums">{answer.edge === "low" ? `${pct(answer.pUnder)}+` : answer.edge === "high" ? `${pct(answer.pUnder)} or less` : pct(answer.pUnder)}</strong></span>
           </p>
         )}
         {current && (projection !== undefined || recentValue !== undefined) && (
@@ -86,8 +86,9 @@ export function LineChecker({ players }: { players: PlayerPropPrediction[] }) {
         )}
       </div>
       <p className="text-xs leading-snug text-sp-text-faint">
-        The model's own estimate from past seasons' results, not a bookmaker's price and not betting advice. Lines far from the
-        projection are the least reliable end of the range.
+        The model's own estimate, not a bookmaker's price and not betting advice. Yardage chances are adjusted for the model's
+        past over-confidence (back-tested on four seasons of made-up lines), and lines far from the projection are still the
+        least reliable end of the range.
       </p>
     </section>
   );

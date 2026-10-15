@@ -25,8 +25,8 @@ describe("LineChecker", () => {
     render(<LineChecker players={players} />);
     pick("q", "lc-player");
     pick("250", "lc-line");
-    expect(screen.getByTestId("lc-over")).toHaveTextContent("50%");
-    expect(screen.getByTestId("lc-under")).toHaveTextContent("50%");
+    expect(screen.getByTestId("lc-over")).toHaveTextContent("49%");     // raw 50% -> back-test-corrected 49%
+    expect(screen.getByTestId("lc-under")).toHaveTextContent("51%");
     expect(screen.getByTestId("lc-context")).toHaveTextContent("Model projection 250");
     expect(screen.getByTestId("lc-context")).toHaveTextContent("his 4-game avg 188.8");
   });
@@ -34,7 +34,7 @@ describe("LineChecker", () => {
   it("a low line is a likely over", () => {
     render(<LineChecker players={players} />);
     pick("q", "lc-player"); pick("190", "lc-line");
-    expect(screen.getByTestId("lc-over")).toHaveTextContent("70%");
+    expect(screen.getByTestId("lc-over")).toHaveTextContent("65%");     // raw 70% -> corrected 65%
   });
 
   it("counts need a half-point line and say so", () => {
