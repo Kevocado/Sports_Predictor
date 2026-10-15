@@ -101,6 +101,7 @@ export function createApiClient(baseUrl: string): SportApi {
       get<GamePrediction>(`/games/${season}/${week}/${gameId}/prediction`),
     playerProps: (season, week) => get<PlayerPropPrediction[]>(`/players/${season}/${week}/props`),
     playerOut: (season, week) => get<OutPlayerEntry[]>(`/players/${season}/${week}/out`),
+    marketLines: (season, week) => get(`/players/${season}/${week}/market-lines`),
     trackRecord: () => get<TrackRecord>("/track-record"),
     retrain: () => post<RetrainResponse>("/retrain"),
     gameVerdict: (gameId) => getOrNull<GameVerdict>(`/games/${gameId}/verdict`),

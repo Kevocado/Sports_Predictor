@@ -553,6 +553,8 @@ export interface SportApi {
    *  is the backend's contract; this client does not convert a failure into an
    *  empty list, so a rejected promise stays a rejection the caller can word. */
   playerOut: (season: number, week: number) => Promise<OutPlayerEntry[]>;
+  /** NFL only: Kalshi's live per-player ladders (fail-soft on the backend; absent on CFB). */
+  marketLines?: (season: number, week: number) => Promise<{ fetched_at: string | null; lines: import("./lib/lineCheck").MarketLine[] }>;
   trackRecord: () => Promise<TrackRecord>;
   retrain: () => Promise<RetrainResponse>;
   gameVerdict: (gameId: string) => Promise<GameVerdict | null>;
