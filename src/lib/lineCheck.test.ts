@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PlayerPropPrediction } from "../types";
-import { calibrate, CALIBRATION_KNOTS, checkLine, lineOptions, pOverFromQuantiles, QUANTILE_LEVELS } from "./lineCheck";
+import { checkLine, lineOptions, marketLadderFor, pOverFromQuantiles, QUANTILE_LEVELS, type MarketLine } from "./lineCheck";
 
 // values 100..(100+300q): the quantile of level q is 100 + 300q, so P(over line) = 1 - (line-100)/300 inside the range
 const lin = QUANTILE_LEVELS.map((q) => Math.round((100 + 300 * q) * 10) / 10);
@@ -30,12 +30,6 @@ describe("checkLine", () => {
     const a = checkLine(player(), "passing_yards", 250);
     expect(a.status === "ok" && a.pOver + a.pUnder).toBeCloseTo(1, 10);
   });
-  it("shows the back-test-corrected probability, not the raw one", () => {
-    const a = checkLine(player(), "passing_yards", 170);
-    const raw = pOverFromQuantiles(lin, 170);                      // ~0.77: a softer number is shown
-    expect(a.status === "ok" && a.pOver).toBeLessThan(raw);
-    expect(a.status === "ok" && a.pOver).toBeCloseTo(calibrate(raw), 10);
-  });
   it("flags answers pinned at the clamp so the page can say 'at least'/'at most'", () => {
     expect(checkLine(player(), "passing_yards", 10)).toMatchObject({ status: "ok", edge: "high" });
   });
@@ -60,22 +54,6 @@ describe("lineOptions", () => {
 });
 
 
-describe("calibrate", () => {
-  it("is monotone, stays inside [0.02, 0.98] and only softens high claims", () => {
-    let prev = -1;
-    for (let p = 0.02; p <= 0.98; p += 0.01) { const c = calibrate(p); expect(c).toBeGreaterThanOrEqual(prev); prev = c; expect(c).toBeGreaterThan(0.02 - 1e-9); expect(c).toBeLessThan(0.98); }
-    expect(calibrate(0.9)).toBeLessThan(0.9);
-    expect(CALIBRATION_KNOTS.every(([x], i, a) => i === 0 || x > a[i - 1][0])).toBe(true);
-  });
-  it("interpolates between knots and is flat outside them", () => {
-    expect(calibrate(0.5)).toBeCloseTo(0.49, 10);
-    expect(calibrate(0.52)).toBeCloseTo((0.49 + 0.504) / 2, 6);
-    expect(calibrate(0.99)).toBe(0.808);
-    expect(calibrate(0.0)).toBe(0.025);
-  });
-});
-
-
 describe("sanity guard: a distribution that disagrees with the projection is not offered", () => {
   it("hides a stat whose median is far from the same model's point projection", () => {
     const bad = player({ position: "WR", receiving_yards: 86.9, line_check: { yardage: { receiving_yards: lin.map((v) => v * 0.1) } } });  // median ~25 vs 86.9
@@ -85,5 +63,28 @@ describe("sanity guard: a distribution that disagrees with the projection is not
   it("keeps a stat whose median agrees, and one with no projection to compare against", () => {
     expect(lineOptions(player({ passing_yards: 250 })).map((o) => o.market)).toEqual(["passing_yards"]);
     expect(lineOptions(player()).map((o) => o.market)).toEqual(["passing_yards"]);
+  });
+});
+
+
+describe("marketLadderFor", () => {
+  const ladder = (over: Partial<MarketLine> = {}): MarketLine => ({ team: "SEA", initial: "J", last: "SMITHNJIGBA", stat: "receiving_yards", rungs: [{ line: 69.5, p_over: 0.6 }], ...over });
+  const jsn = { player_id: "w", player_name: "J.Smith-Njigba", recent_team: "SEA", position: "WR", anytime_td_prob: 0.1 } as PlayerPropPrediction;
+
+  it("matches by team, first initial and last name, ignoring hyphens and case", () => {
+    expect(marketLadderFor([ladder()], jsn, "receiving_yards")).toEqual([{ line: 69.5, p_over: 0.6 }]);
+  });
+  it("does not match another team's player, another stat, or an ambiguous pair", () => {
+    expect(marketLadderFor([ladder({ team: "DEN" })], jsn, "receiving_yards")).toEqual([]);
+    expect(marketLadderFor([ladder({ stat: "rushing_yards" })], jsn, "receiving_yards")).toEqual([]);
+    expect(marketLadderFor([ladder(), ladder()], jsn, "receiving_yards")).toEqual([]);
+  });
+  it("uses Kalshi's rushing-yards market for a QB's qb_rushing_yards", () => {
+    const qb = { ...jsn, player_name: "S.Darnold", position: "QB" } as PlayerPropPrediction;
+    expect(marketLadderFor([ladder({ initial: "S", last: "DARNOLD", stat: "rushing_yards" })], qb, "qb_rushing_yards")).toHaveLength(1);
+  });
+  it("is empty when nothing was fetched", () => {
+    expect(marketLadderFor(null, jsn, "receiving_yards")).toEqual([]);
+    expect(marketLadderFor([], jsn, "receiving_yards")).toEqual([]);
   });
 });

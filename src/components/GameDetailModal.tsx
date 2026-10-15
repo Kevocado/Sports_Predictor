@@ -22,6 +22,7 @@ import type { GamePrediction, GameSummary, GameVerdict, HeadToHead as HeadToHead
 // about itself. `PicksList` renders; this decides the words.
 import { buildPicksPanel, eligiblePlayers, NO_GRADED_RECORD } from "../lib/picksPanel";
 import { LineChecker } from "./LineChecker";
+import type { MarketLine } from "../lib/lineCheck";
 import { TeamName } from "./TeamName";
 import { MarketBar } from "./MarketBar";
 import { FormStrip } from "./FormStrip";
@@ -255,6 +256,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
   );
   const [predictionError, setPredictionError] = useState<string | null>(null);
   const [allProps, setAllProps] = useState<PlayerPropPrediction[] | null>(null);
+  const [marketLines, setMarketLines] = useState<MarketLine[] | null>(null);
   const [propsLoading, setPropsLoading] = useState(true);
   // Phase 2 task 4: the model's own ranked calls, plus the availability facts
   // behind them. `null` until both have landed, and a REJECTION stays distinct
@@ -377,6 +379,13 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
     api.gamePrediction(game.season, game.week, game.game_id)
       .then((r) => { if (!cancelled) setPrediction(r); })
       .catch((e) => { if (!cancelled) setPredictionError(e instanceof Error ? e.message : String(e)); });
+
+    // Kalshi's live lines for the line checker. NFL only, and any failure is silence: it only decorates the checker.
+    if (sport !== "cfb") {
+      api.marketLines?.(game.season, game.week)
+        .then((r) => { if (!cancelled) setMarketLines(r?.lines ?? []); })
+        .catch(() => { if (!cancelled) setMarketLines([]); });
+    }
 
     // Fetch player props safely (fails silently to an empty array so it doesn't break UI)
     api.playerProps(game.season, game.week)
@@ -806,7 +815,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
               </p>
             </section>
           )}
-          {lineCheckPlayers.length > 0 && <LineChecker players={lineCheckPlayers} />}
+          {lineCheckPlayers.length > 0 && <LineChecker players={lineCheckPlayers} marketLines={marketLines} />}
 
           {/* Predicted box score — the model's own markets, grouped by team then
               position (A4). The three-state team control sits on the header

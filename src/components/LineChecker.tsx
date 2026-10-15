@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { PlayerPropPrediction } from "../types";
-import { checkLine, lineOptions, MARKET_LABEL } from "../lib/lineCheck";
+import { checkLine, lineOptions, marketLadderFor, MARKET_LABEL, type MarketLine } from "../lib/lineCheck";
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const FIELD = "w-full rounded-lg border border-sp-border bg-sp-800 px-3 py-2 text-sm text-sp-text focus:outline-none focus:ring-1 focus:ring-sp-accent";
@@ -11,7 +11,7 @@ const FIELD = "w-full rounded-lg border border-sp-border bg-sp-800 px-3 py-2 tex
  * It answers from the model's own distribution for that player (shipped on the prop row as `line_check`), so the
  * number is the model's estimate and not a price. It makes no recommendation and never says "bet".
  */
-export function LineChecker({ players }: { players: PlayerPropPrediction[] }) {
+export function LineChecker({ players, marketLines }: { players: PlayerPropPrediction[]; marketLines?: MarketLine[] | null }) {
   const choices = useMemo(
     () => players.map((p) => ({ p, options: lineOptions(p) })).filter((c) => c.options.length > 0)
       .sort((a, b) => a.p.recent_team.localeCompare(b.p.recent_team) || a.p.player_name.localeCompare(b.p.player_name)),
@@ -31,6 +31,8 @@ export function LineChecker({ players }: { players: PlayerPropPrediction[] }) {
   const typed = lineText.trim() === "" ? null : Number(lineText);
   const answer = current && typed !== null ? checkLine(current.p, activeMarket, typed) : null;
   const teams = [...new Set(choices.map((c) => c.p.recent_team))];
+  // Kalshi's own prices for this player and stat: real lines the user does not have to type, beside our chance at each.
+  const ladder = current ? marketLadderFor(marketLines, current.p, activeMarket) : [];
 
   return (
     <section aria-label="Check a line" data-testid="line-checker" className="flex flex-col gap-3 rounded-xl border border-sp-border p-4">
@@ -65,6 +67,30 @@ export function LineChecker({ players }: { players: PlayerPropPrediction[] }) {
         </label>
       </div>
 
+      {ladder.length > 0 && current && (
+        <div data-testid="lc-kalshi" className="flex flex-col gap-1.5">
+          <p className="text-xs font-semibold text-sp-text-dim">Kalshi market lines · tap one to check it</p>
+          <table className="w-full text-xs tabular-nums">
+            <thead>
+              <tr className="text-left text-sp-text-faint"><th className="py-1 font-normal">Line</th><th className="font-normal">Market</th><th className="font-normal">Model</th></tr>
+            </thead>
+            <tbody>
+              {ladder.map((r) => {
+                const ours = checkLine(current.p, activeMarket, r.line);
+                return (
+                  <tr key={r.line} data-testid="lc-kalshi-row" className="cursor-pointer border-t border-sp-border hover:bg-sp-800" onClick={() => setLineText(String(r.line))}>
+                    <td className="py-1.5 text-sp-text">Over {r.line}</td>
+                    <td className="text-sp-text-dim">{pct(r.p_over)}</td>
+                    <td className="text-sp-text-dim">{ours.status === "ok" ? pct(ours.pOver) : "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="text-xs leading-snug text-sp-text-faint">Market = Kalshi's price for that outcome as a chance (a prediction market, not a sportsbook line). Model = our chance of the over at the same line.</p>
+        </div>
+      )}
+
       <div aria-live="polite" data-testid="lc-result" className="min-h-[3rem] text-sm">
         {!current && <p className="text-sp-text-faint">Choose a player to begin.</p>}
         {current && answer === null && <p className="text-sp-text-faint">Type a line for {MARKET_LABEL[activeMarket] ?? activeMarket}.</p>}
@@ -86,9 +112,8 @@ export function LineChecker({ players }: { players: PlayerPropPrediction[] }) {
         )}
       </div>
       <p className="text-xs leading-snug text-sp-text-faint">
-        The model's own estimate, not a bookmaker's price and not betting advice. Yardage chances are adjusted for the model's
-        past over-confidence (back-tested on four seasons of made-up lines), and lines far from the projection are still the
-        least reliable end of the range.
+        The model's own estimate, not a bookmaker's price and not betting advice. Lines far from the projection are the least
+        reliable end of the range.
       </p>
     </section>
   );

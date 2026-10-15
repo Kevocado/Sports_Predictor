@@ -25,8 +25,8 @@ describe("LineChecker", () => {
     render(<LineChecker players={players} />);
     pick("q", "lc-player");
     pick("250", "lc-line");
-    expect(screen.getByTestId("lc-over")).toHaveTextContent("49%");     // raw 50% -> back-test-corrected 49%
-    expect(screen.getByTestId("lc-under")).toHaveTextContent("51%");
+    expect(screen.getByTestId("lc-over")).toHaveTextContent("50%");
+    expect(screen.getByTestId("lc-under")).toHaveTextContent("50%");
     expect(screen.getByTestId("lc-context")).toHaveTextContent("Model projection 250");
     expect(screen.getByTestId("lc-context")).toHaveTextContent("his 4-game avg 188.8");
   });
@@ -34,7 +34,7 @@ describe("LineChecker", () => {
   it("a low line is a likely over", () => {
     render(<LineChecker players={players} />);
     pick("q", "lc-player"); pick("190", "lc-line");
-    expect(screen.getByTestId("lc-over")).toHaveTextContent("65%");     // raw 70% -> corrected 65%
+    expect(screen.getByTestId("lc-over")).toHaveTextContent("70%");
   });
 
   it("counts need a half-point line and say so", () => {
@@ -62,5 +62,27 @@ describe("LineChecker", () => {
   it("renders nothing when no one can be priced", () => {
     const { container } = render(<LineChecker players={[players[2]]} />);
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+
+describe("LineChecker with Kalshi lines", () => {
+  const lines = [{ team: "SEA", initial: "S", last: "DARNOLD", stat: "passing_yards", rungs: [{ line: 199.5, p_over: 0.52 }, { line: 249.5, p_over: 0.2 }] }];
+
+  it("lists the market's lines beside ours and tapping one fills the line", () => {
+    render(<LineChecker players={players} marketLines={lines} />);
+    pick("q", "lc-player");
+    const rows = screen.getAllByTestId("lc-kalshi-row");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent("Over 199.5"); expect(rows[0]).toHaveTextContent("52%");
+    fireEvent.click(rows[1]);
+    expect((screen.getByTestId("lc-line") as HTMLInputElement).value).toBe("249.5");
+    expect(screen.getByTestId("lc-over")).toBeInTheDocument();
+  });
+
+  it("shows no market block when Kalshi has nothing for this player", () => {
+    render(<LineChecker players={players} marketLines={[]} />);
+    pick("q", "lc-player");
+    expect(screen.queryByTestId("lc-kalshi")).toBeNull();
   });
 });
