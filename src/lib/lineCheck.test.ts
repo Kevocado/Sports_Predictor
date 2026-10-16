@@ -70,3 +70,25 @@ describe("sanity guard: a distribution that disagrees with the projection is not
     expect(lineOptions(player()).map((o) => o.market)).toEqual(["passing_yards"]);
   });
 });
+
+describe("marketLadderFor", () => {
+  const ladder = (over: Partial<MarketLine> = {}): MarketLine => ({ team: "SEA", initial: "J", last: "SMITHNJIGBA", stat: "receiving_yards", rungs: [{ line: 69.5, p_over: 0.6 }], ...over });
+  const jsn = { player_id: "w", player_name: "J.Smith-Njigba", recent_team: "SEA", position: "WR", anytime_td_prob: 0.1 } as PlayerPropPrediction;
+
+  it("matches by team, first initial and last name, ignoring hyphens and case", () => {
+    expect(marketLadderFor([ladder()], jsn, "receiving_yards")).toEqual([{ line: 69.5, p_over: 0.6 }]);
+  });
+  it("does not match another team's player, another stat, or an ambiguous pair", () => {
+    expect(marketLadderFor([ladder({ team: "DEN" })], jsn, "receiving_yards")).toEqual([]);
+    expect(marketLadderFor([ladder({ stat: "rushing_yards" })], jsn, "receiving_yards")).toEqual([]);
+    expect(marketLadderFor([ladder(), ladder()], jsn, "receiving_yards")).toEqual([]);
+  });
+  it("uses Kalshi's rushing-yards market for a QB's qb_rushing_yards", () => {
+    const qb = { ...jsn, player_name: "S.Darnold", position: "QB" } as PlayerPropPrediction;
+    expect(marketLadderFor([ladder({ initial: "S", last: "DARNOLD", stat: "rushing_yards" })], qb, "qb_rushing_yards")).toHaveLength(1);
+  });
+  it("is empty when nothing was fetched", () => {
+    expect(marketLadderFor(null, jsn, "receiving_yards")).toEqual([]);
+    expect(marketLadderFor([], jsn, "receiving_yards")).toEqual([]);
+  });
+});
