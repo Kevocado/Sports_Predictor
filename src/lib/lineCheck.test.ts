@@ -55,17 +55,21 @@ describe("lineOptions", () => {
 
 
 describe("sanity guard: a distribution that disagrees with the projection is not offered", () => {
-  it("hides a stat whose median is far from the same model's point projection", () => {
-    const bad = player({ position: "WR", receiving_yards: 86.9, line_check: { yardage: { receiving_yards: lin.map((v) => v * 0.1) } } });  // median ~25 vs 86.9
+  it("hides a stat whose projection falls outside the distribution's 10th-90th band", () => {
+    const bad = player({ position: "WR", receiving_yards: 86.9, line_check: { yardage: { receiving_yards: lin.map((v) => v * 0.1) } } });   // q90 ~ 37 vs 86.9
     expect(lineOptions(bad)).toEqual([]);
     expect(checkLine(bad, "receiving_yards", 40).status).toBe("not-priced");
   });
-  it("keeps a stat whose median agrees, and one with no projection to compare against", () => {
+  it("keeps a right-skewed stat whose MEAN projection is far above its median but inside the band", () => {
+    const skew = [0, 0, 0, 0, 0.5, 1, 1.5, 2, 2, 2.1, 3, 5, 9, 30, 40, 44, 48, 55, 70];       // median 2.1, q90 30
+    const rb = player({ position: "RB", rushing_yards: 14, line_check: { yardage: { rushing_yards: skew } } });
+    expect(lineOptions(rb).map((o) => o.market)).toEqual(["rushing_yards"]);
+  });
+  it("keeps a stat whose projection is inside the band, and one with no projection to compare against", () => {
     expect(lineOptions(player({ passing_yards: 250 })).map((o) => o.market)).toEqual(["passing_yards"]);
     expect(lineOptions(player()).map((o) => o.market)).toEqual(["passing_yards"]);
   });
 });
-
 
 describe("marketLadderFor", () => {
   const ladder = (over: Partial<MarketLine> = {}): MarketLine => ({ team: "SEA", initial: "J", last: "SMITHNJIGBA", stat: "receiving_yards", rungs: [{ line: 69.5, p_over: 0.6 }], ...over });

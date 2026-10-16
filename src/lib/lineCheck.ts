@@ -22,16 +22,17 @@ export const MARKET_LABEL: Record<string, string> = {
 export interface LineOption { market: string; label: string; kind: "yardage" | "count" }
 
 /** The stats this player can be checked on, in a stable order. */
-/** A distribution whose median is far from the same model's own point projection is not trustworthy for this player (the
- *  two come from different fits; a serving-time input problem shows up as exactly this). Beyond this relative gap the
- *  stat is not offered at all, rather than answering confidently from a distribution that disagrees with the projection. */
-export const MAX_MEDIAN_VS_PROJECTION_GAP = 0.3;
-const MEDIAN_INDEX = QUANTILE_LEVELS.indexOf(0.5);
+/** The point projection is a MEAN (squared-error fit) and a yardage distribution is right-skewed, so its median sits below
+ *  it by design (a back-up RB: mean 14, median 2). The two must not be compared directly. What is checkable is that the
+ *  projection lies inside the distribution's own 10th-90th percentile band; one that falls outside it means the two
+ *  disagree about the player (the 2026-10-15 defect: projection 86.9, 90th percentile 79.4). Such a stat is not offered. */
+const Q10_INDEX = QUANTILE_LEVELS.indexOf(0.1);
+const Q90_INDEX = QUANTILE_LEVELS.indexOf(0.9);
 
 export function distributionAgreesWithProjection(p: PlayerPropPrediction, market: string, values: number[]): boolean {
   const projection = (p as unknown as Record<string, number | undefined>)[market];
   if (typeof projection !== "number" || !Number.isFinite(projection) || projection <= 0) return true;   // nothing to compare against
-  return Math.abs(values[MEDIAN_INDEX] - projection) / projection <= MAX_MEDIAN_VS_PROJECTION_GAP;
+  return projection >= values[Q10_INDEX] && projection <= values[Q90_INDEX];
 }
 
 export function lineOptions(p: PlayerPropPrediction): LineOption[] {
