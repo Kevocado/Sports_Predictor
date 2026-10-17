@@ -1,12 +1,11 @@
 import type {
   CalibrationSeries,
-  GamesTrackRecord,
   MarketTally,
   RecordModel,
   WeekPoint,
 } from "../predictor-ui";
 import { marketLabel } from "../predictor-ui";
-import type { GamesSummary, PlayerPropsTrackRecord, PerPickRow, TrackRecord } from "../types";
+import type { GamesTrackRecord, PlayerPropsTrackRecord, PerPickRow, TrackRecord } from "../types";
 
 type SportMarket = "moneyline" | "ats" | "totals";
 
@@ -85,7 +84,7 @@ function recentPicks(per_pick: PerPickRow[] | undefined): { id: string; label: s
     actual: p.actual,
     hit: p.hit,
     when: p.snapshotted_at,
-    madeBeforeKickoff: p.made_before_kickoff,
+    madeBeforeKickoff: !!p.made_before_kickoff,
   }));
 }
 

@@ -239,7 +239,7 @@ describe("per-pick detail", () => {
     summary.click();
     expect(details.getAttribute("open")).not.toBeNull();
     const table = screen.getByRole("table", { name: /per-pick detail/i });
-    const rows = [...table.querySelectorAll("tbody tr")];
+    const rows = [...table.querySelectorAll<HTMLElement>("tbody tr")];
     expect(rows).toHaveLength(3);
   });
 
@@ -248,7 +248,7 @@ describe("per-pick detail", () => {
     const summary = screen.getByText("Every recorded pick");
     summary.click();
     const table = screen.getByRole("table", { name: /per-pick detail/i });
-    const rows = [...table.querySelectorAll("tbody tr")];
+    const rows = [...table.querySelectorAll<HTMLElement>("tbody tr")];
     expect(rows).toHaveLength(3);
     // No raw game ids anywhere on the page.
     expect(document.body.textContent).not.toContain("401547");
@@ -277,7 +277,7 @@ describe("per-pick detail", () => {
     const summary = screen.getByText("Every recorded pick");
     summary.click();
     const table = screen.getByRole("table", { name: /per-pick detail/i });
-    const rows = [...table.querySelectorAll("tbody tr")];
+    const rows = [...table.querySelectorAll<HTMLElement>("tbody tr")];
     expect(rows).toHaveLength(4);
     expect(document.body.textContent).not.toContain("cfb1");
     expect(document.body.textContent).not.toContain("cfb2");
