@@ -146,7 +146,7 @@ export function TrackRecordPage() {
                       key: "counted",
                       label: "In the record",
                       value: (r: { counted?: boolean }) => (r.counted ? 1 : 0),
-                      render: (r) => (r.counted ? "counted" : "history, not the counted pick"),
+                      render: (r: { counted?: boolean }) => (r.counted ? "counted" : "history, not the counted pick"),
                     }]
                   : []),
                 { key: "time", label: "Time made", value: (r) => formatPickTime(r.snapshotted_at) },

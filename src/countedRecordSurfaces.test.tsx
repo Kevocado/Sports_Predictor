@@ -23,7 +23,7 @@
  * something about the network, not about the agreement.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { GamesPage } from "./pages/GamesPage";
 import { TrackRecordPage } from "./pages/TrackRecordPage";
 import type {
@@ -270,7 +270,8 @@ describe("the two surfaces, reading one record", () => {
     const summary = screen.getByText("Every recorded pick");
     summary.click();
     const table = screen.getByRole("table", { name: /per-pick detail/i });
-    const rows = [...table.querySelectorAll("tbody tr")];
+    const rows = [...table.querySelectorAll<HTMLElement>("tbody tr")];
+
     // Column order: Market / Pick / Actual / Result / Made / Time made.
     const cells = (row: HTMLElement) => [...row.querySelectorAll("td")].map((c) => c.textContent?.trim());
     // Descending by snapshotted_at: g2 (Bills, after kickoff) then g1 (Ravens, before kickoff).
