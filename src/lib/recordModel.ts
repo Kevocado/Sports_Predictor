@@ -6,7 +6,7 @@ import type {
   WeekPoint,
 } from "../predictor-ui";
 import { marketLabel } from "../predictor-ui";
-import type { GamesSummary, PlayerPropsTrackRecord, PerPickRow } from "../types";
+import type { GamesSummary, PlayerPropsTrackRecord, PerPickRow, TrackRecord } from "../types";
 
 type SportMarket = "moneyline" | "ats" | "totals";
 
