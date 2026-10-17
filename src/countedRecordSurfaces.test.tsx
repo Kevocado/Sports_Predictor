@@ -219,18 +219,22 @@ describe("the two surfaces, reading one record", () => {
     expect(tally).toEqual({ hits: 1, settled: 2 });
 
     render(<TrackRecordPage />);
-    await screen.findByTestId("accuracy-bar-moneyline");
+    await screen.findByTestId("tally-moneyline");
     // The record's per-pick list IS the tally's population, one row per counted
     // pick, so a reader tallying the list arrives at the number the cards state.
+    const summary = screen.getByText("Every recorded pick");
+    summary.click();
     const rows = pickRows();
     expect(rows).toHaveLength(tally.settled);
-    const hits = rows.filter((r) => within(r).queryByText("hit")).length;
+    const hits = rows.filter((r) => r.textContent?.includes("Right")).length;
     expect(hits).toBe(tally.hits);
     // The same n the API reports as the headline.
     expect(tally.settled).toBe(RECORD.games.n_resolved);
-    // And the same two verdicts the cards judged their badges on.
-    expect(within(rows[0]).getByText("hit")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("miss")).toBeInTheDocument();
+    // The headline shows the counted tally with the pre-kickoff subset beside it.
+    const headline = document.getElementById("tr-record")!;
+    expect(headline).toHaveTextContent("1 of 2");
+    expect(headline).toHaveTextContent("50%");
+    expect(headline).toHaveTextContent("1 of 1 made before kickoff");
   });
 
   it("reports the SAME pre-kickoff subset on both surfaces", async () => {
@@ -240,10 +244,10 @@ describe("the two surfaces, reading one record", () => {
     expect(card).toEqual({ hits: 1, settled: 1 });
 
     render(<TrackRecordPage />);
-    await screen.findByTestId("accuracy-bar-moneyline");
-    const section = document.getElementById("tr-pre-kickoff")!;
-    // The secondary figure's own denominator, from the same block.
-    expect(within(section).getByText("1 game graded")).toBeInTheDocument();
+    await screen.findByTestId("tally-moneyline");
+    const headline = document.getElementById("tr-record")!;
+    // The secondary figure's own denominator, printed beside the headline.
+    expect(headline).toHaveTextContent("1 of 1 made before kickoff");
     expect(card.settled).toBe(RECORD.games.pre_kickoff!.n_resolved);
     expect(RECORD.games.pre_kickoff!.n_resolved).toBe(
       RECORD.games.n_resolved - RECORD.games.n_rebuilt!,
@@ -262,19 +266,22 @@ describe("the two surfaces, reading one record", () => {
     expect(body()).not.toContain("50%");
 
     render(<TrackRecordPage />);
-    await screen.findByTestId("accuracy-bar-moneyline");
-    const rows = pickRows();
-    // Cell-indexed rather than getByText: "Ravens" is the pick AND the actual on
-// the row that landed, so a bare getByText is ambiguous there and would pass
-    // for the wrong reason. Columns are Game / Gameday / Market / Pick / Actual /
-    // Hit / When made / Time made on this payload.
+    await screen.findByTestId("tally-moneyline");
+    const summary = screen.getByText("Every recorded pick");
+    summary.click();
+    const table = screen.getByRole("table", { name: /per-pick detail/i });
+    const rows = [...table.querySelectorAll("tbody tr")];
+    // Column order: Market / Pick / Actual / Result / Made / Time made.
     const cells = (row: HTMLElement) => [...row.querySelectorAll("td")].map((c) => c.textContent?.trim());
-    // Pick column, then the actual it lost to.
-    expect(cells(rows[0])[3]).toBe("Ravens");
-    expect(cells(rows[0])[5]).toBe("hit");
-    expect(cells(rows[1])[3]).toBe("Bills");
-    expect(cells(rows[1])[4]).toBe("Jets");
-    expect(cells(rows[1])[5]).toBe("miss");
+    // Descending by snapshotted_at: g2 (Bills, after kickoff) then g1 (Ravens, before kickoff).
+    expect(cells(rows[0])[1]).toBe("Bills");
+    expect(cells(rows[0])[2]).toBe("Jets");
+    expect(cells(rows[0])[3]).toBe("Wrong");
+    expect(cells(rows[0])[4]).toBe("After kickoff");
+    expect(cells(rows[1])[1]).toBe("Ravens");
+    expect(cells(rows[1])[2]).toBe("Ravens");
+    expect(cells(rows[1])[3]).toBe("Right");
+    expect(cells(rows[1])[4]).toBe("Before kickoff");
     // The card named the same side the record says was picked.
     expect(body()).toContain("Pick: Ravens · 62%");
     expect(body()).toContain("Pick: Bills · 60%");
@@ -283,9 +290,11 @@ describe("the two surfaces, reading one record", () => {
   it("lets neither surface call a counted pick uncounted", async () => {
     await renderCards();
     expect(body()).not.toMatch(/not\s+counted/i);
+    expect(body()).not.toMatch(/for\s+reference/i);
     render(<TrackRecordPage />);
-    await screen.findByTestId("accuracy-bar-moneyline");
+    await screen.findByTestId("tally-moneyline");
     expect(body()).not.toMatch(/not\s+counted/i);
+    expect(body()).not.toMatch(/for\s+reference/i);
     // The disclosure that replaced exclusion: the pick is counted AND the moment
     // it was made is stated. Both halves, on both surfaces.
     expect(body()).toMatch(/made after kickoff/i);
