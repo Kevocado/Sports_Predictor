@@ -39,16 +39,16 @@ describe("family frame", () => {
     render(<App />);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("NFL Predictor");
     const sports = screen.getByRole("navigation", { name: "Sports" });
-    // The nav is the rendered SITES array, in order. "Home" leads because it is
-    // the way out of any sport: a switcher that only offers other sports strands
-    // a reader who arrived here from the hub with no way back.
+    // GlobalNav drops the Home entry (the wordmark is home) and lists the
+    // sports in canonical order: Premier League, NFL, College football, NBA,
+    // F1, then Paper Trading.
     expect([...sports.querySelectorAll("a")].map((a) => a.textContent)).toEqual([
-      "Home", "PL", "F1", "NFL", "CFB", "NBA",
+      "PL", "NFL", "CFB", "NBA", "F1", "Paper Trading",
     ]);
     expect(screen.getByRole("link", { name: "NFL" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "CFB" })).toHaveAttribute("href", "?sport=cfb");
     expect(screen.getByRole("link", { name: "NBA" }).getAttribute("href")).toMatch(/^https:\/\/nba\./);
-    expect(screen.getByRole("link", { name: "Home" }).getAttribute("href")).toMatch(/^https:\/\//);
+    expect(screen.getByRole("link", { name: "Paper Trading" }).getAttribute("href")).toBe("https://40-160-91-131.sslip.io/paper.html");
     expect(await screen.findByText("No games scheduled for this week.")).toBeInTheDocument();
   });
 });
@@ -57,14 +57,14 @@ describe("App tab shell", () => {
   it("keeps visited tabs mounted and hides inactive ones instead of unmounting", async () => {
     render(<App />);
     expect(await screen.findByText("No games scheduled for this week.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Data Hub" }));
-    // The Hub opens on its Teams sub-tab.
+    fireEvent.click(screen.getByRole("tab", { name: "Teams" }));
+    // The Teams panel opens.
     expect(await screen.findByText("No team stats for 2026 yet.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Players" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Players" })).toBeInTheDocument();
     // Games tab content is still in the document, just hidden.
     expect(screen.getByText("No games scheduled for this week.")).toBeInTheDocument();
     expect(document.querySelector('[data-tab="games"]')).toHaveStyle("display: none");
-    expect(document.querySelector('[data-tab="hub"]')).not.toHaveStyle("display: none");
+    expect(document.querySelector('[data-tab="teams"]')).not.toHaveStyle("display: none");
   });
 
   it("starts the cross-sport preload shortly after first paint", async () => {
@@ -103,8 +103,6 @@ describe("App tab shell", () => {
       render(<App />);
       await vi.advanceTimersByTimeAsync(1000);
       for (let i = 0; i < 20; i++) await Promise.resolve();
-      // Let the warm cache expire, as it would after the device slept.
-      // 61 minutes also expires current-week (1-hour TTL).
       await vi.advanceTimersByTimeAsync(61 * 60_000);
       fetchMock.mockClear();
       Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
