@@ -24,7 +24,7 @@
 // or is the simplified kit page above the right shape for Sports?
 
 import { useEffect, useState } from "react";
-import type { TrackRecord } from "../types";
+import type { TrackRecord, YardageTrackRecord } from "../types";
 import { useSport } from "../context/SportContext";
 import {
   CalibrationChart,
@@ -64,6 +64,7 @@ export function TrackRecordPage() {
   if (!record) return <p className="text-sm text-sp-text-faint">Loading…</p>;
 
   const { games, player_props } = record;
+  const { passing_yards, rushing_yards, receiving_yards } = player_props;
   const model = toRecordModel(record);
   const moment = momentFor(sport);
 
@@ -112,9 +113,47 @@ export function TrackRecordPage() {
         <RecentPicks picks={model.recent ?? []} limit={10} moment={moment} />
       </RecordBlock>
 
+      {/* Yardage markets: how far off the projected yardage was, per market. */}
       <details className="rounded-pr border border-pr-rule bg-pr-panel px-4 py-3 text-sm">
-        <summary className="cursor-pointer font-semibold text-pr-text">Player props</summary>
-        <div className="mt-3">{renderProps(player_props)}</div>
+        <summary className="cursor-pointer font-semibold text-pr-text">Yardage markets</summary>
+        <div className="mt-3">
+          <RecordBlock
+            id="tr-yardage"
+            title="Yardage markets"
+            caption="Mean absolute error: how far off the projected yardage was, per market, in yards."
+          >
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+              <StatTile label="Passing yards" value={maeText(passing_yards)} sub={`${passing_yards.n_resolved} props`} />
+              <StatTile label="Rushing yards" value={maeText(rushing_yards)} sub={`${rushing_yards.n_resolved} props`} />
+              <StatTile label="Receiving yards" value={maeText(receiving_yards)} sub={`${receiving_yards.n_resolved} props`} />
+            </div>
+          </RecordBlock>
+        </div>
+      </details>
+
+      {/* By position: error by position group. */}
+      <details className="rounded-pr border border-pr-rule bg-pr-panel px-4 py-3 text-sm">
+        <summary className="cursor-pointer font-semibold text-pr-text">By position</summary>
+        <div className="mt-3">
+          <RecordBlock id="tr-position" title="By position" caption="Mean absolute error by position group.">
+            <StatTable
+              rows={positionRows(player_props)}
+              rowKey={(r) => `${r.market}-${r.position}`}
+              caption="Position groups with resolved props."
+              columns={[
+                { key: "market", label: "Market", value: (r) => r.market },
+                { key: "position", label: "Position", value: (r) => r.position },
+                { key: "mae", label: "MAE (yards)", numeric: true, value: (r) => r.mae },
+              ]}
+            />
+          </RecordBlock>
+        </div>
+      </details>
+
+      {/* Points: anytime-TD scoring accuracy. */}
+      <details className="rounded-pr border border-pr-rule bg-pr-panel px-4 py-3 text-sm">
+        <summary className="cursor-pointer font-semibold text-pr-text">Points</summary>
+        <div className="mt-3">{renderPoints(player_props)}</div>
       </details>
 
       {per_pick.length > 0 && (
@@ -161,13 +200,36 @@ export function TrackRecordPage() {
   );
 }
 
-function renderProps(player_props: TrackRecord["player_props"]) {
+function maeText(yardage: YardageTrackRecord): string {
+  const mae = yardage.mean_absolute_error;
+  return mae == null ? "—" : `${mae.toLocaleString("en-US")} yards`;
+}
+
+/** Flatten each yardage market's per-position errors into one table. */
+function positionRows(player_props: TrackRecord["player_props"]): { market: string; position: string; mae: number | null }[] {
+  const rows: { market: string; position: string; mae: number | null }[] = [];
+  const markets: { [market: string]: YardageTrackRecord | undefined } = {
+    passing_yards: player_props.passing_yards,
+    rushing_yards: player_props.rushing_yards,
+    receiving_yards: player_props.receiving_yards,
+  };
+  for (const [market, yardage] of Object.entries(markets)) {
+    if (!yardage) continue;
+    if (yardage.by_position) {
+      for (const row of yardage.by_position) rows.push({ market, position: row.position, mae: row.mean_absolute_error });
+    } else if (yardage.mae_by_position) {
+      for (const [position, mae] of Object.entries(yardage.mae_by_position)) rows.push({ market, position, mae });
+    }
+  }
+  return rows;
+}
+
+function renderPoints(player_props: TrackRecord["player_props"]) {
   const td = player_props.anytime_td;
   const buckets = td.confidence_buckets ?? [];
   const called = td.n_called;
-  const anyProps = Object.values(player_props).some((m) => m != null && (m as { n_resolved: number }).n_resolved > 0);
 
-  if (!anyProps) {
+  if (td.n_resolved === 0) {
     return <NotRecorded why="No resolved player props yet — check back once this week's games are final." />;
   }
 

@@ -66,9 +66,9 @@ const NFL_RECORD: TrackRecord = {
         { label: "70%+", n: 2, hit_rate: 1.0 },
       ],
     },
-    passing_yards: { n_resolved: 2, mean_absolute_error: 39.5, mean_signed_error: -20.5 },
-    rushing_yards: { n_resolved: 2, mean_absolute_error: 18.0, mean_signed_error: -3.0 },
-    receiving_yards: { n_resolved: 1, mean_absolute_error: 13.0, mean_signed_error: 2.0 },
+    passing_yards: { n_resolved: 2, mean_absolute_error: 39.5, mean_signed_error: -20.5, by_position: [{ position: "QB", n_resolved: 2, mean_absolute_error: 39.5 }] },
+    rushing_yards: { n_resolved: 2, mean_absolute_error: 18.0, mean_signed_error: -3.0, by_position: [{ position: "RB", n_resolved: 2, mean_absolute_error: 18.0 }] },
+    receiving_yards: { n_resolved: 1, mean_absolute_error: 13.0, mean_signed_error: 2.0, by_position: [{ position: "WR", n_resolved: 1, mean_absolute_error: 13.0 }] },
     receptions: { n_resolved: 0, mean_absolute_error: null, mean_signed_error: null },
     carries: { n_resolved: 1, mean_absolute_error: 3.0, mean_signed_error: -3.0 },
   },
@@ -289,23 +289,44 @@ describe("per-pick detail", () => {
   });
 });
 
-// --- 6. props block ---------------------------------------------------------
+// --- 6. restored prop blocks: yardage markets, by position, points ---------
 
-describe("props block", () => {
-  it("is closed by default", async () => {
+describe("restored prop blocks", () => {
+  /** Find a `<summary>` by its visible text (jsdom does not expose summary as a button role). */
+  const summaryByText = (text: string) =>
+    Array.from(document.querySelectorAll("summary")).find((el) => el.textContent === text)!;
+
+  it("each is a closed details block below Player props", async () => {
     await renderPage();
-    const summary = screen.getByText("Player props");
-    expect(summary).toBeInTheDocument();
-    const details = summary.parentElement as HTMLDetailsElement;
-    expect(details.getAttribute("open")).toBeNull(); // closed by default
-    summary.click();
-    expect(details.getAttribute("open")).not.toBeNull();
-    expect(screen.getByTestId("accuracy-bar-anytime-td")).toBeInTheDocument();
+    for (const text of ["Yardage markets", "By position", "Points"]) {
+      const summary = summaryByText(text);
+      expect(summary).toBeInTheDocument();
+      const details = summary.parentElement as HTMLDetailsElement;
+      expect(details.getAttribute("open")).toBeNull(); // closed by default
+    }
   });
 
-  it("renders the anytime-TD rate with its count", async () => {
+  it("yardage markets render the fixture's MAE per market", async () => {
     await renderPage();
-    const summary = screen.getByText("Player props");
+    const summary = summaryByText("Yardage markets");
+    summary.click();
+    expect(screen.getByText("39.5 yards")).toBeInTheDocument();
+    expect(screen.getByText("18 yards")).toBeInTheDocument();
+    expect(screen.getByText("13 yards")).toBeInTheDocument();
+  });
+
+  it("by position renders the fixture's position errors", async () => {
+    await renderPage();
+    const summary = summaryByText("By position");
+    summary.click();
+    expect(screen.getByText("QB")).toBeInTheDocument();
+    expect(screen.getByText("RB")).toBeInTheDocument();
+    expect(screen.getByText("WR")).toBeInTheDocument();
+  });
+
+  it("points renders the anytime-TD rate with its count", async () => {
+    await renderPage();
+    const summary = summaryByText("Points");
     summary.click();
     expect(screen.getByTestId("accuracy-bar-anytime-td")).toHaveTextContent("67%");
     expect(screen.getByTestId("accuracy-bar-anytime-td")).toHaveTextContent("3 calls of 4 props at 50% or better");
