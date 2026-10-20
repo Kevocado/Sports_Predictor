@@ -43,10 +43,10 @@ describe("family frame", () => {
     // sports in canonical order: Premier League, NFL, College football, NBA,
     // F1, then Paper Trading.
     expect([...sports.querySelectorAll("a")].map((a) => a.textContent)).toEqual([
-      "PL", "NFL", "CFB", "NBA", "F1", "Paper Trading",
+      "Premier League", "NFL", "College football", "NBA", "F1", "Paper Trading",
     ]);
     expect(screen.getByRole("link", { name: "NFL" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "CFB" })).toHaveAttribute("href", "?sport=cfb");
+    expect(screen.getByRole("link", { name: "College football" })).toHaveAttribute("href", "?sport=cfb");
     expect(screen.getByRole("link", { name: "NBA" }).getAttribute("href")).toMatch(/^https:\/\/nba\./);
     expect(screen.getByRole("link", { name: "Paper Trading" }).getAttribute("href")).toBe("https://40-160-91-131.sslip.io/paper.html");
     expect(await screen.findByText("No games scheduled for this week.")).toBeInTheDocument();
