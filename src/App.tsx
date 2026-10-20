@@ -27,7 +27,7 @@ function tabFromSearch(search: string): Tab {
   return "games";
 }
 
-// The Teams panel resolves its own season (same as HubPage did); every other
+// The Teams panel resolves its own season; every other
 // panel reads what it needs from SportContext.
 function TeamsPage() {
   const { api, sport } = useSport();
