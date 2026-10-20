@@ -1,14 +1,6 @@
-import type { SiteLink } from "../predictor-ui";
+import { siteLinks, type SiteLink } from "../predictor-ui";
 
-// Every Predictor site, for the family switcher. NFL and CFB live in this
-// app (?sport=); the others are their own VPS subdomains. Change the hosts
-// here when the real domain lands. The hub entry is the way out of any
-// sport, so it belongs first.
-export const SITES: SiteLink[] = [
-  { sport: "hub", label: "Home", href: "https://40-160-91-131.sslip.io" },
-  { sport: "pl", label: "Premier League", href: "https://pl.40-160-91-131.sslip.io" },
-  { sport: "nfl", label: "NFL", href: "?sport=nfl" },
-  { sport: "cfb", label: "College football", href: "?sport=cfb" },
-  { sport: "nba", label: "NBA", href: "https://nba.40-160-91-131.sslip.io" },
-  { sport: "f1", label: "F1", href: "https://f1.40-160-91-131.sslip.io" },
-];
+// Every Predictor site, for the family switcher: labels and links come from the shared list in predictor-ui.
+// NFL and CFB live in this one app, so both stay relative (?sport=); the shared helper only makes the CURRENT one so.
+const HOST = "40-160-91-131.sslip.io";
+export const SITES: SiteLink[] = siteLinks("nfl", HOST).map((link) => (link.sport === "cfb" ? { ...link, href: "?sport=cfb" } : link));
