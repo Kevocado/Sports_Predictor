@@ -27,7 +27,7 @@ import { useEffect, useState } from "react";
 import type { TrackRecord, YardageTrackRecord } from "../types";
 import { useSport } from "../context/SportContext";
 import {
-  CalibrationChart,
+  CalibrationBlock,
   HowCounted,
   RecordBlock,
   RecordHeadline,
@@ -79,6 +79,9 @@ export function TrackRecordPage() {
         </p>
       </div>
 
+      {/* Calibration chart as hero: full width under the header, above the record. */}
+      <CalibrationBlock series={model.calibration ?? []} markets={model.markets} />
+
       <RecordBlock id="tr-record" title="Record">
         {games.n_resolved === 0 ? (
           <p className="text-sm text-pr-text-faint">No resolved games yet — check back once this week's games are final.</p>
@@ -100,14 +103,9 @@ export function TrackRecordPage() {
         )}
       </RecordBlock>
 
-      <div className="grid gap-8 lg:grid-cols-2">
-        <RecordBlock id="tr-week" title="By week">
-          <WeekStrip weeks={model.weeks ?? []} />
-        </RecordBlock>
-        <RecordBlock id="tr-calibration" title="Calibration">
-          <CalibrationChart series={model.calibration ?? []} />
-        </RecordBlock>
-      </div>
+      <RecordBlock id="tr-week" title="By week">
+        <WeekStrip weeks={model.weeks ?? []} />
+      </RecordBlock>
 
       <RecordBlock id="tr-recent" title="Latest counted picks">
         <RecentPicks picks={model.recent ?? []} limit={10} moment={moment} />

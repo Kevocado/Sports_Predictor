@@ -1,4 +1,4 @@
-import { kickoff, parseKickoff, spread, type Segment, type Side, type Status } from "../predictor-ui";
+import { kickoff, parseKickoff, pct, spread, type Segment, type Side, type Status } from "../predictor-ui";
 import type { GamePrediction, GameSummary, WeekPrediction } from "../types";
 
 export type CardModel = {
@@ -24,11 +24,23 @@ function localTime(iso: string, timeZone?: string): string {
 
 // Spread, total, weather, rest and (CFB) conferences in plain words. nflverse
 // spread_line is positive when the home team is favoured, so the home line is
-// its negative.
-function metaLine(g: GameSummary): string | undefined {
+// its negative. When the model has priced a cover/over probability against the
+// listed line, the probability replaces the bare line: "KC −3.5 · 57%".
+function metaLine(
+  g: GameSummary,
+  prediction: GamePrediction | null,
+): string | undefined {
   const parts: string[] = [];
-  if (g.spread_line != null) parts.push(spread(g.home_team, -g.spread_line));
-  if (g.total_line != null) parts.push(`Total ${g.total_line}`);
+  if (g.spread_line != null && prediction?.home_cover_prob != null) {
+    parts.push(`Cover ${spread(g.home_team, -g.spread_line)} · ${pct(prediction.home_cover_prob)}`);
+  } else if (g.spread_line != null) {
+    parts.push(spread(g.home_team, -g.spread_line));
+  }
+  if (g.total_line != null && prediction?.over_prob != null) {
+    parts.push(`Over ${g.total_line} · ${pct(prediction.over_prob)}`);
+  } else if (g.total_line != null) {
+    parts.push(`Total ${g.total_line}`);
+  }
   if (g.roof && g.roof !== "outdoors") parts.push(g.roof === "dome" ? "Dome" : "Roof closed");
   if (g.temp != null) parts.push(`${Math.round(g.temp)}°F`);
   if (g.wind != null) parts.push(`${Math.round(g.wind)} mph wind`);
@@ -84,7 +96,7 @@ export function toCardModel(
     right: { code: game.home_team, name: game.home_team },
     centre: final ? `${game.away_score}–${game.home_score}` : localTime(game.gameday, timeZone),
     when: final ? `${day} · Final` : day,
-    meta: metaLine(game),
+    meta: metaLine(game, prediction),
   };
 
   const snapshotProb = week && week.status !== "untracked" ? week.home_win_prob : undefined;
