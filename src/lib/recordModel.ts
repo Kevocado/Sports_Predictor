@@ -55,21 +55,71 @@ function weekPoint(w: { week: number; tracked: boolean; n_games: number; n_money
   return { weekStart: `Week ${w.week}`, n: w.n_games, correct, tracked: w.tracked };
 }
 
-function calibrationSeries(player_props: PlayerPropsTrackRecord): CalibrationSeries[] {
-  const buckets = player_props.anytime_td.confidence_buckets ?? [];
-  const usable = buckets.filter((b) => b.n > 0 && b.hit_rate != null);
-  if (usable.length === 0) return [];
-  return [
-    {
+type RawBucket = { lo: number; hi: number; n: number; hit_rate: number | null };
+
+/**
+ * The backend's game buckets are over the HOME side's probability (0-25%, 25-50%, 50-75%, 75-100% of "home wins" /
+ * "home covers" / "goes over"). The chart is "how sure was the pick": a 30% home chance is a 70% pick on the other side,
+ * and that pick was right when the home side did NOT win. So a bucket whose upper edge is at or below 50% is mirrored
+ * (confidence 1-hi..1-lo, right = n - hits) and merged with the bucket it lands on; otherwise the chart's axis (which
+ * starts at 45%) would silently drop every away-leaning pick.
+ */
+export function foldGameBuckets(buckets: RawBucket[]): { bucket: string; n: number; correct: number }[] {
+  const merged = new Map<string, { lo: number; hi: number; n: number; correct: number }>();
+  const add = (lo: number, hi: number, n: number, correct: number) => {
+    const key = `${lo.toFixed(4)}-${hi.toFixed(4)}`;
+    const held = merged.get(key) ?? { lo, hi, n: 0, correct: 0 };
+    held.n += n;
+    held.correct += correct;
+    merged.set(key, held);
+  };
+  for (const b of buckets) {
+    if (b.n <= 0 || b.hit_rate == null) continue;
+    const hits = Math.round(b.hit_rate * b.n);
+    if (b.hi <= 0.5) add(1 - b.hi, 1 - b.lo, b.n, b.n - hits);
+    else if (b.lo >= 0.5) add(b.lo, b.hi, b.n, hits);
+    // a bucket straddling 50% cannot be assigned to one side: left out rather than guessed
+  }
+  return [...merged.values()]
+    .sort((x, y) => x.lo - y.lo)
+    .map((m) => ({ bucket: `${Math.round(m.lo * 100)}-${Math.round(m.hi * 100)}%`, n: m.n, correct: m.correct }));
+}
+
+function calibrationSeries(games: GamesTrackRecord, player_props: PlayerPropsTrackRecord): CalibrationSeries[] {
+  const series: CalibrationSeries[] = [];
+
+  // Games markets: moneyline, spread (ats), total — from the backend's
+  // get_calibration() buckets, converted to the hub's bucket shape.
+  const cal = games.calibration;
+  if (cal) {
+    const markets: { key: string; label: string; buckets: { lo: number; hi: number; n: number; hit_rate: number | null }[] }[] = [
+      { key: "moneyline", label: "Moneyline", buckets: cal.winner },
+      { key: "ats", label: "Spread", buckets: cal.spread },
+      { key: "totals", label: "Total", buckets: cal.total },
+    ];
+    for (const m of markets) {
+      const folded = foldGameBuckets(m.buckets);
+      if (folded.length === 0) continue;
+      series.push({ key: m.key, label: m.label, buckets: folded });
+    }
+  }
+
+  // Player props: anytime TD confidence buckets.
+  const tdBuckets = player_props.anytime_td.confidence_buckets ?? [];
+  const usableTd = tdBuckets.filter((b) => b.n > 0 && b.hit_rate != null);
+  if (usableTd.length > 0) {
+    series.push({
       key: "anytime_td",
       label: "Anytime TD",
-      buckets: usable.map((b) => ({
+      buckets: usableTd.map((b) => ({
         bucket: b.label,
         n: b.n,
         correct: b.hit_rate != null ? Math.round(b.hit_rate * b.n) : 0,
       })),
-    },
-  ];
+    });
+  }
+
+  return series;
 }
 
 function recentPicks(per_pick: PerPickRow[] | undefined): { id: string; label: string; pick: string; actual: string; hit: boolean | null; when: string; madeBeforeKickoff: boolean }[] {
@@ -106,7 +156,7 @@ export function toRecordModel(record: TrackRecord): RecordModel {
     lead,
     headline: "counted",
     weeks: (games.weekly ?? []).map(weekPoint),
-    calibration: calibrationSeries(record.player_props),
+    calibration: calibrationSeries(record.games, record.player_props),
     recent: recentPicks(games.per_pick),
   };
 }
