@@ -408,7 +408,12 @@ export interface PlayerPropsTrackRecord {
   receptions?: YardageTrackRecord;
   carries?: YardageTrackRecord;
 }
-export interface TrackRecord { games: GamesTrackRecord; player_props: PlayerPropsTrackRecord; }
+export interface TrackRecord {
+  games: GamesTrackRecord;
+  player_props: PlayerPropsTrackRecord;
+  /** Home-side reliability buckets (winner/spread/total). The routes attach them at the TOP level of the response. */
+  calibration?: GameCalibration;
+}
 export interface RetrainResponse { trained_at: string; chosen_candidate: string; }
 export interface MarketVerdict { hit: boolean; predicted: string; actual?: string; }
 export interface GameVerdict { game_id: string; resolved: boolean; moneyline: MarketVerdict; ats: MarketVerdict | null; totals: MarketVerdict | null; actual_home_score?: number; actual_away_score?: number; home_spread_line?: number | null; total_line?: number | null; }

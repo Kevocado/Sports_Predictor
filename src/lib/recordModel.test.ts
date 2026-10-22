@@ -19,3 +19,27 @@ describe("foldGameBuckets", () => {
     expect(foldGameBuckets([{ lo: 0.5, hi: 0.75, n: 0, hit_rate: null }])).toEqual([]);
   });
 });
+
+import { toRecordModel } from "./recordModel";
+import type { TrackRecord } from "../types";
+
+describe("toRecordModel reads the buckets where the API puts them", () => {
+  const home = (hit: number) => ({ lo: 0.5, hi: 0.75, n: 20, mean_prob: 0.6, hit_rate: hit });
+  const cal = { n_buckets: 4, winner: [home(0.6)], spread: [home(0.5)], total: [] };
+  const record = (extra: object) => ({ games: { n_resolved: 0, ...extra }, player_props: { anytime_td: { confidence_buckets: [] } } }) as unknown as TrackRecord;
+
+  it("builds the game series from the TOP-LEVEL calibration of the response", () => {
+    const model = toRecordModel({ ...record({}), calibration: cal } as TrackRecord);
+    expect(model.calibration!.map((s) => s.key)).toEqual(["moneyline", "ats"]);        // total has no buckets: no series
+    expect(model.calibration![0].buckets).toEqual([{ bucket: "50-75%", n: 20, correct: 12 }]);
+  });
+
+  it("still accepts the older shape nested under games", () => {
+    const model = toRecordModel(record({ calibration: cal }));
+    expect(model.calibration!.map((s) => s.key)).toEqual(["moneyline", "ats"]);
+  });
+
+  it("has no game series when the API sends none", () => {
+    expect(toRecordModel(record({})).calibration).toEqual([]);
+  });
+});

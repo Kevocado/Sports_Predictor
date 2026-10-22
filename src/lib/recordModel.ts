@@ -5,7 +5,7 @@ import type {
   WeekPoint,
 } from "../predictor-ui";
 import { marketLabel } from "../predictor-ui";
-import type { GamesTrackRecord, PlayerPropsTrackRecord, PerPickRow, TrackRecord } from "../types";
+import type { GameCalibration, GamesTrackRecord, PlayerPropsTrackRecord, PerPickRow, TrackRecord } from "../types";
 
 type SportMarket = "moneyline" | "ats" | "totals";
 
@@ -85,12 +85,11 @@ export function foldGameBuckets(buckets: RawBucket[]): { bucket: string; n: numb
     .map((m) => ({ bucket: `${Math.round(m.lo * 100)}-${Math.round(m.hi * 100)}%`, n: m.n, correct: m.correct }));
 }
 
-function calibrationSeries(games: GamesTrackRecord, player_props: PlayerPropsTrackRecord): CalibrationSeries[] {
+function calibrationSeries(cal: GameCalibration | undefined, player_props: PlayerPropsTrackRecord): CalibrationSeries[] {
   const series: CalibrationSeries[] = [];
 
   // Games markets: moneyline, spread (ats), total — from the backend's
   // get_calibration() buckets, converted to the hub's bucket shape.
-  const cal = games.calibration;
   if (cal) {
     const markets: { key: string; label: string; buckets: { lo: number; hi: number; n: number; hit_rate: number | null }[] }[] = [
       { key: "moneyline", label: "Moneyline", buckets: cal.winner },
@@ -156,7 +155,8 @@ export function toRecordModel(record: TrackRecord): RecordModel {
     lead,
     headline: "counted",
     weeks: (games.weekly ?? []).map(weekPoint),
-    calibration: calibrationSeries(record.games, record.player_props),
+    // The API puts the buckets at the top level of the response; an older shape nested them under games.
+    calibration: calibrationSeries(record.calibration ?? record.games.calibration, record.player_props),
     recent: recentPicks(games.per_pick),
   };
 }
