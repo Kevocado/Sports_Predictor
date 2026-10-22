@@ -265,6 +265,9 @@ export interface VsMarket {
 // does NOT read it, which is the honest way to carry a payload this contract no
 // longer describes.
 // ---------------------------------------------------------------------------
+export interface GameCalibrationBucket { lo: number; hi: number; n: number; mean_prob: number | null; hit_rate: number | null; }
+export interface GameCalibration { n_buckets: number; winner: GameCalibrationBucket[]; spread: GameCalibrationBucket[]; total: GameCalibrationBucket[]; }
+
 export interface GamesTrackRecord {
   /**
    * EVERY COUNTED PICK in the record: one per (game, market), the earliest
@@ -327,6 +330,8 @@ export interface GamesTrackRecord {
    * pick reading two different values on two surfaces. Declared because the wire
    * still carries it, so a payload's shape stays described somewhere.
    */
+  /** Per-market reliability buckets (moneyline/spread/total) from the backend. */
+  calibration?: GameCalibration;
   all_picks?: AllPicksRecord;
   /** One row per recorded (game, market) pick, hit and miss alike, never filtered. */
   per_pick?: PerPickRow[];

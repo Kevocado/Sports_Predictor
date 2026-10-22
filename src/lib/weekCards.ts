@@ -1,4 +1,4 @@
-import { kickoff, parseKickoff, pct, spread, type Segment, type Side, type Status } from "../predictor-ui";
+import { kickoff, margin, parseKickoff, pct, spread, stat, type Segment, type Side, type Status } from "../predictor-ui";
 import type { GamePrediction, GameSummary, WeekPrediction } from "../types";
 
 export type CardModel = {
@@ -32,14 +32,18 @@ function metaLine(
 ): string | undefined {
   const parts: string[] = [];
   if (g.spread_line != null && prediction?.home_cover_prob != null) {
-    parts.push(`Cover ${spread(g.home_team, -g.spread_line)} · ${pct(prediction.home_cover_prob)}`);
+    parts.push(`${spread(g.home_team, -g.spread_line)} · ${pct(prediction.home_cover_prob)}`);
   } else if (g.spread_line != null) {
     parts.push(spread(g.home_team, -g.spread_line));
+  } else if (prediction?.predicted_margin != null) {
+    parts.push(margin(g.home_team, g.away_team, prediction.predicted_margin));
   }
   if (g.total_line != null && prediction?.over_prob != null) {
     parts.push(`Over ${g.total_line} · ${pct(prediction.over_prob)}`);
   } else if (g.total_line != null) {
     parts.push(`Total ${g.total_line}`);
+  } else if (prediction?.predicted_total != null) {
+    parts.push(`Total ${stat(prediction.predicted_total)}`);
   }
   if (g.roof && g.roof !== "outdoors") parts.push(g.roof === "dome" ? "Dome" : "Roof closed");
   if (g.temp != null) parts.push(`${Math.round(g.temp)}°F`);

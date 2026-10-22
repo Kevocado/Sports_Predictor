@@ -55,21 +55,53 @@ function weekPoint(w: { week: number; tracked: boolean; n_games: number; n_money
   return { weekStart: `Week ${w.week}`, n: w.n_games, correct, tracked: w.tracked };
 }
 
-function calibrationSeries(player_props: PlayerPropsTrackRecord): CalibrationSeries[] {
-  const buckets = player_props.anytime_td.confidence_buckets ?? [];
-  const usable = buckets.filter((b) => b.n > 0 && b.hit_rate != null);
-  if (usable.length === 0) return [];
-  return [
-    {
+function gameCalibrationBucket(b: { lo: number; hi: number; n: number; hit_rate: number | null }): { bucket: string; n: number; correct: number } {
+  return {
+    bucket: `${Math.round(b.lo * 100)}-${Math.round(b.hi * 100)}%`,
+    n: b.n,
+    correct: b.hit_rate != null ? Math.round(b.hit_rate * b.n) : 0,
+  };
+}
+
+function calibrationSeries(games: GamesTrackRecord, player_props: PlayerPropsTrackRecord): CalibrationSeries[] {
+  const series: CalibrationSeries[] = [];
+
+  // Games markets: moneyline, spread (ats), total — from the backend's
+  // get_calibration() buckets, converted to the hub's bucket shape.
+  const cal = games.calibration;
+  if (cal) {
+    const markets: { key: string; label: string; buckets: { lo: number; hi: number; n: number; hit_rate: number | null }[] }[] = [
+      { key: "moneyline", label: "Moneyline", buckets: cal.winner },
+      { key: "ats", label: "Spread", buckets: cal.spread },
+      { key: "totals", label: "Total", buckets: cal.total },
+    ];
+    for (const m of markets) {
+      const usable = m.buckets.filter((b) => b.n > 0 && b.hit_rate != null);
+      if (usable.length === 0) continue;
+      series.push({
+        key: m.key,
+        label: m.label,
+        buckets: usable.map(gameCalibrationBucket),
+      });
+    }
+  }
+
+  // Player props: anytime TD confidence buckets.
+  const tdBuckets = player_props.anytime_td.confidence_buckets ?? [];
+  const usableTd = tdBuckets.filter((b) => b.n > 0 && b.hit_rate != null);
+  if (usableTd.length > 0) {
+    series.push({
       key: "anytime_td",
       label: "Anytime TD",
-      buckets: usable.map((b) => ({
+      buckets: usableTd.map((b) => ({
         bucket: b.label,
         n: b.n,
         correct: b.hit_rate != null ? Math.round(b.hit_rate * b.n) : 0,
       })),
-    },
-  ];
+    });
+  }
+
+  return series;
 }
 
 function recentPicks(per_pick: PerPickRow[] | undefined): { id: string; label: string; pick: string; actual: string; hit: boolean | null; when: string; madeBeforeKickoff: boolean }[] {
@@ -106,7 +138,7 @@ export function toRecordModel(record: TrackRecord): RecordModel {
     lead,
     headline: "counted",
     weeks: (games.weekly ?? []).map(weekPoint),
-    calibration: calibrationSeries(record.player_props),
+    calibration: calibrationSeries(record.games, record.player_props),
     recent: recentPicks(games.per_pick),
   };
 }
