@@ -15,7 +15,7 @@ export function FormStrip({ entries, wrap = true }: { entries: FormEntry[]; wrap
         <span
           key={e.game_id}
           title={`${e.is_home ? "vs" : "at"} ${e.opponent} — ${e.team_score}-${e.opponent_score}`}
-          className={`rounded px-1.5 py-0.5 font-mono text-xs font-bold ${RESULT_TONE[e.result]}`}
+          className={`rounded px-1.5 py-0.5 font-mono text-sm font-bold ${RESULT_TONE[e.result]}`}
         >
           {e.result}
         </span>

@@ -2,7 +2,7 @@ import type { HeadToHeadMeeting } from "../types";
 
 export function HeadToHead({ meetings }: { meetings: HeadToHeadMeeting[] }) {
   if (meetings.length === 0) {
-    return <p className="text-xs text-sp-text-faint">No past meetings found.</p>;
+    return <p className="text-sm text-sp-text-faint">No past meetings found.</p>;
   }
   return (
     <div className="flex flex-col gap-1.5">
@@ -12,7 +12,7 @@ export function HeadToHead({ meetings }: { meetings: HeadToHeadMeeting[] }) {
           : m.away_score > m.home_score ? m.away_team
           : null;
         return (
-          <div key={m.game_id} className="flex items-center justify-between gap-2 rounded-lg bg-sp-850/60 px-3 py-1.5 text-xs">
+          <div key={m.game_id} className="flex items-center justify-between gap-2 rounded-lg bg-sp-850/60 px-3 py-1.5 text-sm">
             <span className="text-sp-text-dim">{m.season} · {m.away_team} at {m.home_team}</span>
             <span className="font-mono text-sp-text">
               {m.away_score}–{m.home_score}

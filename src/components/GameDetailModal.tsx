@@ -95,7 +95,7 @@ export function filterPlayerPropsForGame(
 
 function VerdictBadge({ label, hit }: { label: string; hit: boolean }) {
   return (
-    <span className="flex items-center gap-1.5 rounded-lg bg-sp-850/60 px-2.5 py-1 text-xs">
+    <span className="flex items-center gap-1.5 rounded-lg bg-sp-850/60 px-2.5 py-1 text-sm">
       <span className="text-sp-text-dim">{label}</span>
       <span className={`rounded px-1.5 py-0.5 text-[12px] font-bold ${hit ? "bg-win/20 text-win" : "bg-loss/20 text-loss"}`}>
         {hit ? "HIT" : "MISS"}
@@ -697,7 +697,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
             <section>
               <div className="mb-2">
                 <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Result &amp; verdict</h3>
-                <p className="text-xs text-sp-text-dim">Whether the model's pregame call matched what actually happened.</p>
+                <p className="text-sm text-sp-text-dim">Whether the model's pregame call matched what actually happened.</p>
               </div>
               {/* No pick sentence here. The block above already badges the
                   timing and names the pick, and this section's whole subject is
@@ -717,7 +717,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
                   </div>
                 </div>
               ) : (
-                <p className="text-xs text-sp-text-faint rounded-lg bg-sp-850/40 p-3 border border-sp-border/40">
+                <p className="text-sm text-sp-text-faint rounded-lg bg-sp-850/40 p-3 border border-sp-border/40">
                   This game's final result hasn't been reconciled against the model's prediction yet.
                 </p>
               )}
@@ -735,13 +735,13 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
               <div className="flex flex-col gap-3">
                 {homeForm && homeForm.recent_form.length > 0 && (
                   <div className="flex items-center gap-3">
-                    <span className="w-28 shrink-0 truncate text-xs font-medium text-sp-text">{game.home_team}</span>
+                    <span className="w-28 shrink-0 truncate text-sm font-medium text-sp-text">{game.home_team}</span>
                     <FormStrip entries={homeForm.recent_form} />
                   </div>
                 )}
                 {awayForm && awayForm.recent_form.length > 0 && (
                   <div className="flex items-center gap-3">
-                    <span className="w-28 shrink-0 truncate text-xs font-medium text-sp-text">{game.away_team}</span>
+                    <span className="w-28 shrink-0 truncate text-sm font-medium text-sp-text">{game.away_team}</span>
                     <FormStrip entries={awayForm.recent_form} />
                   </div>
                 )}
@@ -760,14 +760,14 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
           <section>
             <div className="mb-2">
               <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-sp-text-faint">Other model markets</h3>
-              <p className="text-xs text-sp-text-dim">
+              <p className="text-sm text-sp-text-dim">
                 {isFinal
                   ? "Today's model, for reference: the verdict above is judged on the pick made before kickoff."
                   : "Point spread cover chance and total points line, from today's run."}
               </p>
             </div>
-            {predictionError && <p className="text-xs text-loss">{predictionError}</p>}
-            {!prediction && !predictionError && <p className="text-xs text-sp-text-faint">Loading match markets…</p>}
+            {predictionError && <p className="text-sm text-loss">{predictionError}</p>}
+            {!prediction && !predictionError && <p className="text-sm text-sp-text-faint">Loading match markets…</p>}
             {/* The market's own lines, restated ONLY when no tile will carry
                 them. `panelFacts` draws the spread tile from `spread_line` and
                 the total tile's sub from `total_line`, but only when the model
@@ -784,11 +784,11 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
                 parts.push(`Total ${game.total_line}`);
               }
               return parts.length > 0 ? (
-                <p className="text-xs text-sp-text-dim">{parts.join(" · ")}</p>
+                <p className="text-sm text-sp-text-dim">{parts.join(" · ")}</p>
               ) : null;
             })()}
             {prediction && prediction.predicted_margin != null && prediction.sigma != null && (
-              <p className="text-xs text-sp-text-dim">
+              <p className="text-sm text-sp-text-dim">
                 {`Projected margin: ${prediction.predicted_margin >= 0 ? game.home_team : game.away_team} by ${Math.abs(prediction.predicted_margin).toFixed(1)} ± ${prediction.sigma.toFixed(1)} pts`}
               </p>
             )}
@@ -810,7 +810,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
                   the whole list -- whether anyone was removed from it at all --
                   and repeating it per row would be three copies of a statement
                   that is not about any one player. */}
-              <p data-testid="picks-availability" className="text-xs leading-snug text-sp-text-faint">
+              <p data-testid="picks-availability" className="text-sm leading-snug text-sp-text-faint">
                 {picksAvailability}
               </p>
             </section>
@@ -846,17 +846,17 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
                 per table: no table carries a title anymore, and BoxScore only
                 prints the note under its title. */}
             {showProjectedNote && (
-              <p className="mb-1 text-xs text-sp-text-dim" data-testid="box-score-projected-note">
+              <p className="mb-1 text-sm text-sp-text-dim" data-testid="box-score-projected-note">
                 Projected order — no depth-chart feed for this sport
               </p>
             )}
-            {propsLoading && <p className="text-xs text-sp-text-faint">Loading player projections…</p>}
+            {propsLoading && <p className="text-sm text-sp-text-faint">Loading player projections…</p>}
             {/* Two different gaps, two different sentences, because the game
                 either has no props at all or has props the model does not
                 project. When the filter hides a team, the sentence names the
                 team it is about rather than the game. */}
             {!propsLoading && !hasBoxScore && (
-              <p className="text-xs text-sp-text-faint rounded-lg bg-sp-850/40 p-3 border border-sp-border/40">
+              <p className="text-sm text-sp-text-faint rounded-lg bg-sp-850/40 p-3 border border-sp-border/40">
                 {visibleProps && visibleProps.length > 0
                   ? emptyScope
                     ? `No modelled positions for ${emptyScope} in this game. Every ${emptyScope} player the feed returned is at a position the model does not project (kicker, offensive or defensive line), and the box score only covers QB, RB, WR and TE.`
@@ -921,7 +921,7 @@ export function GameDetailModal({ game, api, weekPrediction, weekPredictions, on
                     </tbody>
                   </table>
                 </div>
-                <p className="mt-1 text-xs leading-snug text-sp-text-faint">
+                <p className="mt-1 text-sm leading-snug text-sp-text-faint">
                   Position-market projections, not team total yards. These cover the whole
                   roster rather than the expected on-field lineup, and the model projects one
                   yardage market per position, so QB rushing and RB receiving are missing.
